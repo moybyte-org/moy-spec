@@ -497,6 +497,9 @@ An **SFX** is a short list of notes played in sequence:
 ```
 
 `speed` is **steps per second** (each step lasts `1 / speed` seconds), default 8.
+A looping SFX may carry an optional `"loop_start"` (default 0): the whole list
+plays once, then `loop_start … end` repeats — a riff with a pickup, PICO-8's
+loop range.
 
 A **music track** is an ordered list of pattern **rows**. A row is one SFX id
 — or a list of **up to 4** ids, one per channel in order, `-1` for a channel
@@ -510,6 +513,14 @@ silent that row:
 `loop` defaults true. Channel positions are stable across rows — channel `j`
 stays on the same voice, which is what lets a slide carry across a row
 boundary. Row channel `j` plays on voice `3 − j`.
+
+A track may carry an optional `"row_secs"`: a list parallel to `pattern` of
+**per-row durations in seconds**, overriding the uniform `speed` clock. An
+entry of `0` holds that row forever (its looping channels keep playing;
+`music()`/`music_stop()` still end it). This is what an imported PICO-8 song
+needs — there a pattern lasts as long as its first *non-looping* channel
+(or, when every channel loops, its slowest one), and that reference tempo
+changes row to row.
 
 Both live in the cart's `sounds.json`:
 
