@@ -15,18 +15,19 @@ lifecycle — those belong to whatever system hosts it.
 
 ### core, and what sits above it
 
-This document defines **moy core**: the part every implementation is expected to
-provide, and therefore the part a cart can rely on running anywhere. It is
-deliberately small.
+This document defines **moy core**: the part every implementation provides, and
+therefore the part a cart can rely on running anywhere. It is deliberately small.
 
-The reference console (moybyte) implements core **plus** extensions of its own —
-placed actors and scenes, spreadsheet and document assets, networking, a second
-Python cart runtime. Those are real and supported, they are simply not core, and a
-cart using them says so in its manifest (§10). A cart that stays inside core runs on
-every moy console; a cart that reaches past it runs where those extensions exist.
+Consoles will do more than core. That is expected and fine — a console with a
+scripting extension, a document format, a radio, a second cart language, or a
+windowing shell loses nothing by having them. Those are **extensions** (§10): a cart
+that needs one declares it, and a host that lacks it refuses the cart cleanly instead
+of failing halfway through a frame.
 
-Core is a **subset**, never a fork: where core and the reference console differ on
-something core covers, the reference console is what changes.
+The one rule: **an extension must not redefine anything core already covers.** Add
+verbs, add asset kinds, add capabilities — but where an implementation and core
+disagree about something core specifies, the implementation is what changes. Core is
+a subset of every conforming console, never a dialect of one.
 
 ---
 
@@ -533,6 +534,16 @@ cart's own tuning surface, not a system feature.
 Optional features. A cart requiring one lists it in the manifest's `"extensions"`
 array; a host that doesn't implement it refuses the cart cleanly rather than crashing
 partway in.
+
+The three below are **standard extensions** — optional, but specified here so that two
+consoles implementing `layers` implement the same `layers`.
+
+A console may also define **its own** extensions for hardware or features core says
+nothing about — a radio (`espnow`), a second cart language, an on-device authoring
+format, a windowing shell. Those MUST be namespaced by the implementation
+(`vendor.feature`, e.g. `moybyte.scenes`) so they can never collide with a future
+standard extension, and a cart using one is non-portable by construction. That is a
+legitimate trade an author makes deliberately, not an accident the format allows.
 
 ### `layers`
 

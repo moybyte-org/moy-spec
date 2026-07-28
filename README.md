@@ -29,20 +29,23 @@ keep differing.
 **moy core** is the part every implementation provides, and therefore the part a cart
 can rely on anywhere. It is small on purpose.
 
-The reference console, [moybyte](https://github.com/nikola-j/moybyte), implements core
-**plus** its own extensions — placed actors and scenes, spreadsheet and document
-assets, networking, a second Python cart runtime. A cart declares in its manifest if
-it needs any of them. Stay inside core and it runs everywhere.
+Consoles will do more than core, and should. A radio, a windowing shell, a second cart
+language, an authoring format — none of that is core, and none of it is discouraged.
+It is an **extension**: a cart that needs one says so, and a console that lacks it
+declines the cart cleanly. Standard extensions are specified so two consoles
+implementing the same one agree; anything vendor-specific is namespaced
+(`vendor.feature`) and cannot collide with a future standard.
 
-Core is a subset, never a fork. Where core and the reference console disagree about
-something core covers, **the reference console is what changes.**
+The rule that keeps this from fragmenting: **an extension must never redefine
+something core already covers.** Where an implementation and core disagree on core's
+own ground, the implementation is what changes — including the reference one.
 
 ## Status of the pieces
 
 | | state |
 |---|---|
 | Spec text | draft, readable, §6.1 open |
-| Reference implementation | runs on two ESP32 boards and a PC simulator |
+| Reference implementation | [moybyte](https://github.com/nikola-j/moybyte) — two ESP32 boards and a PC simulator |
 | PICO-8 converter | exists, converts art, map, sound and code under a compat shim |
 | Web player | not started — the priority |
 | Conformance suite | not started |
