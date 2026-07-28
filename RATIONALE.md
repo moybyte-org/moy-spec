@@ -97,6 +97,19 @@ hardware half the devices lack fragments the catalogue on day one. That is the s
 rule most likely to be quietly broken, so it is stated as a conformance requirement
 rather than advice.
 
+## Players — core, not an extension
+
+Local multiple controllers degrade cleanly: a cart asks `players()`, gets 1 on a
+single-pad console, and offers versus mode or doesn't. A capability that degrades
+cleanly should never be something a cart declares, because declaring it means being
+*refused* by every console that lacks it — a strictly worse outcome than running in
+single-player.
+
+Networking is the opposite and is therefore not here at all. It cannot degrade: a cart
+built around a low-latency mesh does not become a working cart on a browser socket, it
+becomes a broken one. Extensions are for capabilities whose absence a cart cannot
+paper over.
+
 ## Sandbox — base, math, string, table
 
 The smallest set that supports ordinary game code. Everything excluded (`io`, `os`,

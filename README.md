@@ -36,6 +36,12 @@ declines the cart cleanly. Standard extensions are specified so two consoles
 implementing the same one agree; anything vendor-specific is namespaced
 (`vendor.feature`) and cannot collide with a future standard.
 
+The line between the two: a capability a cart can *degrade around* belongs in core
+(local multiplayer asks how many pads there are and adapts). A capability whose
+absence a cart cannot paper over is an extension. A capability whose behaviour cannot
+be promised across transports — networking — is neither, and lives in vendor space
+until there is something real to generalise from.
+
 The rule that keeps this from fragmenting: **an extension must never redefine
 something core already covers.** Where an implementation and core disagree on core's
 own ground, the implementation is what changes — including the reference one.

@@ -421,11 +421,23 @@ the same physical controls.
 
 | verb | returns |
 |---|---|
-| `btn(name)` | true while held |
-| `btnp(name)` | true on the frame it was pressed (released → held edge) |
+| `btn(name, player)` | true while held; `player` defaults to 0 |
+| `btnp(name, player)` | true on the frame it was pressed (released → held edge) |
+| `players()` | how many controllers are connected. **Always ≥ 1** |
 
 `btnp` fires **once per physical press, with no autorepeat** (§12.2). A cart wanting
 repeat implements its own timer.
+
+**Player 0 is always this console's own controls**, so a single-player cart never
+passes the argument and never notices this exists. Higher indices read additional
+controllers; on a console with one, `players()` returns 1 and `btn(name, p)` for
+`p > 0` is always false.
+
+That is deliberate: it means a two-player cart is **portable by construction**. It
+asks `players() >= 2` at runtime and offers versus mode or doesn't, rather than being
+refused at load time by every console with a single pad. Local multiplayer is core
+precisely because it degrades cleanly, and a capability that degrades cleanly should
+never be a thing a cart has to declare.
 
 **The host owns exit.** There is no exit button in the console's input model, and no
 cart is required to provide one. How a player quits — a held key, a system button, a
@@ -535,7 +547,7 @@ Optional features. A cart requiring one lists it in the manifest's `"extensions"
 array; a host that doesn't implement it refuses the cart cleanly rather than crashing
 partway in.
 
-The three below are **standard extensions** — optional, but specified here so that two
+The two below are **standard extensions** — optional, but specified here so that two
 consoles implementing `layers` implement the same `layers`.
 
 A console may also define **its own** extensions for hardware or features core says
@@ -553,15 +565,26 @@ drawing API; `draw_layer(layer, cx, cy)` blits its visible window; `background(x
 declares a backdrop the host repaints automatically each frame. Costs 75 KB per
 full-screen layer (§1.1).
 
-### `view`
+### `viewport`
 
 `view(w, h)` declares a logical viewport smaller than the canvas; the host composites
 that centered region at the largest integer scale that fits. This is how a converted
 128 × 128 PICO-8 cart fills a screen instead of sitting in a 320 × 240 letterbox.
 
-### `multiplayer`
+### Not here: networking
 
-`btn(name, player)` reads additional controllers; `players()` returns the count.
+Console-to-console play is **not** a standard extension and is not core. A minimal
+"send a small message, receive a callback" contract looks portable on paper, but the
+transports underneath it — a mesh radio, WiFi, BLE, a browser socket — differ in
+latency, reliability, peer discovery and message size by orders of magnitude, and a
+cart written against one will not behave on another. Specifying it would promise a
+portability that cannot be delivered.
+
+So networking belongs in vendor space: `espnow`, `vendor.net`. A cart using it is
+non-portable and says so. This may be revisited once two consoles have shipped
+networked carts and there is something real to generalise from.
+
+*(Local multiple controllers are a different thing entirely, and are core — see §7.3.)*
 
 ---
 
