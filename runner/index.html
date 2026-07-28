@@ -325,7 +325,16 @@ NAV={a:"left",d:"right",w:"up",s:"down"},SC={Enter:"run",z:"a",x:"b"},pH={},nH={
 // mirroring the physical key). In text mode Backspace stays a typed 0x08 (DELETE
 // for a tool -- never an exit).
 function nv(e){var k=e.key.length==1?e.key.toLowerCase():e.key;return NAV[k];}
-cv.addEventListener("keydown",function(e){if(e.key in PAN){pH[e.key]=true;e.preventDefault();return;}
+var AN={ArrowLeft:"left",ArrowRight:"right",ArrowUp:"up",ArrowDown:"down"};
+cv.addEventListener("keydown",function(e){if(e.key in PAN){
+// Arrows are CONTEXTUAL: while a cart owns the keyboard (INPUT = the effective
+// input hint, non-null only during play) they are the D-PAD (PICO-8 muscle
+// memory: arrows + Z/X); on system surfaces they stay the trackball-cursor pan
+// (the code editor's caret, the shelf). The old always-pan mapping painted
+// cursor trails over a playing game's letterbox.
+if(INPUT){var an=AN[e.key];if(!nH[an]){nH[an]=true;send({type:"hold",name:an,down:true});}}
+else pH[e.key]=true;
+e.preventDefault();return;}
 if(e.key=="Escape"){send({type:"esc"});e.preventDefault();return;}var cd=null;
 if(e.key=="Enter")cd=13;
 // A physically HELD Backspace also streams a sustained "home" (bshold down/up on the
@@ -336,7 +345,9 @@ else if(e.key.length==1&&e.key.charCodeAt(0)>=32&&e.key.charCodeAt(0)<=126)cd=e.
 if(cd!==null)send({type:"key",code:cd});var s=SC[e.key.length==1?e.key.toLowerCase():e.key];
 if(s&&!e.repeat)send({type:"press",name:s});var n=nv(e);if(n&&!nH[n]){nH[n]=true;send({type:"hold",name:n,down:true});}
 if(s||n||cd!==null)e.preventDefault();});
-cv.addEventListener("keyup",function(e){if(e.key in PAN){delete pH[e.key];e.preventDefault();return;}
+cv.addEventListener("keyup",function(e){if(e.key in PAN){delete pH[e.key];
+var an=AN[e.key];if(nH[an]){delete nH[an];send({type:"hold",name:an,down:false});}
+e.preventDefault();return;}
 if(e.key=="Backspace")send({type:"bshold",down:false});
 var n=nv(e);if(n&&nH[n]){delete nH[n];send({type:"hold",name:n,down:false});}});
 // Soft keyboard (#42 Thread 2): #kb (in the bottom bar's middle cluster, beside the burger)
@@ -451,6 +462,7 @@ if(!q.length)return;var b=q;q=[];
 try{MOY.events(JSON.stringify({events:b}));}catch(e){console.error("input error",e);}}
 var lastTs=0;
 function tick(ts){requestAnimationFrame(tick);
+if(lastTs&&ts-lastTs<15.5)return;   // cap ~60fps (rAF runs at display refresh -- 144Hz+ monitors)
 var dt=lastTs?(ts-lastTs)/1000:1/60;if(dt>0.1)dt=0.1;lastTs=ts;
 pump();
 var f="";
@@ -462,6 +474,9 @@ window.__moyStart=function(){
 getA().then(function(){sEl.textContent="live";sEl.style.color="#00e436";
 requestAnimationFrame(tick);setInterval(plog,PERF_MS);cv.focus();})
 .catch(function(e){console.error(e);sEl.textContent="no assets";sEl.style.color="#ff004d";});};
+// The dev hot-reload (moy CLI) refetches assets after a cart restart -- the cart
+// TITLE is unchanged so df()'s change detection never would (stale sheet/images).
+window.__moyRefetchAssets=function(){getA().catch(function(){});};
 </script>
 <script type=module>
 // ---- loader: boot MicroPython-WASM, mount the console + carts, wire MOY ------
@@ -501,6 +516,9 @@ try {
   if (!cart && names.length === 1) cart = names[0];
   mp.runPython(boot + "import web_boot\n"
     + "web_boot.boot('/moy/carts'" + (cart ? ", cart=" + JSON.stringify(cart) : "") + ")\n"
+    // Single-cart bundle: kiosk mode -- the exit gesture restarts the game
+    // instead of dropping into the console shell (the game IS the page).
+    + (names.length === 1 && cart ? "web_boot.kiosk(" + JSON.stringify(cart) + ")\n" : "")
     + "from web_boot import assets_json, step_frame_json, apply_events_json");
   window.MOY = {
     assets: mp.globals.get("assets_json"),
@@ -508,6 +526,31 @@ try {
     events: mp.globals.get("apply_events_json"),
   };
   window.__moyStart();
+  // ---- dev hot-reload (?dev=1, the moy CLI's watch loop) ---------------------
+  // Poll the CLI server's /stamp (latest cart-file mtime); on change, refetch
+  // the live-packed carts.json, rewrite the files in the VFS, restart the cart
+  // (web_boot.reload_cart) and refetch assets. Static production hosting never
+  // has ?dev=1, so this costs nothing there.
+  if (new URLSearchParams(location.search).get("dev")) {
+    let stamp = null;
+    setInterval(async () => {
+      try {
+        const s = await (await fetch("stamp")).text();
+        if (stamp === null) { stamp = s; return; }
+        if (s === stamp) return;
+        stamp = s;
+        const fresh = await (await fetch("carts.json")).json();
+        for (const rel in fresh) {
+          const full = "/moy/carts/" + rel;
+          mkdirs(mp, full.slice(0, full.lastIndexOf("/")));
+          mp.FS.writeFile(full, fresh[rel]);
+        }
+        mp.runPython("import web_boot as _wb; _wb.reload_cart()");
+        window.__moyRefetchAssets();
+        console.log("[moy] cart reloaded");
+      } catch (e) { console.error("[moy] reload failed", e); }
+    }, 400);
+  }
 } catch (e) {
   console.error(e);
   sEl2.textContent = "boot failed (see devtools)";
