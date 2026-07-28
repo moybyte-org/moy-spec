@@ -175,6 +175,12 @@ def cmd_run(args):
         def log_message(self, *a):
             pass
 
+        def end_headers(self):
+            # A DEV server must never let the browser cache the player -- a
+            # half-cached page (old wasm, new index) is undebuggable.
+            self.send_header("Cache-Control", "no-store")
+            super().end_headers()
+
         def _send(self, body, ctype):
             self.send_response(200)
             self.send_header("Content-Type", ctype)
