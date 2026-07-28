@@ -12,6 +12,30 @@ per-device binary.
 Status: **draft 0.1, unstable.** Names and values will move. §6.1 (batched fills and
 the 3D verbs) is explicitly unsettled and is not part of 0.1.
 
+## Write a game
+
+Python 3 and a browser. Nothing else.
+
+```
+python3 moy.py new mygame
+python3 moy.py run mygame.moy
+```
+
+The browser opens with the game running. Edit `mygame.moy/main.lua` in your own
+editor and save — the game restarts in under a second. The scaffold includes
+`moy-api.lua`, which Lua language servers (VS Code's Lua extension) read for
+autocomplete and hover docs on every verb.
+
+```
+python3 moy.py export mygame.moy
+```
+
+produces a folder of static files that boots straight into your game. Host it
+anywhere; zipping the folder and uploading it to itch.io as an HTML5 game works
+as-is. The player is the reference console compiled to WebAssembly
+([runner/BUILD.md](runner/BUILD.md)); carts run at 60fps with sound in any
+modern browser, desktop or phone.
+
 ## Why this exists
 
 Several people are building small handheld consoles on similar hardware, each with its
@@ -53,13 +77,15 @@ own ground, the implementation is what changes — including the reference one.
 | Spec text | draft, readable, §6.1 open |
 | Reference implementation | [moybyte](https://github.com/nikola-j/moybyte) — two ESP32 boards and a PC simulator |
 | PICO-8 converter | exists, converts art, map, sound and code under a compat shim |
-| Web player | not started — the priority |
+| Web player | **works** — [runner/](runner/), the reference console compiled to WASM; `moy.py` wraps it (scaffold, hot-reload run, export) |
 | Conformance suite | not started |
 | TIC-80 converter | not started |
 
-The web player matters most: a cart that opens as a URL is what lets anyone try this
-without owning hardware, and it is what makes the spec testable by people who have not
-built a console.
+The web player is what lets anyone try this without owning hardware: a cart opens as
+a URL, and `moy.py export` turns any cart into one. It is currently *built from* the
+reference implementation, which makes it a faithful mirror of one console rather than
+an independent second implementation — the conformance suite is what will let the two
+be told apart.
 
 ## Contributing
 
