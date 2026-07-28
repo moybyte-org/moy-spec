@@ -38,6 +38,10 @@ as-is. The player is the reference console compiled to WebAssembly
 ([runner/BUILD.md](runner/BUILD.md)); carts run at 60fps with sound in any
 modern browser, desktop or phone.
 
+[examples/verbs.moy](examples/verbs.moy) walks every core verb, one screen
+per group — living documentation, a smoke test for any new implementation, and
+the seed of the conformance suite. `python3 moy.py run examples/verbs.moy`.
+
 Coming from PICO-8: `moy.py port cart.p8` converts a cart — assets near-verbatim
 (the palette's first 16 colours are PICO-8's, the sheet format is `__gfx__`),
 code mechanically ported to Lua 5.4 under a p8 compat shim. And
