@@ -41,7 +41,7 @@ import os
 import sys
 
 from p8_import import (  # the asset converters, vendored beside this file
-    parse_p8, _title_from, gfx_to_kgfx, sfx_music_to_sounds, music_start_map)
+    read_p8, _title_from, gfx_to_kgfx, sfx_music_to_sounds, music_start_map)
 
 
 # --------------------------------------------------------------------------
@@ -557,8 +557,7 @@ def build_manifest(title):
 
 
 def port(p8_path, out_dir, title=None):
-    with open(p8_path, "r", encoding="utf-8", errors="replace") as f:
-        sections = parse_p8(f.read())
+    sections = read_p8(p8_path)      # text .p8 OR the BBS .p8.png
     title = title or _title_from(sections, p8_path)
     os.makedirs(out_dir, exist_ok=True)
 

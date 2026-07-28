@@ -229,8 +229,7 @@ def cmd_export(args):
 
 # --- port / demo (PICO-8) ----------------------------------------------------
 
-CELESTE_URL = ("https://raw.githubusercontent.com/CelesteClassic/"
-               "celeste-maker/master/celeste.p8")
+CELESTE_URL = "https://www.lexaloffle.com/bbs/cposts/1/15133.p8.png"
 CELESTE_NOTE = """\
   Celeste Classic (PICO-8, 2016) by Maddy Thorson & Noel Berry
   https://www.lexaloffle.com/bbs/?tid=2145 / https://celesteclassic.github.io/
@@ -246,7 +245,9 @@ def cmd_port(args):
         import urllib.request
         local = os.path.abspath(os.path.basename(src.split("?")[0]) or "cart.p8")
         print("fetching %s" % src)
-        urllib.request.urlretrieve(src, local)
+        req = urllib.request.Request(src, headers={"User-Agent": "moy-cli"})
+        with urllib.request.urlopen(req) as r, open(local, "wb") as f:
+            f.write(r.read())
         src = local
     src = os.path.abspath(src)
     if not os.path.isfile(src):
