@@ -14,7 +14,9 @@ the 3D verbs) is explicitly unsettled and is not part of 0.1.
 
 ## Write a game
 
-Python 3 and a browser. Nothing else.
+Python 3.8+ and a browser. Nothing else — no packages, no build step. Any OS
+(on Windows, `python` instead of `python3`; the player runs in the browser, so
+the OS never touches the game).
 
 ```
 python3 moy.py new mygame
@@ -35,6 +37,18 @@ anywhere; zipping the folder and uploading it to itch.io as an HTML5 game works
 as-is. The player is the reference console compiled to WebAssembly
 ([runner/BUILD.md](runner/BUILD.md)); carts run at 60fps with sound in any
 modern browser, desktop or phone.
+
+Coming from PICO-8: `moy.py port cart.p8` converts a cart — assets near-verbatim
+(the palette's first 16 colours are PICO-8's, the sheet format is `__gfx__`),
+code mechanically ported to Lua 5.4 under a p8 compat shim. And
+
+```
+python3 moy.py demo
+```
+
+fetches Celeste Classic, ports it, and runs it in your browser. (PICO-8 BBS
+carts default to CC BY-NC-SA 4.0 — ports are personal/dev material with
+attribution, not something to republish.)
 
 ## Why this exists
 

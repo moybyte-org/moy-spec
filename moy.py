@@ -13,6 +13,11 @@ art tools already work; this CLI supplies the loop around them.
     moy.py export <cart.moy>     the publishable web bundle: ~1.1MB of static
                                  files that boot straight into the game --
                                  host anywhere (itch.io HTML5 uploads work)
+    moy.py port <cart.p8|url>    convert a PICO-8 cart: assets via p8_import,
+                                 code mechanically ported to Lua 5.4 under the
+                                 p8 compat shim (p8_lua_port)
+    moy.py demo                  fetch Celeste Classic (PICO-8), port it, run
+                                 it -- the one-command show-off
 
 Pure Python stdlib, no dependencies. The player it wraps is runner/ (see
 runner/BUILD.md); the spec it implements is SPEC.md.
@@ -99,12 +104,12 @@ def cmd_new(args):
     os.makedirs(dst)
     man = dict(MANIFEST)
     man["title"] = title
-    with open(os.path.join(dst, "manifest.json"), "w") as f:
+    with open(os.path.join(dst, "manifest.json"), "w", encoding="utf-8", newline="\n") as f:
         json.dump(man, f, indent=2)
         f.write("\n")
-    with open(os.path.join(dst, "main.lua"), "w") as f:
+    with open(os.path.join(dst, "main.lua"), "w", encoding="utf-8", newline="\n") as f:
         f.write(MAIN_LUA.replace("{title}", title))
-    with open(os.path.join(dst, "config.json"), "w") as f:
+    with open(os.path.join(dst, "config.json"), "w", encoding="utf-8", newline="\n") as f:
         f.write("{}\n")
     stubs = os.path.join(HERE, "moy-api.lua")
     if os.path.isfile(stubs):
@@ -210,14 +215,60 @@ def cmd_export(args):
     os.makedirs(out, exist_ok=True)
     for fn in RUNNER_FILES:
         shutil.copy(os.path.join(RUNNER, fn), os.path.join(out, fn))
-    with open(os.path.join(out, "carts.json"), "w") as f:
+    with open(os.path.join(out, "carts.json"), "w", encoding="utf-8") as f:
         json.dump(pack_cart(src), f)
     print("exported -> %s" % out)
     print("  static files: host anywhere, or zip the folder for itch.io (HTML5)")
 
 
+# --- port / demo (PICO-8) ----------------------------------------------------
+
+CELESTE_URL = ("https://raw.githubusercontent.com/CelesteClassic/"
+               "celeste-maker/master/celeste.p8")
+CELESTE_NOTE = """\
+  Celeste Classic (PICO-8, 2016) by Maddy Thorson & Noel Berry
+  https://www.lexaloffle.com/bbs/?tid=2145 / https://celesteclassic.github.io/
+  PICO-8 BBS carts default to CC BY-NC-SA 4.0: the port is for personal /
+  development use with attribution -- do not ship it in anything commercial."""
+
+
+def cmd_port(args):
+    if not args:
+        die("usage: moy.py port <cart.p8 | url> [out.moy]")
+    src = args[0]
+    if src.startswith(("http://", "https://")):
+        import urllib.request
+        local = os.path.abspath(os.path.basename(src.split("?")[0]) or "cart.p8")
+        print("fetching %s" % src)
+        urllib.request.urlretrieve(src, local)
+        src = local
+    src = os.path.abspath(src)
+    if not os.path.isfile(src):
+        die("no such .p8: " + src)
+    out = cart_dir(args[1] if len(args) > 1
+                   else os.path.splitext(os.path.basename(src))[0])
+    import p8_lua_port
+    p8_lua_port.port(src, out)
+    print("ported -> %s" % out)
+    print("  PICO-8 carts carry their own licenses (BBS default CC BY-NC-SA")
+    print("  4.0) -- ported carts are dev/personal material unless stated.")
+    print("  next: %s run %s" % (sys.argv[0], os.path.relpath(out)))
+
+
+def cmd_demo(args):
+    """Fetch + port + run Celeste Classic -- the one-command demo."""
+    print(CELESTE_NOTE)
+    out = cart_dir("celeste")
+    if not os.path.isdir(out):
+        cmd_port([CELESTE_URL, "celeste"])
+    else:
+        print("using existing %s" % out)
+    cmd_run(["celeste.moy"] + list(args))
+
+
 def main():
-    cmds = {"new": cmd_new, "run": cmd_run, "export": cmd_export}
+    cmds = {"new": cmd_new, "run": cmd_run, "export": cmd_export,
+            "port": cmd_port, "demo": cmd_demo}
     if len(sys.argv) < 2 or sys.argv[1] not in cmds:
         print(__doc__.strip())
         sys.exit(0 if len(sys.argv) < 2 else 1)
