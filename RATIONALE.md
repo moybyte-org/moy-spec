@@ -139,17 +139,25 @@ cart heap + 8 audio. The cart heap is the one soft number, sized from a measured
 **Not yet profiled against a running console** — it is derived, not measured. It is
 also the number most likely to be wrong in the direction of too generous.
 
-## Audio — 4 channels
+## Audio — 4 channels, PICO-8-parity fidelity
 
-Three effect voices plus a dedicated music channel, so a sound effect can never cut
-the background loop. Four voices of simple waveform synthesis is a small enough mixing
-load to run on the CPU of any target, and matches what 8-bit-era music actually used.
+Music claims channels from the top and effects round-robin the rest, so a sound
+effect can never cut the background loop. Four voices of waveform synthesis is a
+small enough mixing load to run on the CPU of any target (the reference ESP32
+implementation mixes all four with effects for ~1–2% of one core), and matches
+what 8-bit-era music actually used.
+
+The model deliberately covers PICO-8's: 8 waveforms, a per-note effect column in
+PICO-8's own numbering, and multi-channel music rows. The catalogue story leans
+on ports, and a port whose music lost three of four channels and every slide is
+audibly wrong — so p8 is the *floor* of fidelity, not an aspiration. Effect
+semantics are specified musically (what a slide does), not sample-exactly.
 
 Pitch as a semitone index (0–95, C0–B7, 57 = A4 = 440 Hz) rather than raw Hz because
 it is what a note editor wants and what a person writing a melody thinks in.
 
-Volume 0–7 and four waveforms are **inherited** from the reference implementation's
-audio model; nothing depends on the specific ranges.
+Volume 0–7 is **inherited** from the reference implementation's audio model;
+nothing depends on the specific range.
 
 Audio is excluded from pixel conformance because two synths will not produce identical
 samples, and requiring that would fail every implementation for no benefit.

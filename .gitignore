@@ -1,0 +1,10 @@
+# `moy demo` / `moy port` working artifacts. celeste.moy is CC BY-NC-SA
+# (Maddy Thorson & Noel Berry) -- it must never be committed or shipped in
+# this repo; the demo command regenerates it locally from the BBS cart.
+celeste.moy/
+*.p8
+*.p8.png
+
+__pycache__/
+.idea/
+.vscode/

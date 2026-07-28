@@ -52,7 +52,7 @@ desktop simulator, and someone else's OS.
 | Palette | **64 entries** (§2), indices 0–63, cart-replaceable |
 | Sprite sheet | **512 tiles** of 8 × 8, drawn from palette indices **0–15** |
 | Tilemap | one grid, cells hold a tile id 0–254 |
-| Audio | **4 channels**, 4 waveforms (§8) |
+| Audio | **4 channels**, 8 waveforms, per-note effects (§8) |
 | Tick | **30 Hz** guaranteed; 60 Hz opt-in (§5) |
 | Language | **Lua 5.4**, sandboxed (§4) |
 | Origin | top-left, `+x` right, `+y` down |
@@ -462,34 +462,54 @@ this rule the catalogue splits along hardware lines immediately.
 
 ## 8. Audio
 
-**4 channels.** Effects round-robin across channels 0–2; **channel 3 belongs to
-music**, so an effect never cuts the background loop.
+**4 channels.** Music claims channels from the top — a 1-channel track owns
+channel 3, an N-channel track channels `3 … 4−N` — and sound effects round-robin
+across whatever music leaves free, so an effect never cuts the background loop.
 
 ### 8.1 The data model
 
-The atom is a **note**: `[pitch, wave, vol]`.
+The atom is a **note**: `[pitch, wave, vol]`, optionally `[pitch, wave, vol, eff]`.
 
 | field | range | meaning |
 |---|---|---|
 | `pitch` | `0–95`, or `-1` | semitone index, C0–B7. **57 = A4 = 440 Hz**, equal temperament. `-1` is a rest |
-| `wave` | `0–3` | `0` square, `1` triangle, `2` saw, `3` noise |
+| `wave` | `0–7` | `0` square, `1` triangle, `2` saw, `3` noise, `4` pulse, `5` organ, `6` tilted saw, `7` phaser |
 | `vol` | `0–7` | `0` is silent; default `6` |
+| `eff` | `0–7` | optional per-note effect (below); omitted means `0` (none) |
+
+**Effects** (PICO-8 numbering, so a ported cart's effect column carries over
+verbatim):
+
+| eff | name | behaviour over the note's duration |
+|---|---|---|
+| `1` | slide | pitch and volume glide from the channel's previous note |
+| `2` | vibrato | pitch wobbles ±0.25 semitone (triangle LFO, 7.5 Hz) |
+| `3` | drop | frequency falls linearly to 0 |
+| `4` | fade in | volume ramps 0 → `vol` |
+| `5` | fade out | volume ramps `vol` → 0 |
+| `6` | arpeggio fast | cycles the note's group of four steps at 30 notes/s |
+| `7` | arpeggio slow | the same at 15 notes/s |
 
 An **SFX** is a short list of notes played in sequence:
 
 ```json
-{ "speed": 24, "loop": false, "steps": [[30, 3, 5], [26, 3, 3]] }
+{ "speed": 24, "loop": false, "steps": [[30, 3, 5], [26, 3, 3, 5]] }
 ```
 
 `speed` is **steps per second** (each step lasts `1 / speed` seconds), default 8.
 
-A **music track** is a one-channel phrase — an ordered list of SFX ids:
+A **music track** is an ordered list of pattern **rows**. A row is one SFX id
+— or a list of **up to 4** ids, one per channel in order, `-1` for a channel
+silent that row:
 
 ```json
-{ "speed": 4, "loop": true, "pattern": [0, 1, 0, 2] }
+{ "speed": 4, "loop": true, "pattern": [0, [1, 4], [1, -1, 5], 2] }
 ```
 
-`speed` is **slots per second**, default 4; `loop` defaults true.
+`speed` is **rows per second** (fractional values are legal), default 4;
+`loop` defaults true. Channel positions are stable across rows — channel `j`
+stays on the same voice, which is what lets a slide carry across a row
+boundary. Row channel `j` plays on voice `3 − j`.
 
 Both live in the cart's `sounds.json`:
 
@@ -501,9 +521,9 @@ Both live in the cart's `sounds.json`:
 
 | verb | effect |
 |---|---|
-| `sfx(n, chan)` | play bank effect `n`; `chan` optional, otherwise round-robin 0–2 |
+| `sfx(n, chan)` | play bank effect `n`; `chan` optional, otherwise round-robin the channels music leaves free |
 | `beep(freq, dur)` | a tone at `freq` Hz for `dur` seconds (default 0.15), square wave at vol 6 |
-| `music(track, loop)` | start a music track on channel 3; `loop` defaults true |
+| `music(track, loop)` | start a music track (channels claimed from the top, §8); `loop` defaults true |
 | `music_stop()` | stop music |
 | `sound_stop(chan)` | stop one channel, or all if omitted |
 | `volume(level)` | master output level |
@@ -514,11 +534,18 @@ playability.
 
 ### 8.3 Synthesis
 
-Waveforms are generated, not sampled: square, triangle, saw, and noise, mixed to
-signed 16-bit mono. Voices sum with each note scaled by `vol / 7`.
+Waveforms are generated, not sampled, and mixed to signed 16-bit mono; voices
+sum with each note scaled by `vol / 7`. The eight shapes: square (50% duty),
+triangle, saw, LCG noise, pulse (⅓ duty), organ (triangle plus a quieter
+octave-up triangle), tilted saw (rise over ⅞ of the period, fall over ⅛), and
+phaser (two triangles, the second detuned to `freq × 127/128`, summed — a slow
+beat). These are engine-native shapes, deliberately *near* PICO-8's instruments
+rather than clones of them.
 
 Audio is explicitly **not** covered by pixel conformance. Two hosts will not produce
-bit-identical samples and are not required to.
+bit-identical samples and are not required to — but a host SHOULD implement the
+effect and multi-channel semantics of §8.1, since imported music depends on them
+musically.
 
 ---
 
