@@ -85,6 +85,16 @@ about 41 KB of Lua heap, so 192 KB is generous rather than tight.
 cannot conform — freeing it is the implementer's problem, and a "game mode" that
 suspends other subsystems for the duration is a perfectly good way to solve it.
 
+**The kind of RAM is not specified.** Internal SRAM, external PSRAM, or any mix
+qualifies — if `_update` and the drawing verbs hold the tick rate against it, it
+counts. That makes the floor trivial on PSRAM-equipped boards (most ESP32-class
+devices carry megabytes) and binding only for single-die parts: 400 KB deliberately
+excludes the smallest SRAM-only microcontrollers (§12.4). Placement is a quality
+concern, not a conformance one — the reference implementation keeps its framebuffer
+and assets in PSRAM and steers only the Lua VM's hot allocations to internal SRAM,
+after measuring an all-PSRAM heap at roughly 2× slower cart logic on one board's
+120 MHz octal bus. A cart can observe none of this.
+
 ---
 
 ## 2. Palette
@@ -694,8 +704,10 @@ more than 16 distinct colors within one sprite sheet, only in backgrounds and sh
 
 **12.4 — 400 KB is the memory floor.** Derived from the allocations in §1.1 with
 headroom, not negotiated, and not yet profiled against a running console. A host that
-can't free that while a cart runs can't run carts. **Cost:** it rules out the smallest
-boards, deliberately — a lower floor would mean a smaller screen or a smaller sheet,
+can't free that while a cart runs can't run carts. Since any RAM kind counts (§1.1),
+a board with external PSRAM clears it trivially; the floor only bites SRAM-only
+parts. **Cost:** it rules out the smallest of those, deliberately — a lower floor
+would mean a smaller screen, a smaller sheet or a smaller heap promise to carts,
 and those are worse trades.
 
 **12.5 — 512 tiles, but only 254 placeable on a map.** Keeping map cells at one byte

@@ -150,6 +150,14 @@ cart heap + 8 audio. The cart heap is the one soft number, sized from a measured
 **Not yet profiled against a running console** — it is derived, not measured. It is
 also the number most likely to be wrong in the direction of too generous.
 
+**PSRAM counts.** The floor is capacity the verbs can run against, not a demand for
+internal SRAM — the reference boards keep the framebuffer and assets in external
+PSRAM and steer only the Lua VM's hot allocations to SRAM (an all-PSRAM heap
+measured roughly 2× slower cart logic on one board's 120 MHz octal bus — a quality
+trade, invisible to carts). So the number only bites SRAM-only parts, which is
+exactly the boundary it is meant to draw: on anything with external RAM the real
+constraint is memory *bandwidth*, and that shows up as frame rate, not conformance.
+
 ## Audio — 4 channels, PICO-8-parity fidelity
 
 Music claims channels from the top and effects round-robin the rest, so a sound
