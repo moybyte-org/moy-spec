@@ -11,3 +11,7 @@ __pycache__/
 
 # `moy export` output bundles
 *-web/
+
+# The generated site (site/build.py). CI builds it from the canonical sources
+# on every push -- a checked-in copy could only ever be stale.
+_site/

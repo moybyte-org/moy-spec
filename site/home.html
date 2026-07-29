@@ -1,0 +1,60 @@
+<section class="hero">
+  <div class="hero-in">
+    <div class="hero-text">
+      <h1><span class="mark">{{WORDMARK_BIG}}</span><span class="v">moy</span>
+        <span class="ver">{{CORE}}<span class="v">core 0.1</span></span></h1>
+      <div class="lede">{{LEDE}}</div>
+      <div class="sub">{{SUB}}</div>
+      <p class="cta">
+        <a class="btn go" href="#play">Play a cart<span aria-hidden="true"> ▸</span></a>
+        <a class="btn" href="spec.html">Read the spec</a>
+        <a class="btn ghost" href="{{REPO}}">GitHub</a>
+      </p>
+      <div class="statusline">{{STATUS}}</div>
+    </div>
+    <aside class="facts-card" aria-label="The console at a glance">
+      <h2>The whole console</h2>
+      {{FACTS}}
+      <p class="more"><a href="spec.html">Every verb and value →</a></p>
+    </aside>
+  </div>
+  {{CHIPS}}
+</section>
+
+<section id="play" class="play">
+  <div class="play-in">
+    <h2>Play one, right here</h2>
+    <p class="note">This is <a href="{{CARTLINK}}"><code>{{CART}}</code></a> — the cart
+      that walks every core verb, one screen per group — running in the reference
+      player, the console compiled to WebAssembly. Same cart, same pixels, on a
+      handheld. <b>← →</b> (or the on-screen pad) switch screens.</p>
+    <div class="screen">
+      <iframe src="play/" title="The moy web player running examples/verbs.moy"
+              loading="lazy" allow="autoplay"></iframe>
+    </div>
+    <p class="hint">≈960 KB of player and cart, served from this page and nowhere
+      else. <a href="play/">Open it full screen ↗</a> — and
+      <code>python3 moy.py export</code> turns any cart into exactly this.</p>
+  </div>
+</section>
+
+<section class="glance">
+  <div class="glance-in">
+    <h2>The palette <small>— 64 entries; 0–15 are PICO-8's, byte-exact, so a
+      converted cart keeps its colours. The table is data, not prose:
+      <a href="palette.json">palette.json</a>.</small></h2>
+    {{PALETTE}}
+  </div>
+</section>
+
+<section class="cards-band">
+  <h2>The documents</h2>
+  <div class="cards">{{CARDS}}</div>
+</section>
+
+<div class="docpage solo">
+  <article class="doc readme">
+    {{README}}
+    {{EXTRA}}
+  </article>
+</div>

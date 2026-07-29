@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{TITLE}}</title>
+<meta name="description" content="{{DESC}}">
+<meta name="color-scheme" content="dark light">
+<meta property="og:title" content="{{TITLE}}">
+<meta property="og:description" content="{{DESC}}">
+<meta property="og:type" content="website">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="{{CLASS}}">
+<a class="skip" href="#main">Skip to content</a>
+<header class="top">
+  <a class="brand" href="index.html">{{WORDMARK}}<span class="v">moy</span><b>core 0.1</b></a>
+  <nav class="topnav" aria-label="Site">{{NAV}}</nav>
+</header>
+<main id="main">
+{{BODY}}
+</main>
+<footer class="foot">
+  <div class="cols">
+    <div>
+      <h2>The spec</h2>
+      <ul>
+        <li><a href="spec.html">SPEC.md</a> — the console</li>
+        <li><a href="rationale.html">RATIONALE.md</a> — why each value</li>
+        <li><a href="third-party.html">THIRD_PARTY.md</a> — attribution</li>
+      </ul>
+    </div>
+    <div>
+      <h2>Normative data</h2>
+      <ul>
+        <li><a href="palette.json">palette.json</a> — the 64 colours</li>
+        <li><a href="font.bin">font.bin</a> — the 8 × 8 console font</li>
+        <li><a href="runner-build.html">runner/BUILD.md</a> — the web player</li>
+      </ul>
+    </div>
+    <div>
+      <h2>Code</h2>
+      <ul>
+        <li><a href="{{REPO}}">moybyte-org/moy-spec</a> — this repository</li>
+        <li><a href="{{IMPL}}">moybyte</a> — the reference implementation</li>
+        <li><a href="{{REPO}}/issues">Issues</a> — where the arguments go</li>
+      </ul>
+    </div>
+  </div>
+  <p class="fine">The spec, this site and the compiled player are MIT-licensed.
+    Ported carts carry their originals' licenses — see
+    <a href="third-party.html">attribution</a>. Governance moves to a neutral home
+    once a second console passes conformance.</p>
+</footer>
+<script>
+(function () {
+  var d = document.getElementById("toc");
+  if (d) {
+    // Wide screens get the sidebar open; narrow ones a closed disclosure. With
+    // JS off it stays open everywhere, which is the harmless direction.
+    var mq = window.matchMedia("(min-width: 62rem)");
+    var set = function (e) { d.open = e.matches; };
+    set(mq);
+    if (mq.addEventListener) mq.addEventListener("change", set);
+    var links = {}, cur = null;
+    [].forEach.call(d.querySelectorAll("a[href^='#']"), function (a) {
+      links[a.getAttribute("href").slice(1)] = a;
+    });
+    if (window.IntersectionObserver) {
+      var io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (en) {
+          if (!en.isIntersecting) return;
+          var a = links[en.target.id];
+          if (!a || a === cur) return;
+          if (cur) cur.classList.remove("here");
+          a.classList.add("here");
+          cur = a;
+        });
+      }, { rootMargin: "0px 0px -75% 0px" });
+      [].forEach.call(document.querySelectorAll(".doc h2[id], .doc h3[id]"),
+        function (h) { io.observe(h); });
+    }
+  }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,72 @@
+# Build the site from the canonical sources and publish it to GitHub Pages.
+#
+# Nothing here is checked in: SPEC.md, RATIONALE.md, README.md, palette.json and
+# font.bin are rendered on every push, and the playable demo is exported fresh
+# from the vendored runner/ -- so the site cannot drift from the repository it
+# publishes, and a spec edit is a site deploy.
+#
+# The build is `python3 site/build.py`: standard library only, no package
+# installs, no node. It runs in about a second.
+
+name: site
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# What actions/deploy-pages requires: read the repo, write Pages, and mint the
+# OIDC token the deployment is authenticated with.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time; never cancel one in flight, or Pages can be left
+# holding a half-uploaded artifact.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build the site
+        run: python3 site/build.py --out _site
+
+      - name: Check what was built
+        run: |
+          set -eu
+          for f in index.html spec.html rationale.html third-party.html \
+                   style.css palette.json font.bin \
+                   play/index.html play/carts.json \
+                   play/micropython.mjs play/micropython.wasm; do
+            test -s "_site/$f" || { echo "missing or empty: $f"; exit 1; }
+          done
+          grep -q 'iframe src="play/"' _site/index.html
+          echo "site: $(du -sh _site | cut -f1)"
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
