@@ -1,5 +1,7 @@
 # moy
 
+https://moybyte-org.github.io/moy-spec/
+
 **A small game console that exists as a spec. The same cart — pixels, buttons,
 sound, a little saved state — plays on an ESP32 handheld, a PC simulator or a
 browser tab, and the spec is exact enough for those to render it pixel-identically.**
