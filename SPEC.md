@@ -70,7 +70,7 @@ runs:
 | allocation | size | note |
 |---|---|---|
 | Framebuffer | **75 KB** | 320 × 240 at one byte per index. A host rendering direct to RGB565 pays 150 KB instead — its choice, not the cart's |
-| Sprite sheet | **32 KB** | 256 × 128 pixels, one byte per pixel in RAM |
+| Sprite sheet | **32 KB** | 128 × 256 pixels, one byte per pixel in RAM |
 | Tilemap | **16 KB** | one byte per cell, up to 128 × 128 cells |
 | Cart heap | **192 KB** | the Lua VM and everything the cart allocates |
 | Audio | **8 KB** | bank plus mix buffer |
@@ -192,15 +192,22 @@ enclosing directory. Hosts SHOULD accept both.
 | `palette` | no | 64 RGB hex strings replacing the default table — see §2.2 |
 | `extensions` | no | optional features required — see §10 |
 
+A host MUST ignore manifest fields it does not recognise. Implementations hang
+vendor metadata there (the reference console records editor state in fields of its
+own), and future minor versions may add fields — neither may break an existing host.
+
 ### 3.2 sprites.moygfx
 
-PICO-8 `__gfx__` format, widened: one hex nibble per pixel, **256 characters per
-line, 128 lines**, forming a 256 × 128 pixel sheet. Tiles are 8 × 8, addressed
-row-major — tile `n` has its top-left at `((n % 32) * 8, (n // 32) * 8)`. **512 tiles.**
+PICO-8 `__gfx__` format, extended *downward*: one hex nibble per pixel, **128
+characters per line, up to 256 lines**, forming a 128 × 256 pixel sheet. Tiles are
+8 × 8, addressed row-major, sixteen per row — tile `n` has its top-left at
+`((n % 16) * 8, (n // 16) * 8)`. **512 tiles.** A file with fewer than 256 lines
+leaves the remaining tiles blank (all zeros); hosts MUST accept short sheets.
 
 Human-readable, diff-able, and character-for-character the format PICO-8 emits — a
-128 × 128 PICO-8 sheet drops into the left half of the top 16 rows, with tile ids
-remapping as `n → (n // 16) * 32 + (n % 16)`.
+128 × 128 PICO-8 sheet **is** the top half of a moy sheet, tile ids unchanged. The
+sheet grows down rather than sideways precisely so ids never remap: existing art
+and converted carts stay valid as the space doubles.
 
 Tiles **0–254** can be placed on the tilemap (§3.3); the full **0–511** range is
 available to `spr()`. The split is deliberate: level geometry rarely needs more than
@@ -327,7 +334,9 @@ There is no display-time palette (§12.1).
 
 `print` has no scale parameter; text is always 8px. The 8 × 8 font must be
 byte-identical across implementations or all text conformance fails — it ships as
-`font.bin` beside this spec.
+`font.bin` beside this spec: 96 glyphs covering ASCII `0x20`–`0x7F`, 8 bytes per
+glyph, one byte per **column** left to right, LSB = top row. Codepoints outside
+that range draw nothing and advance 8px like any glyph.
 
 ### 6.1 Batched fills and the 3D verbs — ⚑ TBD
 
@@ -380,14 +389,14 @@ column-shaped. Hence `rect_batch` for wide/boxy spans, `col_batch` for tall thin
 
 | verb | effect |
 |---|---|
-| `spr(n, x, y, colorkey, scale, flip, w, h)` | draw sheet tile `n` at `x, y` |
+| `spr(n, x, y, colorkey, scale, flip)` | draw sheet tile `n` at `x, y` |
 | `spr_batch(items, colorkey, scale)` | draw many 1 × 1 tiles in one call |
 | `sspr(sx, sy, sw, sh, dx, dy, dw, dh, colorkey, flip)` | stretch a sheet **pixel** region to `dw × dh` at `dx, dy` — ⚑ TBD, see §6.1 |
 
 `n` is a sheet tile, **0–511**. `colorkey` is the transparent palette index, `-1` for
 opaque (default). `scale` is an integer enlargement, default 1. `flip`: `0` none, `1`
-horizontal, `2` vertical, `3` both. `w, h` > 1 draws a multi-tile sprite anchored at
-`n` (`w=2, h=2` is 16 × 16).
+horizontal, `2` vertical, `3` both. A sprite larger than one tile is drawn as its
+tiles (adjacent `spr` calls, or one `spr_batch`).
 
 `sspr` addresses the sheet in **pixels, not tiles**, and its scale is arbitrary rather
 than integer.
@@ -449,6 +458,13 @@ window close — is the host's business, and the cart never sees it.
 |---|---|
 | `touch()` | `x, y, tapped, held` — nil when there is no pointer |
 | `key(code)` / `keyp(code)` | keyboard state, ASCII |
+| `textmode(on)` | switch the keyboard to text input (clean typeable ASCII, autorepeating delete) and back |
+
+`textmode` exists because a game keyboard and a typing keyboard want opposite
+semantics (held-key streaming vs. clean characters); hosts whose keyboard has only
+one mode implement it as a no-op. While a cart holds `textmode(true)` the host's
+own exit gesture may be unreachable (every key is text), so such a cart MUST offer
+its own exit via `quit()` (§9).
 
 A cart declares what it reads in the manifest's `"input"` list: any of `"buttons"`,
 `"touch"`, `"keyboard"`. Hosts use it to decide whether to draw soft controls, and to
@@ -569,7 +585,12 @@ musically.
 | `cfg(key, default)` | read a value from the cart's `config.json` |
 | `rnd(n)` | random float in `[0, n)`, default `n = 1.0` |
 | `flr(x)` | floor to integer |
+| `quit()` | end this cart; the host returns to wherever it was launched from |
 | `W`, `H` | canvas dimensions — read these, do not assume 320 × 240 |
+
+`quit()` does not replace the host-owned exit (§7.3) — the player can always leave
+a cart without it. It exists so a cart can end *itself* (a menu's EXIT entry, a
+game-over screen), and it is the required exit for a `textmode(true)` cart.
 
 `pmem` has **64 integer slots**, persisted per cart. Hosts MAY defer the write; they
 MUST persist before the cart exits.

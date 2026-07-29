@@ -56,7 +56,7 @@ constraint.
 `__gfx__` sheet, which is what makes the converter nearly free. The constraint is
 sixteen *at a time*, not sixteen specific colors, since the cart picks the table.
 
-## Sheet — 512 tiles, 256 × 128
+## Sheet — 512 tiles, 128 × 256
 
 254 is the map's addressing ceiling, and level geometry rarely needs more distinct
 tiles than that. But sprite and animation art does. So the sheet doubles past the
@@ -65,6 +65,13 @@ map's reach and the extra space goes where the pressure is.
 512 rather than 1024: 1024 tiles is 64 KB and 65,536 pixels of unique art for a screen
 that holds 76,800 — more distinct art than small games fill, and a sheet editor paging
 1024 tiles on a small screen is unpleasant to use.
+
+The sheet grows **down** (sixteen tiles per row, twice the rows) rather than sideways,
+because sideways renumbers every tile — id `n` moves to `(n // 16) * 32 + (n % 16)` —
+invalidating every existing sheet, every map and the whole converted PICO-8 catalogue
+in exchange for nothing. Downward, a 128-line sheet is simply the top half and every
+id keeps its pixels. Wider would have made multi-tile sprite neighbourhoods marginally
+more convenient; id stability is worth more.
 
 **Inherited from PICO-8 and then revised:** 256 was the original value, copied from a
 console with a 128 × 128 screen. At 320 × 240 that is six times the pixel area on the
@@ -90,7 +97,11 @@ buttons and each host maps its own hardware.
 `run` is optional because not every device has a third comfortable button.
 
 Exit is not in the set at all: it belongs to the host, so no cart has to spend a
-button on it and no host has to honour a cart's idea of quitting.
+button on it and no host has to honour a cart's idea of quitting. `quit()` is the
+complement, not a contradiction: the *player* can always leave without the cart's
+cooperation, and the *cart* can end itself (a menu's EXIT entry, a game-over
+screen) — and must, when it holds the keyboard in `textmode` and the host's
+gesture can't reach through the typed stream.
 
 **Touch and keyboard are optional but never required** because a cart requiring
 hardware half the devices lack fragments the catalogue on day one. That is the single
