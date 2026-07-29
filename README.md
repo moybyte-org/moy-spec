@@ -61,6 +61,28 @@ fetches Celeste Classic, ports it, and runs it in your browser. (PICO-8 BBS
 carts default to CC BY-NC-SA 4.0 — ports are personal/dev material with
 attribution, not something to republish.)
 
+A port runs 1:1 by default, because 128 × 128 has no integer scale that fits
+320 × 240 — 2× is 256 × 256, sixteen pixels too tall — so it sits in a
+letterbox. **`--zoom`** trades those rows for size: it crops four off the top
+and four off the bottom, and the port then *draws* at 2×, filling the height at
+256 × 240.
+
+```
+python3 moy.py port cart.p8 --zoom        # or: moy.py demo --zoom
+python3 moy.py port cart.p8 --zoom 0,8    # take all eight off the bottom
+```
+
+The scaling is done by the cart, inside its compat shim — it is not asked of
+the host — so a zoomed port looks the same on a handheld, a simulator and a
+browser tab, needing no extension and no hardware scaler. It costs four times
+the fill rate.
+
+Two things to know first. The crop is **lossy and per-cart**: a game drawing
+HUD at the very top or bottom loses it, which is what `T,B` is for — Celeste's
+summit timer sits at y=4, so it survives four rows off the top but not eight.
+And text does not scale, since §6 fixes `print` at 8px, so a zoomed port
+positions its text at scale while the glyphs stay 8 pixels.
+
 ## Why this exists
 
 Several people are building small handheld consoles on ESP32-class hardware, each
