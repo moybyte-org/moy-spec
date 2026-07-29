@@ -1,25 +1,9 @@
 {
-  "format": "moybyte-cart-v1",
-  "version": 1,
+  "format": "moy-1",
   "title": "Verbs",
-  "type": "game",
-  "runtime": "lua",
+  "version": 1,
   "main": "main.lua",
-  "canvas": {
-    "width": 320,
-    "height": 240,
-    "palette": "moy64"
-  },
-  "permissions": [
-    "graphics",
-    "input",
-    "audio"
-  ],
-  "input": [
-    "buttons",
-    "keyboard"
-  ],
-  "config": {
-    "spin": 40
-  }
+  "fps": 60,
+  "input": ["buttons", "keyboard", "touch"],
+  "extensions": ["layers"]
 }

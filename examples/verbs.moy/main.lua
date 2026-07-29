@@ -4,8 +4,9 @@
 -- is a worked example of its verbs), a smoke test for any new implementation
 -- (if every screen looks right, you're close), and the seed of the conformance
 -- suite (pin golden frames of these screens and "conformance" becomes a diff).
--- The last screen exercises SPEC.md section 6.1, which is DRAFT -- everything
--- before it is core 0.1.
+-- Screens 1-7 are core 0.1. Screen 8 is the `layers` STANDARD EXTENSION
+-- (declared in this cart's manifest -- a host without it refuses the cart,
+-- SPEC.md section 10). Screen 9 exercises SPEC.md section 6.1, which is DRAFT.
 
 local screen = 1
 local t = 0                       -- seconds since start (accumulated dt)
@@ -82,8 +83,7 @@ end
 local function s_text()
   cls(0)
   print("print() in the 8x8 system font", 20, 30, 7)
-  print("col(\"red\")=" .. col("red") .. "  col(\"sky\")=" .. col("sky"), 20, 44, 6)
-  for i = 0, 63 do                              -- the whole MOY64 palette
+  for i = 0, 63 do                              -- the whole default palette
     rect(24 + (i % 16) * 17, 70 + flr(i / 16) * 17, 15, 15, i)
   end
   print("the 64 palette entries", 24, 142, 6)
@@ -92,7 +92,7 @@ end
 -- 5 --------------------------------------------------------------- input ----
 local function s_input()
   cls(1)
-  local names = { "left", "right", "up", "down", "a", "b", "run", "home" }
+  local names = { "left", "right", "up", "down", "a", "b", "run" }
   for k, name in ipairs(names) do
     local x = 20 + ((k - 1) % 4) * 72
     local y = 40 + flr((k - 1) / 4) * 34
@@ -152,6 +152,7 @@ local function s_layer()
     end
   end
   draw_layer(lay, 160 + 160 * math.sin(t / 2), 0)   -- window-copy per frame
+  print("EXTENSION: layers (SPEC 10)", 20, 18, 9)
   print("make_layer(640,240) built once,", 20, 30, 7)
   print("draw_layer pans it every frame", 20, 42, 7)
 end
@@ -165,8 +166,8 @@ local function s_draft()
   local w = 24 + flr(20 * math.sin(t * 2))
   sspr(8, 0, 8, 8, 220, 80, w * 2, w * 2)       -- arbitrary stretch of tile 1
   print("tri/trib + sspr stretch", 60, 180, 6)
-  print("(rect_batch/col_batch/spans are", 20, 200, 5)
-  print("python-cart only until 6.1 lands)", 20, 212, 5)
+  print("(rect_batch/col_batch/spans have", 20, 200, 5)
+  print("no settled spec yet -- argue in 6.1)", 20, 212, 5)
 end
 
 local screens = {

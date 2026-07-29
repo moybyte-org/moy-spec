@@ -35,17 +35,16 @@ RUNNER = os.path.join(HERE, "runner")
 RUNNER_FILES = ("index.html", "micropython.mjs", "micropython.wasm")
 DEFAULT_PORT = 8323
 
+# The spec manifest (SPEC.md 3.1) -- brand-neutral, fields the spec defines.
+# fps 60 is an explicit opt-in (SPEC.md 5): a fresh scaffold trivially sustains
+# it, and hosts that can't fall back to the guaranteed 30.
 MANIFEST = {
-    "format": "moybyte-cart-v1",
-    "version": 1,
+    "format": "moy-1",
     "title": None,                    # filled from the name
-    "type": "game",
-    "runtime": "lua",
+    "version": 1,
     "main": "main.lua",
-    "canvas": {"width": 320, "height": 240, "palette": "moy64"},
-    "permissions": ["graphics", "input"],
+    "fps": 60,
     "input": ["buttons"],
-    "config": {},
 }
 
 MAIN_LUA = """\
@@ -76,7 +75,7 @@ function _draw()
   circ(x, y, 8, 8)
   circb(x, y, 8, 7)
   print("{title}", 8, 8, 7)
-  print("arrows move - hold backspace exits", 8, 228, 6)
+  print("arrows move", 8, 228, 6)
 end
 """
 

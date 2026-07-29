@@ -8,3 +8,6 @@ celeste.moy/
 __pycache__/
 .idea/
 .vscode/
+
+# `moy export` output bundles
+*-web/

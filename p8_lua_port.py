@@ -539,19 +539,16 @@ def data_tables_lua(sections):
 
 
 def build_manifest(title):
+    # The spec manifest (SPEC.md 3.1). fps 30 because that IS PICO-8's rate --
+    # the shim paces the p8 lifecycle at a fixed 1/30 dt. "ported_from" is an
+    # unrecognised field; the spec requires hosts to ignore it (3.1).
     return {
-        "format": "moybyte-cart-v1",
-        "version": 1,
+        "format": "moy-1",
         "title": title,
-        "type": "game",
-        "runtime": "lua",
+        "version": 1,
         "main": "main.lua",
         "fps": 30,
-        "canvas": {"width": 320, "height": 240, "palette": "moy64"},
-        "permissions": ["graphics", "input", "audio"],
         "input": ["buttons"],
-        "config": {},
-        "edit": [],
         "ported_from": "pico-8",
     }
 
