@@ -138,8 +138,8 @@ some game structures want it.
 
 Integers wrap at ±2.1 billion, floats carry ~7 digits. This puts float math on the
 hardware FPU of typical target silicon and halves the size of every value in the VM,
-which matters for cache behaviour on small hardware. Kid-scale games — scores, timers,
-positions — do not need more.
+which matters for cache behaviour on small hardware. What games at this scale actually
+count — scores, timers, positions — does not need more.
 
 ## Memory — 400 KB
 
@@ -187,12 +187,27 @@ PICO-8's `cartdata` size, and enough for high scores, progress flags and unlocks
 the things a small game persists. A cart wanting more is probably wanting a filesystem,
 which §0 puts out of scope on purpose.
 
-## `spr_batch`
+## `spr_batch` — why it *left* core
 
-Not a drawing feature — a **dispatch** one. On an interpreted host, crossing the
-language boundary dominates small draws, so one call doing N sprites is worth a
-dedicated verb. Semantically identical to a loop; a compiled host may implement it as
-exactly that and lose nothing.
+It was core in an earlier draft, on this reasoning: not a drawing feature but a
+**dispatch** one, since on an interpreted host crossing the language boundary
+dominates small draws, so one call doing N sprites earns a dedicated verb.
+
+That reasoning was checked against the reference console and did not survive. The
+Lua binding for `spr` appends each sprite's quad straight into the native batch
+array, breaking the run only when the colorkey or scale changes or the queue fills —
+so an ordinary `for` loop of `spr` calls never crosses the language boundary at all,
+and compiles to exactly the one batched call `spr_batch` would have made. The verb
+was buying a saving the runtime already provided.
+
+Two things confirmed it was dead weight rather than merely redundant: no cart written
+in the spec's own language ever called it (the one caller was written in another
+language entirely), and its Lua binding was in fact broken — nothing had exercised it.
+
+So it moved to §6.1 with the other dispatch verbs, where the open question is now
+whether *any* of them are needed. A batching win the engine can find for itself is
+the engine's job, and a verb that exists to hand-roll one is a cost passed to every
+cart author and every implementer for nothing.
 
 ## `config.json`
 

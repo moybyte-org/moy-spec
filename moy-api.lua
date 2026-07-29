@@ -8,10 +8,13 @@
 -- Every verb below is CORE (runs on any conforming console) unless marked:
 --   EXTENSION: <name> -- standard extension (SPEC.md 10); declare it in your
 --                        manifest's "extensions" or hosts may lack it
---   DRAFT 6.1         -- provisional (SPEC.md 6.1): exists in the reference
---                        player, names/signatures still moving, NOT core 0.1
---   VENDOR            -- reference-console feature, no spec; a cart using it
---                        is non-portable by construction
+--   DRAFT 6.1         -- provisional (SPEC.md 6.1): names/signatures still
+--                        moving, NOT core 0.1, may be dropped entirely
+--
+-- Only core and the standard extensions are listed. A console may offer more
+-- (the reference one does: a pointer verb, palette colour names, painted-image
+-- and spreadsheet/document assets); those belong to that console, so they are
+-- deliberately absent here -- a cart calling them is non-portable.
 --
 -- Screen: 320x240, palette-indexed (64 colours, indices 0-63; 0-15 are the
 -- classic base 16). Sheet: 512 8x8 tiles (16 per row). Origin top-left,
@@ -104,16 +107,7 @@ function trib(x1, y1, x2, y2, x3, y3, c) end
 ---@param c? integer colour override for every rect (-1 = per-rect)
 function rect_batch(items, n, ox, oy, c) end
 
----rect_batch told as COLUMNS: same pixels, the console walks memory
----column-wise -- use for tall thin spans (raycaster walls). DRAFT 6.1.
----@param items number[]|userdata
----@param n? integer
----@param ox? integer
----@param oy? integer
----@param c? integer
-function col_batch(items, n, ox, oy, c) end
-
----A reusable int16 buffer for rect_batch/col_batch: n*5 slots (x,y,w,h,c per
+---A reusable int16 buffer for rect_batch: n*5 slots (x,y,w,h,c per
 ---span). Allocate ONCE in _init, refill by index each frame. DRAFT 6.1.
 ---@param n integer span capacity
 ---@return userdata
@@ -131,6 +125,8 @@ function spans(n) end
 function spr(n, x, y, colorkey, scale, flip) end
 
 ---Draw MANY sheet tiles in one call: items = {{tile,x,y}, {tile,x,y,flip}, ...}.
+---DRAFT 6.1. You almost certainly want a plain `for` loop of spr() instead --
+---the console already batches those natively, so the loop costs the same.
 ---@param items table
 ---@param colorkey? integer
 ---@param scale? integer
@@ -205,13 +201,6 @@ function pal(c0, c1) end
 ---@param on? boolean
 function palt(c, on) end
 
----Resolve a colour name ("red", "sky", ...) or index to a palette index.
----VENDOR: names describe the DEFAULT table only (a cart-supplied palette
----renames every slot), so this stays out of the spec -- use plain indices.
----@param name_or_index string|integer
----@return integer
-function col(name_or_index) end
-
 -- --- input ------------------------------------------------------------------
 
 ---Is a button held this frame? Names: "left" "right" "up" "down" "a" "b",
@@ -234,11 +223,6 @@ function players() end
 ---Touch state: x, y, tapped (press edge), held -- or nil without a pointer.
 ---@return integer? x, integer? y, boolean? tapped, boolean? held
 function touch() end
-
----Mouse state, TIC-80-shaped: x, y, left, middle, right, scrollx, scrolly.
----VENDOR: use touch() for portable pointer input.
----@return integer x, integer y, boolean left, boolean middle, boolean right, integer sx, integer sy
-function mouse() end
 
 ---Last typed key's ASCII code (0 = none), or test a specific code:
 ---key(string.byte("a")).
@@ -332,7 +316,7 @@ function volume(level) end
 ---@field H integer
 local MoyLayer = {}
 ---Draw into the layer with the same verbs (l:spr(...), l:cls(...)).
----@param img integer|MoyImage tile id or image handle
+---@param img integer tile id
 ---@param x? integer
 ---@param y? integer
 ---@param colorkey? integer
@@ -361,26 +345,3 @@ function draw_layer(layer, cam_x, cam_y) end
 ---colour index, or a layer to pin behind everything. EXTENSION: layers.
 ---@param x integer|MoyLayer
 function background(x) end
-
----@class MoyImage
-local MoyImage = {}
-
----The cart's painted image asset images/<name>.moyimg as a drawable handle
----(place with a layer's l:spr(img, x, y)), or nil if absent. VENDOR.
----@param name string
----@return MoyImage?
-function image(name) end
-
--- --- data interop ------------------------------------------------------------
-
----Rows of the cart's tables/<name>.moysheet (numbers as numbers, text as
----strings, blank cells ""). Missing -> {}. NB: `table` stays Lua's table
----library; this verb rides it as a call: table("scores"). VENDOR.
----@param name string
----@return table
----@overload fun(name: string): table
-
----Lines of the cart's docs/<name>.moytext. Missing -> {}. VENDOR.
----@param name string
----@return string[]
-function text(name) end

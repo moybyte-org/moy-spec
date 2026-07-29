@@ -166,8 +166,8 @@ local function s_draft()
   local w = 24 + flr(20 * math.sin(t * 2))
   sspr(8, 0, 8, 8, 220, 80, w * 2, w * 2)       -- arbitrary stretch of tile 1
   print("tri/trib + sspr stretch", 60, 180, 6)
-  print("(rect_batch/col_batch/spans have", 20, 200, 5)
-  print("no settled spec yet -- argue in 6.1)", 20, 212, 5)
+  print("(spr_batch/rect_batch/spans live", 20, 200, 5)
+  print("here too; col_batch is unbuilt)", 20, 212, 5)
 end
 
 local screens = {

@@ -172,8 +172,10 @@ mygame.moy/
   config.json        optional — author-exposed tuning values
 ```
 
-A cart MAY also be distributed as a single `.moy` file: a zip of that folder with no
-enclosing directory. Hosts SHOULD accept both.
+That folder is the whole format. How the folder *travels* — a zip, a tarball, a
+git clone, a directory on an SD card — is packaging, and this spec says nothing
+about it for the same reason it says nothing about filesystems (§0). A host that
+wants to accept an archive unpacks it and hands the console a folder.
 
 ### 3.1 manifest.json
 
@@ -206,6 +208,10 @@ A host MUST ignore manifest fields it does not recognise. Implementations hang
 vendor metadata there (the reference console records editor state in fields of its
 own), and future minor versions may add fields — neither may break an existing host.
 
+One such field is worth naming because the converter writes it: **`"ported_from"`**,
+a short string identifying the cart's source format (`"pico-8"`). Purely
+informational — a host may show it, and ignoring it costs nothing.
+
 ### 3.2 sprites.moygfx
 
 PICO-8 `__gfx__` format, extended *downward*: one hex nibble per pixel, **128
@@ -233,6 +239,11 @@ big-endian pair, mirroring the sheet's format.
 Each byte stores **`tile_id + 1`**, so `00` is an empty cell and an all-zero map is
 genuinely blank. Tile ids therefore run **0–254**; sheet tile 255 cannot be placed on
 a map.
+
+`w` and `h` are each at most **128**, so the largest map is 128 × 128 cells =
+16 KB — the allocation §1.1 requires a host to reserve. A host MUST reject a map
+declaring larger dimensions rather than allocating past its budget. (For scale:
+PICO-8's map is 128 × 64, so a converted cart fits with room.)
 
 ```
 15 15
@@ -289,8 +300,8 @@ floats are 32-bit and carry about 7 significant digits. This puts float math on 
 hardware FPU of typical target silicon and halves the size of every value in the VM.
 
 A cart must not depend on more precision than that. A host built with 64-bit doubles
-still conforms — it is strictly more precise — but golden-frame parity for
-float-heavy carts is then only guaranteed against other 64-bit hosts.
+still conforms — it is strictly more precise — but it may drift from the golden
+frames on float-heavy carts, since those are captured from a 32-bit build (§11).
 
 ### 4.3 Errors
 
@@ -348,26 +359,38 @@ byte-identical across implementations or all text conformance fails — it ships
 glyph, one byte per **column** left to right, LSB = top row. Codepoints outside
 that range draw nothing and advance 8px like any glyph.
 
-### 6.1 Batched fills and the 3D verbs — ⚑ TBD
-
-> **This subsection is unsettled and is NOT part of 0.1.** These verbs exist in the
-> reference implementation and are being measured on hardware; their names,
-> signatures and membership are all still moving. They are written down so the shape
-> can be argued about, not so anyone implements them yet.
-
-**`rect_batch(items)`** — many filled rectangles in one call. `items` is a **flat**
-sequence of `x, y, w, h, c` quints (flat, not a list of tuples: one allocation instead
-of N, which is what makes a few-hundred-span frame affordable from a script).
-
 `font.bin` is MicroPython's `font_petme128_8x8`, MIT-licensed — shipping the
 glyph data means shipping that notice. See `THIRD_PARTY.md`.
 
-Like `spr_batch` (§7.1) this is a dispatch verb rather than a drawing feature — but it
-is the one that makes software 3D viable at all. A raycaster's frame is a few hundred
-narrow vertical spans; issuing those one call at a time from a script is what makes
-raycasting impossible on an interpreted host rather than merely slow.
+### 6.1 Batched fills and the 3D verbs — ⚑ TBD
 
-**`col_batch(items)`** — the same batch, the same pixels, declared as *columns*.
+> **This subsection is unsettled and is NOT part of 0.1.** Names, signatures and
+> membership are all still moving, and one of the verbs below has never been built
+> at all. They are written down so the shape can be argued about, not so anyone
+> implements them yet. Where a verb is implemented, this section gives its real
+> current signature rather than an idealised one.
+
+**`rect_batch(items, n, ox, oy, c)`** — many filled rectangles in one call.
+`items` is a **flat** sequence of `x, y, w, h, c` quints (flat, not a list of
+tuples: one allocation instead of N, which is what makes a few-hundred-span frame
+affordable from a script). `n` is how many quints to read, `-1` for all; `ox, oy`
+offset every rect; `c` overrides every rect's color, `-1` to use each quint's own.
+
+**`spans(n)`** — a reusable buffer of `n * 5` slots to fill and hand to
+`rect_batch`, so a per-frame batch costs no allocation at all. Its existence is
+the tell that this group is about dispatch and memory traffic rather than drawing.
+
+These are dispatch verbs rather than drawing features — but they are the ones that
+make software 3D viable at all. A raycaster's frame is a few hundred narrow vertical
+spans; issuing those one call at a time from a script is what makes raycasting
+impossible on an interpreted host rather than merely slow.
+
+**`spr_batch(items, colorkey, scale)`** — many 1 × 1 tiles in one call. `items` is a
+sequence of `{tile, x, y}` or `{tile, x, y, flip}`. Semantically identical to calling
+`spr` in a loop, and a host may implement it as exactly that.
+
+**`col_batch(items, ...)`** — the same batch, the same pixels, declared as
+*columns*. **Not implemented anywhere; this is a proposal, not a description.**
 
 The reason it might need to exist: on reference hardware, tall narrow spans measured
 ~4× the per-pixel cost of wide ones (~300ns/px against ~74ns/px), and that gap
@@ -380,9 +403,20 @@ column-shaped. Hence `rect_batch` for wide/boxy spans, `col_batch` for tall thin
 
 **What is unresolved:**
 
+0. **Whether the dispatch verbs are needed at all.** `spr_batch` was in core 0.1 and
+   was moved here, because on the reference console the argument for it turned out
+   not to hold: its Lua binding appends sprite quads into the native batch array
+   directly, breaking the run only on a state change, so an ordinary `spr` loop
+   already compiles to the one batched call `spr_batch` would have produced. It never
+   crosses the language boundary the verb exists to avoid. If that is true of any
+   competently-bridged host, the whole family is an optimisation the *engine* owes
+   the cart rather than a verb the cart owes the engine — and the same question
+   should be asked of `rect_batch` before it is promoted.
+
 1. **Whether `col_batch` earns its place.** The ~4× cost is measured; whether
-   row-major iteration recovers it is not. If it doesn't, delete the verb and accept
-   the stride cost as a hardware fact.
+   row-major iteration recovers it is not — and nothing has been built to find out,
+   which is why the verb has no implementation. If it doesn't recover, delete the
+   verb and accept the stride cost as a hardware fact.
 2. **Whether the split should exist at all.** One verb with a shape hint, or an engine
    that infers shape from the spans, may beat two names.
 3. **`sspr` has no kernel.** Per-destination-pixel from a script is unusably slow, and
@@ -403,23 +437,19 @@ column-shaped. Hence `rect_batch` for wide/boxy spans, `col_batch` for tall thin
 | verb | effect |
 |---|---|
 | `spr(n, x, y, colorkey, scale, flip)` | draw sheet tile `n` at `x, y` |
-| `spr_batch(items, colorkey, scale)` | draw many 1 × 1 tiles in one call |
+| `spr_batch(items, colorkey, scale)` | draw many 1 × 1 tiles in one call — ⚑ TBD, see §6.1 |
 | `sspr(sx, sy, sw, sh, dx, dy, dw, dh, colorkey, flip)` | stretch a sheet **pixel** region to `dw × dh` at `dx, dy` — ⚑ TBD, see §6.1 |
 
 `n` is a sheet tile, **0–511**. `colorkey` is the transparent palette index, `-1` for
 opaque (default). `scale` is an integer enlargement, default 1. `flip`: `0` none, `1`
 horizontal, `2` vertical, `3` both. A sprite larger than one tile is drawn as its
-tiles (adjacent `spr` calls, or one `spr_batch`).
+tiles — adjacent `spr` calls.
 
 `sspr` addresses the sheet in **pixels, not tiles**, and its scale is arbitrary rather
 than integer.
 
-`spr_batch` is **purely a performance verb**. It is semantically identical to calling
-`spr` in a loop, and a host may implement it as exactly that. It exists because on an
-interpreted host, per-call dispatch — not fill rate — is the measured frame
-bottleneck, so collapsing N sprite calls into one crossing of the language boundary is
-worth a dedicated entry point. A compiled host can ignore the distinction entirely.
-`items` is a sequence of `{tile, x, y}` or `{tile, x, y, flip}`.
+**Drawing sprites needs only `spr`.** Many tiles is a plain loop over it; `spr_batch`
+is a dispatch shortcut for that loop and is provisional (§6.1), not core 0.1.
 
 ### 7.2 Map
 
@@ -470,7 +500,8 @@ window close — is the host's business, and the cart never sees it.
 | verb | returns |
 |---|---|
 | `touch()` | `x, y, tapped, held` — nil when there is no pointer |
-| `key(code)` / `keyp(code)` | keyboard state, ASCII |
+| `key(code)` / `keyp(code)` | is that ASCII code held / pressed this frame |
+| `key()` / `keyp()` | with no argument: the last typed ASCII code, `0` for none |
 | `textmode(on)` | switch the keyboard to text input (clean typeable ASCII, autorepeating delete) and back |
 
 `textmode` exists because a game keyboard and a typing keyboard want opposite
@@ -479,9 +510,11 @@ one mode implement it as a no-op. While a cart holds `textmode(true)` the host's
 own exit gesture may be unreachable (every key is text), so such a cart MUST offer
 its own exit via `quit()` (§9).
 
-A cart declares what it reads in the manifest's `"input"` list: any of `"buttons"`,
+A cart declares what it *uses* in the manifest's `"input"` list: any of `"buttons"`,
 `"touch"`, `"keyboard"`. Hosts use it to decide whether to draw soft controls, and to
-warn before running a cart needing hardware they lack.
+tell a player up front which enhancements this device won't provide. It is never a
+requirement — a cart that lists `"touch"` still plays on a device without one, by the
+rule below.
 
 **A cart MUST be playable with buttons alone.** Touch and keyboard are enhancements. A
 cart that cannot be played on a six-button device is not a conforming cart — without
@@ -629,6 +662,13 @@ format, a windowing shell. Those MUST be namespaced by the implementation
 standard extension, and a cart using one is non-portable by construction. That is a
 legitimate trade an author makes deliberately, not an accident the format allows.
 
+**The namespace is on the extension's name, not on its verbs.** `"extensions":
+["moybyte.tables"]` may perfectly well grant a global called `table()`. Lua globals
+have no namespaces, and requiring `moybyte.table()` at the call site would make the
+cart's code — rather than its manifest — the place portability is declared. The
+manifest is the honest place: one line says what this cart needs, and a host can
+refuse it before a single frame runs.
+
 ### `layers`
 
 Off-screen buffers for scrolling worlds — draw a wide level once, window-copy it each
@@ -667,13 +707,17 @@ An implementation conforms when it runs the conformance suite and produces
 
 The suite is a set of carts, each exercising one area — primitives, sprite flips and
 scales, clip and camera interaction, palette remaps, text, map blits, input edges —
-plus golden frames captured from the reference implementation. A runner diffs your
-output frame by frame.
+plus golden frames. A runner diffs your output frame by frame.
 
-Golden frames are generated by the reference simulator, which is the tiebreaker for
-any disagreement between this document and observed behaviour. Where they conflict,
-**the spec text is wrong and gets fixed** — but implementations are tested against the
-simulator.
+**The golden frames are generated by the WebAssembly player** (`runner/`), which is
+therefore the tiebreaker for any disagreement between this document and observed
+behaviour. Where the two conflict, **the spec text is wrong and gets fixed** — but
+implementations are tested against the player.
+
+The player is the reference precisely because it is the build that follows §4.2: its
+Lua is compiled `LUA_32BITS`, like the hardware consoles. A host may render the suite
+through any tooling it likes, but frames captured from a 64-bit-Lua build are not
+golden — float-heavy carts will drift from them in the last digits (§4.2).
 
 Conformance also tests the §4.1 sandbox ceiling: a cart that reaches `io` must fail on
 every conforming host. Audio is excluded (§8.3), and so is everything in §6.1 until it
@@ -686,26 +730,34 @@ leaves TBD.
 Everything outside §6.1 is decided. These are the ones where a reasonable person would
 decide differently, recorded with reasoning so the argument can be specific.
 
-**12.1 — No display-time palette.** PICO-8 has two palettes: draw-time remap, and a
+### 12.1 — No display-time palette.
+
+PICO-8 has two palettes: draw-time remap, and a
 screen palette applied at flush. This spec has only the first. The second doubles the
 palette state every primitive must consult and mainly buys full-screen flash effects,
 which a cart can do by other means. **Cost:** converted PICO-8 carts using
 screen-palette tricks need the converter to rewrite them, and some can't be. This is
 the most likely thing to get added in 0.2.
 
-**12.2 — `btnp` has no autorepeat.** PICO-8 repeats a held button after ~15 frames at
+### 12.2 — `btnp` has no autorepeat.
+
+PICO-8 repeats a held button after ~15 frames at
 ~4-frame intervals. This spec fires once per press. Autorepeat in the console means
 every host must match the rate exactly or menus feel different everywhere; a cart that
 wants it can write four lines. **Cost:** converted PICO-8 carts relying on repeat for
 menu navigation feel wrong until the converter injects a shim.
 
-**12.3 — Sprites are 16 colors, primitives are 64.** One hex nibble per pixel is
+### 12.3 — Sprites are 16 colors, primitives are 64.
+
+One hex nibble per pixel is
 PICO-8's sheet format exactly, and that compatibility is what makes converting the
 existing back catalogue nearly free. Cart-supplied palettes (§2.2) mean the constraint
 is *sixteen at a time*, not sixteen specific colors. **Cost:** an artist cannot use
 more than 16 distinct colors within one sprite sheet, only in backgrounds and shapes.
 
-**12.4 — 400 KB is the memory floor.** Derived from the allocations in §1.1 with
+### 12.4 — 400 KB is the memory floor.
+
+Derived from the allocations in §1.1 with
 headroom, not negotiated, and not yet profiled against a running console. A host that
 can't free that while a cart runs can't run carts. Since any RAM kind counts (§1.1),
 a board with external PSRAM clears it trivially; the floor only bites SRAM-only
@@ -713,13 +765,17 @@ parts. **Cost:** it rules out the smallest of those, deliberately — a lower fl
 would mean a smaller screen, a smaller sheet or a smaller heap promise to carts,
 and those are worse trades.
 
-**12.5 — 512 tiles, but only 254 placeable on a map.** Keeping map cells at one byte
+### 12.5 — 512 tiles, but only 254 placeable on a map.
+
+Keeping map cells at one byte
 (storing `tile_id + 1`, so a zeroed map is blank) is worth more than a uniform
 addressing range: maps stay half the size and stay readable. The sheet grows where the
 real pressure is, which is sprite and animation art. **Cost:** a boundary an author has
 to learn — `spr` reaches tiles the map editor can't place.
 
-**12.6 — No direct framebuffer access.** TIC-80 exposes raw VRAM, which makes any
+### 12.6 — No direct framebuffer access.
+
+TIC-80 exposes raw VRAM, which makes any
 effect possible and makes the pixel format part of the cart contract — a cart then
 writes to *that* framebuffer rather than *a* framebuffer, and hosts lose the freedom to
 render at a different depth, scale or byte order. This spec keeps the canvas opaque and
