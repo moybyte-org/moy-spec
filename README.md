@@ -10,6 +10,8 @@ per-device binary.
 
 - **[SPEC.md](SPEC.md)** — the console: raster, palette, verb table, cart format
 - **[RATIONALE.md](RATIONALE.md)** — why each number is what it is
+- **[THIRD_PARTY.md](THIRD_PARTY.md)** — attribution that travels with the
+  normative data files (the console font is MicroPython's, MIT)
 
 Status: **draft 0.1, unstable.** Names and values will move. §6.1 (batched fills and
 the 3D verbs) is explicitly unsettled and is not part of 0.1.

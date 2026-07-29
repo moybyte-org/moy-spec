@@ -359,6 +359,9 @@ that range draw nothing and advance 8px like any glyph.
 sequence of `x, y, w, h, c` quints (flat, not a list of tuples: one allocation instead
 of N, which is what makes a few-hundred-span frame affordable from a script).
 
+`font.bin` is MicroPython's `font_petme128_8x8`, MIT-licensed — shipping the
+glyph data means shipping that notice. See `THIRD_PARTY.md`.
+
 Like `spr_batch` (§7.1) this is a dispatch verb rather than a drawing feature — but it
 is the one that makes software 3D viable at all. A raycaster's frame is a few hundred
 narrow vertical spans; issuing those one call at a time from a script is what makes
