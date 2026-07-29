@@ -203,10 +203,22 @@ wants to accept an archive unpacks it and hands the console a folder.
 | `input` | no | input groups the cart reads — see §7.3 |
 | `palette` | no | 64 RGB hex strings replacing the default table — see §2.2 |
 | `extensions` | no | optional features required — see §10 |
+| `runtime` | no | which language binding `main` is written in, default `"lua"` — see §15 |
+| `icon` | no | sheet tiles to show this cart by in a list — see §3.4 |
 
 A host MUST ignore manifest fields it does not recognise. Implementations hang
 vendor metadata there (the reference console records editor state in fields of its
 own), and future minor versions may add fields — neither may break an existing host.
+
+**`runtime` is the one exception, and it is refused rather than ignored.** Lua is
+core's only binding, so `"runtime"` absent or `"lua"` is the portable case and every
+conforming host runs it. A host that does not implement the named binding MUST
+refuse the cart cleanly, exactly as it refuses an unimplemented extension (§10) —
+never ignore the field and try to execute `main` anyway. Ignoring it is the one
+reading that fails badly: the host would hand a script in another language to its
+Lua VM and report a syntax error in the author's code, rather than the truth, which
+is that this console cannot run this cart. A cart declaring any other `runtime` is
+non-portable by construction, the same trade a vendor extension makes.
 
 One such field is worth naming because the converter writes it: **`"ported_from"`**,
 a short string identifying the cart's source format (`"pico-8"`). Purely
@@ -251,6 +263,47 @@ PICO-8's map is 128 × 64, so a converted cart fits with room.)
 000a0a0009090000000909000a0a00
 ...
 ```
+
+### 3.4 How a cart looks in a list
+
+A host that shows carts — a launcher, a shelf, a picker — needs something to draw
+for each one. The manifest's `"icon"` names sheet tiles the cart already contains:
+
+```json
+"icon": [4, 2, 2]
+```
+
+`[tile, w, h]` — the `w × h` block of 8 × 8 tiles whose top-left is `tile`, laid out
+on the sheet exactly as §3.2 addresses it. A bare integer means `1 × 1`. Absent, the
+host draws whatever it likes; a cart is never *required* to have one and no host is
+required to honour it.
+
+**`w` and `h` are each 1 to 4** — 8 × 8 up to 32 × 32 pixels. The bound is what makes
+the field safe to honour: a launcher decodes *many* icons at once, and an unbounded
+block would let one cart name the whole 128 × 256 sheet, turning a grid of thirty
+carts into megabytes a host never budgeted for (§1.1). At the ceiling, thirty icons
+are 30 KB. Anything larger is asking for cover art, which §12.7 defers on purpose.
+
+An icon outside that range, or naming tiles past the sheet, is **ignored** — the host
+falls back to choosing for itself. It is not refused: a cart with a bad icon is still
+a perfectly good cart, and unlike `extensions` (§10) or `runtime` (§15) nothing about
+running it is wrong. Cosmetic fields degrade; capability fields refuse.
+
+How large the icon is *drawn* is the host's business, like everything else about a
+shelf. Hosts SHOULD preserve its aspect ratio and SHOULD scale by integer factors, for
+the same reason §1 recommends it for the raster.
+
+This costs no new file, no new codec, no colour rules beyond the sheet's, and no
+reserved tiles — the author points at art already drawn. It is a **pointer, not an
+image**, which is the whole reason it can sit in core.
+
+It is deliberately explicit rather than a convention like "hosts use tile 0". Tile 0
+is blank by convention across the entire PICO-8 catalogue — that convention is why
+map cell `00` means empty (§3.3) — so a rule resolving to tile 0 would render nothing
+for every converted cart. A field that must be named cannot be silently wrong.
+
+Cover art — the large, authored, promotional image a store would show — is
+deliberately **not** here. See §12.7.
 
 ---
 
@@ -638,8 +691,11 @@ musically.
 a cart without it. It exists so a cart can end *itself* (a menu's EXIT entry, a
 game-over screen), and it is the required exit for a `textmode(true)` cart.
 
-`pmem` has **64 integer slots**, persisted per cart. Hosts MAY defer the write; they
-MUST persist before the cart exits.
+`pmem` has **256 slots**, each holding one **signed 32-bit integer** (−2 147 483 648
+to 2 147 483 647), persisted per cart. That is exactly what §4.2 makes a Lua integer,
+which is where every stored value comes from and returns to — a wider slot would
+accept numbers the cart could not read back. Hosts MAY defer the write; they MUST
+persist before the cart exits.
 
 `config.json` is a flat map of values a person can edit without touching code — the
 cart's own tuning surface, not a system feature.
@@ -783,6 +839,40 @@ covers the cases raw access was wanted for with shaped verbs instead (§6.1).
 **Cost:** effects whose *logic* is genuinely per-pixel — plasma, fire, tunnels — cannot
 be written as carts. That is the deliberate boundary.
 
+### 12.7 — Cover art is deferred, and the icon is a pointer.
+
+PICO-8 ships a `__label__`: a 128 × 128 authored image, captured from the screen with
+a keystroke, in the same hex-nibble format as its sprite sheet. It is tempting to copy
+and it is not the same problem. That label exists because a PICO-8 cart **is** a PNG —
+the label is the picture of the cartridge you distribute. A moy cart is a folder, so
+the medium that forced the feature isn't there.
+
+Underneath the one word "thumbnail" are two requirements with opposite costs. An
+**icon** must exist for every cart or lists have holes in them; §3.4 answers that for
+the price of one optional manifest field. A **cover** is optional, promotional, and
+only pays for itself once there is a catalogue to browse — and every way to spec one
+today is a bad trade. Hex nibbles are free on the parser but 16 colors and
+uncompressed: a full-screen image is 75 KB of text against a 400 KB memory floor
+(§12.4). An indexed-plus-RLE format means every implementer writes a second codec.
+PNG means a zlib decoder on a microcontroller, in a format whose data files are
+otherwise all readable text.
+
+So: no cover in 0.1. §14 says this document moves to a neutral home once a second
+implementation passes conformance, and an image format is exactly what should be
+settled *with* that implementer rather than guessed at alone. Until then it belongs
+in an extension.
+
+**Also ruled out, permanently:** a host-captured screenshot as a format feature. A
+host can already run a cart, grab a frame and cache it — that needs no spec at all, so
+it must not be in one. It is also the wrong artefact: an automatic frame is arbitrary,
+and the reason PICO-8 binds label capture to a keystroke is that the author should
+choose how their game is represented.
+
+**Cost:** a store built on moy 0.1 has only 8 × 8 tile art to lay out, which will look
+sparse next to a storefront with key art. That is the right way round — a missing
+cover is a design problem later, a wrong image format is a compatibility problem
+forever.
+
 ---
 
 ## 13. Versioning
@@ -803,7 +893,8 @@ asked to adopt anyone's code.
 The verb table above is the contract; Lua is the **first binding of it**, not its
 definition. A second binding (a `"runtime"` field in the manifest, as the reference
 implementation already does for its dual runtimes) can be added without a second
-document.
+document. What a host owes a binding it does not implement is settled in §3.1: a
+clean refusal, never an attempt to run the script anyway.
 
 WebAssembly is the obvious candidate and has been measured on reference hardware:
 **interpreted WASM runs at ~1.09× Lua** — not worth a runtime — while **AOT-compiled

@@ -181,11 +181,27 @@ nothing depends on the specific range.
 Audio is excluded from pixel conformance because two synths will not produce identical
 samples, and requiring that would fail every implementation for no benefit.
 
-## Save data — 64 integers
+## Save data — 256 integers
 
-PICO-8's `cartdata` size, and enough for high scores, progress flags and unlocks —
-the things a small game persists. A cart wanting more is probably wanting a filesystem,
-which §0 puts out of scope on purpose.
+TIC-80's `pmem` size, which is also what the reference implementation has always
+shipped. At 32 bits a slot that is 1 KB per cart — against the §1.1 floor of roughly
+400 KB, three quarters of a kilobyte sits inside the headroom and changes no
+conformance decision. The SRAM-only parts §12.4 rules out are ruled out by the
+framebuffer and the cart heap, not by this.
+
+**Inherited, and corrected once.** An earlier draft said 64 — PICO-8's `cartdata`
+size — which left the spec holding TIC-80's *name* for the verb and PICO-8's *number*
+for its size. Two arguments settled it. The failure modes are lopsided: a cart written
+against 256 slots and run on a 64-slot host does not fail loudly, it drops the writes
+and reads back zeros, so the player simply finds their progress gone. The other
+direction costs 768 bytes. And only one direction can break something that already
+exists — every cart written against 64 slots runs unchanged on a 256-slot host, never
+the reverse.
+
+The boundary the smaller number was defending is still real: a cart wanting more than
+this is probably wanting a filesystem, which §0 puts out of scope on purpose. It just
+does not sit at 64. What runs past it is the ordinary case, a flag or a star count per
+level, not a cart smuggling in a save format.
 
 ## `spr_batch` — why it *left* core
 
