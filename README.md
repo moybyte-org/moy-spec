@@ -126,7 +126,7 @@ own ground, the implementation is what changes — including the reference one.
 | | state |
 |---|---|
 | Spec text | draft, readable, §6.1 open |
-| Reference implementation | [moybyte](https://github.com/nikola-j/moybyte) — a PC simulator plus two ESP32 devices: an ESP32-S3 handheld at the native 320 × 240, and an ESP32-P4 board driving it windowed on a 1024 × 600 desktop |
+| Reference implementation | [moybyte](https://github.com/moybyte-org/moybyte) — a PC simulator plus two ESP32 devices: an ESP32-S3 handheld at the native 320 × 240, and an ESP32-P4 board driving it windowed on a 1024 × 600 desktop |
 | PICO-8 converter | exists, converts art, map, sound and code under a compat shim |
 | Web player | **works** — [runner/](runner/), the reference console compiled to WASM; `moy.py` wraps it (scaffold, hot-reload run, export) |
 | Conformance suite | not started |
