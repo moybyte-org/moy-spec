@@ -31,7 +31,10 @@
 {{DEMOTABS}}
     </div>
     <div class="screen">
-      <iframe id="demo" title="The moy web player" loading="lazy"
+      <!-- src is the HERO demo (DEMOS[0] in site/build.py). Set here rather than
+           only from JS so the page still plays without scripting, and so the
+           build's "is the demo wired" check has something to assert. -->
+      <iframe src="play/" id="demo" title="The moy web player" loading="lazy"
               allow="autoplay"></iframe>
     </div>
     <p class="hint">≈1 MB of player and cart per demo.
@@ -47,7 +50,7 @@
     var full = document.getElementById("demofull");
     function pick(t) {
       tabs.forEach(function (o) { o.classList.toggle("on", o === t); });
-      frame.src = t.dataset.src;
+      if (!frame.src.endsWith(t.dataset.src)) frame.src = t.dataset.src;
       frame.title = "The moy web player running " + t.dataset.cart;
       full.href = t.dataset.src;
     }

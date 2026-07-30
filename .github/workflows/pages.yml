@@ -48,6 +48,7 @@ jobs:
           for f in index.html spec.html rationale.html third-party.html \
                    style.css palette.json font.bin \
                    play/index.html play/carts.json \
+                   verbs/index.html verbs/carts.json \
                    play/micropython.mjs play/micropython.wasm; do
             test -s "_site/$f" || { echo "missing or empty: $f"; exit 1; }
           done
