@@ -38,7 +38,17 @@ import md  # noqa: E402  (sibling module, found via the path insert above)
 REPO = "https://github.com/moybyte-org/moy-spec"
 IMPL = "https://github.com/moybyte-org/moybyte"
 BRANCH = "main"
-DEMO_CART = "examples/verbs.moy"
+# The playable demos, hero first. A GAME leads (it is what makes a visitor stay);
+# the verb tour stays one click away because it doubles as the conformance suite
+# seed. Each is exported into its own folder by moy.py, so what you play is the
+# player this repo ships.
+DEMOS = [
+    ("play", "examples/brick_siege.moy", "Brick Siege",
+     "a tank game &mdash; arrows drive and aim, Z fires"),
+    ("verbs", "examples/verbs.moy", "Every core verb",
+     "one screen per verb group &mdash; the conformance tour"),
+]
+DEMO_CART = DEMOS[0][1]        # the hero, still linked from the prose
 
 # Root markdown that becomes a page. Everything else that is linked resolves to
 # GitHub, so no repo-relative link is left dangling.
@@ -344,6 +354,12 @@ def build(out, demo=True):
                 README=md.render(rest, ctx).html,
                 WORDMARK_BIG=pixel_svg("moy", font, cls="px big"),
                 CORE=pixel_svg("core 0.1", font, cls="px small"),
+                DEMOTABS="\n".join(
+                    '      <button class="demotab%s" data-src="%s/" '
+                    'data-cart="%s"><b>%s</b><span>%s</span></button>'
+                    % (" on" if i == 0 else "", slug, html.escape(cart),
+                       label, sub)
+                    for i, (slug, cart, label, sub) in enumerate(DEMOS)),
                 CART=html.escape(DEMO_CART),
                 CARTLINK="%s/tree/%s/%s" % (REPO, BRANCH, DEMO_CART),
                 REPO=REPO, IMPL=IMPL)
@@ -396,14 +412,16 @@ def build(out, demo=True):
         f.write("")
 
     if demo:
-        dst = os.path.join(out, "play")
-        subprocess.run([sys.executable, os.path.join(ROOT, "moy.py"), "export",
-                        os.path.join(ROOT, DEMO_CART), dst],
-                       check=True, cwd=ROOT)
         need = ["index.html", "carts.json", "micropython.mjs", "micropython.wasm"]
-        missing = [n for n in need if not os.path.isfile(os.path.join(dst, n))]
-        if missing:
-            raise SystemExit("demo bundle incomplete: %s" % ", ".join(missing))
+        for slug, cart, _label, _sub in DEMOS:
+            dst = os.path.join(out, slug)
+            subprocess.run([sys.executable, os.path.join(ROOT, "moy.py"), "export",
+                            os.path.join(ROOT, cart), dst],
+                           check=True, cwd=ROOT)
+            missing = [n for n in need if not os.path.isfile(os.path.join(dst, n))]
+            if missing:
+                raise SystemExit("demo bundle %s incomplete: %s"
+                                 % (slug, ", ".join(missing)))
 
     total = sum(os.path.getsize(os.path.join(dp, f))
                 for dp, _, fs in os.walk(out) for f in fs)

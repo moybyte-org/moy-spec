@@ -24,18 +24,39 @@
 <section id="play" class="play">
   <div class="play-in">
     <h2>Play one, right here</h2>
-    <p class="note">This is <a href="{{CARTLINK}}"><code>{{CART}}</code></a> — the cart
-      that walks every core verb, one screen per group — running in the reference
-      player, the console compiled to WebAssembly. Same cart, same pixels, on a
-      handheld. <b>← →</b> (or the on-screen pad) switch screens.</p>
-    <div class="screen">
-      <iframe src="play/" title="The moy web player running examples/verbs.moy"
-              loading="lazy" allow="autoplay"></iframe>
+    <p class="note">Running in the reference player &mdash; the console compiled to
+      WebAssembly, served from this page and nowhere else. The same cart draws the
+      same pixels on an ESP32 handheld.</p>
+    <div class="demotabs">
+{{DEMOTABS}}
     </div>
-    <p class="hint">≈960 KB of player and cart, served from this page and nowhere
-      else. <a href="play/">Open it full screen ↗</a> — and
+    <div class="screen">
+      <iframe id="demo" title="The moy web player" loading="lazy"
+              allow="autoplay"></iframe>
+    </div>
+    <p class="hint">≈1 MB of player and cart per demo.
+      <a id="demofull" href="play/">Open it full screen ↗</a> — and
       <code>python3 moy.py export</code> turns any cart into exactly this.</p>
   </div>
+  <script>
+  // One iframe, swapped: two live wasm VMs would mean two heaps and two frame
+  // loops competing for the main thread.
+  (function () {
+    var tabs = [].slice.call(document.querySelectorAll(".demotab"));
+    var frame = document.getElementById("demo");
+    var full = document.getElementById("demofull");
+    function pick(t) {
+      tabs.forEach(function (o) { o.classList.toggle("on", o === t); });
+      frame.src = t.dataset.src;
+      frame.title = "The moy web player running " + t.dataset.cart;
+      full.href = t.dataset.src;
+    }
+    tabs.forEach(function (t) {
+      t.addEventListener("click", function () { pick(t); });
+    });
+    if (tabs.length) pick(tabs[0]);
+  })();
+  </script>
 </section>
 
 <section class="glance">

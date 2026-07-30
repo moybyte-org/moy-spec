@@ -343,3 +343,17 @@ a.sref:hover { color: var(--accent); }
 /* ---- the home page's rendered README ------------------------------------ */
 
 .home .doc.readme h2:first-of-type { margin-top: 1rem; border-top: 0; padding-top: 0; }
+
+/* The demo picker (site/build.py's DEMOS). Chips, not a <select>: the choice is
+   part of the pitch, so it should be readable at a glance. Tokens match .card, so
+   the picker follows the page's light/dark scheme for free. */
+.demotabs { display: flex; gap: .6rem; flex-wrap: wrap; margin: 0 0 .9rem; }
+.demotab { appearance: none; cursor: pointer; text-align: left;
+  font: inherit; padding: .55rem .9rem; border: 1px solid var(--line);
+  border-radius: 10px; background: var(--surface); color: var(--body);
+  transition: border-color .12s, background .12s; }
+.demotab b { display: block; font: 600 .95rem/1.3 var(--mono); color: var(--ink); }
+.demotab span { display: block; font-size: .82rem; color: var(--muted); }
+.demotab:hover { border-color: var(--link); background: var(--raised); }
+.demotab.on { border-color: var(--accent); background: var(--raised); }
+.demotab.on b { color: var(--accent); }
