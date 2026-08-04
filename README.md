@@ -140,7 +140,7 @@ own ground, the implementation is what changes — including the reference one.
 | Console as a library | **works** — [moycore/](moycore/), MIT, stdlib-only Python: the raster, palette, font, sheet, map, cart format and verb table. Byte-identical to the reference console's rasterizer |
 | PICO-8 converter | exists, converts art, map, sound and code under a compat shim |
 | Web player | **works** — [runner/](runner/), the reference console compiled to WASM; `moy.py` wraps it (scaffold, hot-reload run, export) |
-| Conformance suite | **runs** — [conformance/](conformance/), 8 scenes as real carts + golden frames + a runner that takes any player. Goldens are moycore-rendered pending a browser harness for §11's tiebreaker |
+| Conformance suite | **runs** — [conformance/](conformance/), 9 scenes as real carts + golden frames + a runner that takes any player. The §11 tiebreaker (the WASM player) agrees on all 7 core scenes, pixel for pixel |
 | Cart checker | **works** — `moy.py check`: manifest, sandbox ceiling, undeclared extensions, the §1.1 budget |
 | Single-file cart | proposed — [proposals/single-file-cart.md](proposals/single-file-cart.md), implemented as `moy.py pack` |
 | TIC-80 converter | not started |
@@ -151,14 +151,14 @@ implementation, which makes it a faithful mirror of one console rather than an
 independent second implementation — telling the two apart is what the conformance
 suite is for, and it now exists.
 
-Two things still make the picture honest rather than finished. §11 names the
-WebAssembly player as the tiebreaker for golden frames, and the current goldens come
-from moycore instead — narrower than it sounds, since
-[conformance/parity.py](conformance/parity.py) shows moycore byte-identical to the
-rasterizer the player is built from, but it needs a browser harness to close. And
-moycore is a *second* implementation of the same raster, not an independent one: it
-was extracted from the reference, which is exactly why the parity check is part of
-the repo rather than a one-off.
+Three implementations now agree on every core scene, and only one of them is
+independent — which is the part that matters. moycore was extracted from the
+reference console's rasterizer, so [parity.py](conformance/parity.py) proves the
+extraction faithful and could never catch a bug that was always in it. The web
+player's JavaScript replayer shares no code with either, and
+[player.mjs](conformance/player.mjs) runs the suite through it headlessly, in plain
+node, with no browser and no dependencies. Its first run found the console drawing
+its FPS chip into the cart's own framebuffer.
 
 ## Contributing
 

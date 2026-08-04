@@ -3,7 +3,7 @@
 > SPEC.md 11: *An implementation conforms when it runs the conformance suite and
 > produces pixel-identical output.*
 
-This is that suite. Eight scenes, seven of them counted; each is a real moy cart
+This is that suite. Nine scenes, seven of them counted; each is a real moy cart
 plus a golden frame.
 
 ```
@@ -55,6 +55,7 @@ scenes.py            the scenes, as Python calls against a Canvas
 trace.py             recorder, replayer, and the Lua cart emitter
 build.py             regenerates traces, carts and goldens (with self-checks)
 run.py               the runner and the player protocol
+player.mjs           runs a cart through the shipped WebAssembly player, headless
 parity.py            moycore vs the reference implementation, byte for byte
 carts/<name>.moy/    a real cart per scene -- what your host runs
 traces/<name>.json   the portable verb trace -- what a port replays
@@ -66,7 +67,8 @@ golden/hashes.json   sha256 per frame, plus the suite manifest
 |---|---|
 | `primitives` | every core verb, plus 1×1 rects, r=0 and r=1 circles, zero-size rects |
 | `edges` | clipping — a host that clamps instead of clipping, or wraps a row |
-| `text` | the printable range, then bytes outside it (draw nothing, still advance 8px) |
+| `text` | the whole printable range at 8px fixed pitch |
+| `text_bytes` | bytes outside 0x20-0x7F — **not counted**, SPEC.md 6 says "codepoints" where a Lua string is bytes |
 | `camera_clip` | `clip` is **screen** space, applied after `camera`; clipping in world space passes both features separately and fails this |
 | `pal_palt` | draw-time remap and sprite transparency together; `pal` must not touch pixels already drawn |
 | `sprites` | flips, integer scales, colorkeys, out-of-range tile ids, sprites under camera and clip |
