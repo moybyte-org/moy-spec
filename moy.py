@@ -35,6 +35,10 @@ Before you ship, and to work with the art tools you already own:
     moy.py map <cart.moy>        map.moymap <-> CSV, so Tiled edits your level
           [--import file.csv]
     moy.py conform [--player C]  run the conformance suite (SPEC.md 11)
+    moy.py player                which player build runner/ holds, and whether
+          [--update]             its files still match; --update pins the
+          [--channel beta]       latest CONFORMANCE-GATED release, or a local
+          [--from dist-spec/]    build if you are working on the player
 
 Pure Python stdlib, no dependencies. The player it wraps is runner/ (see
 runner/BUILD.md); the spec it implements is SPEC.md; the console as a library
@@ -50,7 +54,21 @@ import webbrowser
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RUNNER = os.path.join(HERE, "runner")
-RUNNER_FILES = ("index.html", "micropython.mjs", "micropython.wasm")
+# The player bundle. Which files it contains is the PLAYER's business, not this
+# CLI's -- it grew a worker.js when the console moved off the main thread -- so
+# the pin (runner/VERSION) is authoritative and this list is only the fallback
+# for a checkout that has not pinned yet.
+RUNNER_FILES_DEFAULT = ("index.html", "worker.js", "micropython.mjs", "micropython.wasm")
+VERSION_FILE = "VERSION"
+
+# Where `moy.py player --update` fetches from. The reference implementation
+# publishes a rolling release per branch, and each one is CONFORMANCE-GATED:
+# its CI runs this repository's suite against the bundle and refuses to publish
+# a player that fails. So "update" cannot quietly hand you a broken tiebreaker.
+PLAYER_REPO = "moybyte-org/moybyte"
+PLAYER_CHANNELS = {"stable": "player-latest", "beta": "player-beta"}
+PLAYER_ASSET = "moy-player.tar.gz"
+PLAYER_MANIFEST = "MANIFEST.json"
 DEFAULT_PORT = 8323
 
 # The spec manifest (SPEC.md 3.1) -- brand-neutral, fields the spec defines.
@@ -236,7 +254,7 @@ def cmd_export(args):
         die("no such cart: " + src)
     out = os.path.abspath(args[1]) if len(args) > 1 else src[:-4] + "-web"
     os.makedirs(out, exist_ok=True)
-    for fn in RUNNER_FILES:
+    for fn in runner_files():
         shutil.copy(os.path.join(RUNNER, fn), os.path.join(out, fn))
     with open(os.path.join(out, "carts.json"), "w", encoding="utf-8") as f:
         json.dump(pack_cart(src), f)
@@ -516,6 +534,170 @@ def cmd_map(args):
                                "Tiled gids" if tiled else "tile ids, -1 empty"))
 
 
+def _pin():
+    """The pinned player (runner/VERSION), or None if this checkout has none."""
+    path = os.path.join(RUNNER, VERSION_FILE)
+    if not os.path.isfile(path):
+        return None
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except ValueError:
+        return None
+
+
+def runner_files():
+    """The bundle's files, from the pin when there is one."""
+    pin = _pin()
+    if pin and pin.get("files"):
+        return tuple(sorted(pin["files"]))
+    return RUNNER_FILES_DEFAULT
+
+
+def _sha256(path):
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        while True:
+            chunk = f.read(65536)
+            if not chunk:
+                break
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _verify(pin, root, label="runner/"):
+    """Check every pinned file against its hash. Returns a list of problems."""
+    bad = []
+    for name in sorted(pin.get("files", {})):
+        want = pin["files"][name]["sha256"]
+        path = os.path.join(root, name)
+        if not os.path.isfile(path):
+            bad.append("%s%s is missing" % (label, name))
+        elif _sha256(path) != want:
+            bad.append("%s%s does not match the pin" % (label, name))
+    return bad
+
+
+def cmd_player(args):
+    """Show or update the pinned web player.
+
+    The player is a BUILD, not source -- emsdk plus a MicroPython checkout,
+    which is not something this repository asks anyone to reproduce. So it is
+    vendored, and this pins WHICH build so the answer to "which player is this"
+    is in the tree rather than in someone's memory. `--update` is then an
+    ordinary reviewable commit: the pin moves, the hashes move with it.
+
+    Vendored rather than fetched on demand, deliberately: the README promises
+    Python and a browser and nothing else, and a `moy.py run` that needs the
+    network on first use would not be that.
+    """
+    channel = "stable"
+    if "--channel" in args:
+        channel = args[args.index("--channel") + 1]
+    if channel not in PLAYER_CHANNELS:
+        die("unknown channel %r (want: %s)" % (channel, ", ".join(sorted(PLAYER_CHANNELS))))
+
+    if "--update" not in args:
+        pin = _pin()
+        if pin is None:
+            print("runner/: not pinned (no %s)" % VERSION_FILE)
+            print("  this bundle was copied by hand; `moy.py player --update` pins it")
+            return
+        src = pin.get("source", {})
+        print("runner/: %s @ %s" % (pin.get("bundle", "?"), (src.get("commit") or "?")[:12]))
+        print("  channel  %s" % pin.get("channel", "?"))
+        print("  branch   %s%s" % (src.get("branch", "?"),
+                                   "  (BUILT FROM A DIRTY TREE)" if src.get("dirty") else ""))
+        bad = _verify(pin, RUNNER)
+        for b in bad:
+            print("  MISMATCH %s" % b)
+        print("  %d files, %s" % (len(pin.get("files", {})),
+                                  "all match the pin" if not bad else "SEE ABOVE"))
+        if bad:
+            sys.exit(1)
+        return
+
+    import tarfile
+    import tempfile
+    import urllib.request
+
+    # --from <dir>: pin a bundle built locally (firmware/web_runner/dist-spec)
+    # instead of a release. For anyone working ON the player -- otherwise
+    # testing a change to it means pushing, waiting for CI, and pulling back
+    # the thing you already have on disk.
+    local = args[args.index("--from") + 1] if "--from" in args else None
+    tmp = tempfile.mkdtemp(prefix="moy-player-")
+    try:
+        if local:
+            if not os.path.isfile(os.path.join(local, PLAYER_MANIFEST)):
+                die("%s has no %s -- is it a built bundle?" % (local, PLAYER_MANIFEST))
+            print("pinning the local bundle at %s" % local)
+            stage = local
+            with open(os.path.join(local, PLAYER_MANIFEST), encoding="utf-8") as f:
+                pin = json.load(f)
+            channel = "local"
+        else:
+            tag = PLAYER_CHANNELS[channel]
+            base = "https://github.com/%s/releases/download/%s/" % (PLAYER_REPO, tag)
+            print("fetching %s (%s)" % (tag, channel))
+            man_path = os.path.join(tmp, PLAYER_MANIFEST)
+            urllib.request.urlretrieve(base + PLAYER_MANIFEST, man_path)
+            with open(man_path, encoding="utf-8") as f:
+                pin = json.load(f)
+        src = pin.get("source", {})
+        print("  %s @ %s (%s)" % (pin.get("bundle", "?"), (src.get("commit") or "?")[:12],
+                                  src.get("branch", "?")))
+        if src.get("dirty"):
+            # The artifact corresponds to no commit, so the sha above cannot be
+            # used to reproduce it or to review what went into it.
+            die("that build came from a dirty tree; refusing to pin it")
+
+        if not local:
+            tgz = os.path.join(tmp, PLAYER_ASSET)
+            urllib.request.urlretrieve(base + PLAYER_ASSET, tgz)
+            stage = os.path.join(tmp, "stage")
+            os.makedirs(stage)
+            with tarfile.open(tgz) as tf:
+                for m in tf.getmembers():
+                    # A release asset is remote input: refuse paths, links and
+                    # anything that is not a plain file before it touches disk.
+                    if not m.isfile() or "/" in m.name.lstrip("./") or m.name.startswith("/"):
+                        if m.name not in (".", "./"):
+                            die("unexpected entry in the release archive: %r" % m.name)
+                        continue
+                    tf.extract(m, stage)
+
+        bad = _verify(pin, stage, label="")
+        if bad:
+            for b in bad:
+                print("  %s" % b)
+            die("the downloaded bundle does not match its own manifest")
+        print("  %d files, all hashes verified" % len(pin.get("files", {})))
+
+        old = _pin()
+        for name in sorted(pin["files"]):
+            shutil.copy(os.path.join(stage, name), os.path.join(RUNNER, name))
+        # Drop files the previous pin had and this one does not, so the bundle
+        # is what the manifest says rather than a union of every version ever.
+        if old:
+            for name in old.get("files", {}):
+                if name not in pin["files"]:
+                    stale = os.path.join(RUNNER, name)
+                    if os.path.isfile(stale):
+                        os.remove(stale)
+                        print("  removed %s (not in this bundle)" % name)
+        pin["channel"] = channel
+        with open(os.path.join(RUNNER, VERSION_FILE), "w",
+                  encoding="utf-8", newline="\n") as f:
+            json.dump(pin, f, indent=2, sort_keys=True)
+            f.write("\n")
+        print("runner/ updated; %s written" % VERSION_FILE)
+        print("  commit the diff -- that is the review")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def cmd_conform(args):
     """Run the conformance suite (SPEC.md 11)."""
     sys.path.insert(0, HERE)
@@ -527,7 +709,8 @@ def main():
     cmds = {"new": cmd_new, "run": cmd_run, "export": cmd_export,
             "port": cmd_port, "demo": cmd_demo,
             "check": cmd_check, "pack": cmd_pack, "unpack": cmd_unpack,
-            "gfx": cmd_gfx, "map": cmd_map, "conform": cmd_conform}
+            "gfx": cmd_gfx, "map": cmd_map, "conform": cmd_conform,
+            "player": cmd_player}
     if len(sys.argv) < 2 or sys.argv[1] not in cmds:
         print(__doc__.strip())
         sys.exit(0 if len(sys.argv) < 2 else 1)
