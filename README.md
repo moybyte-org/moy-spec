@@ -32,6 +32,16 @@ editor and save — the game restarts in under a second. The scaffold includes
 `moy-api.lua`, which Lua language servers (VS Code's Lua extension) read for
 autocomplete and hover docs on every verb.
 
+Before you ship, `python3 moy.py check mygame.moy` tells you what the *tightest*
+conforming host would say — a reach past the §4.1 sandbox, an extension you use but
+never declared, a map past the §1.1 budget, a cart that can't be played with buttons
+alone. Those are the failures that otherwise surface on somebody else's handheld,
+which is the worst possible place for them.
+
+Your own art tools work on the assets: `moy.py gfx mygame.moy` round-trips
+`sprites.moygfx` through an indexed PNG (Aseprite, GIMP, Piskel), and `moy.py map`
+does the same for `map.moymap` through CSV, which is what Tiled reads and writes.
+
 ```
 python3 moy.py export mygame.moy
 ```
@@ -127,16 +137,28 @@ own ground, the implementation is what changes — including the reference one.
 |---|---|
 | Spec text | draft, readable, §6.1 open |
 | Reference implementation | [moybyte](https://github.com/moybyte-org/moybyte) — a PC simulator plus two ESP32 devices: an ESP32-S3 handheld at the native 320 × 240, and an ESP32-P4 board driving it windowed on a 1024 × 600 desktop |
+| Console as a library | **works** — [moycore/](moycore/), MIT, stdlib-only Python: the raster, palette, font, sheet, map, cart format and verb table. Byte-identical to the reference console's rasterizer |
 | PICO-8 converter | exists, converts art, map, sound and code under a compat shim |
 | Web player | **works** — [runner/](runner/), the reference console compiled to WASM; `moy.py` wraps it (scaffold, hot-reload run, export) |
-| Conformance suite | not started |
+| Conformance suite | **runs** — [conformance/](conformance/), 8 scenes as real carts + golden frames + a runner that takes any player. Goldens are moycore-rendered pending a browser harness for §11's tiebreaker |
+| Cart checker | **works** — `moy.py check`: manifest, sandbox ceiling, undeclared extensions, the §1.1 budget |
+| Single-file cart | proposed — [proposals/single-file-cart.md](proposals/single-file-cart.md), implemented as `moy.py pack` |
 | TIC-80 converter | not started |
 
 The web player is what lets anyone try this without owning hardware: a cart opens as
-a URL, and `moy.py export` turns any cart into one. It is currently *built from* the
-reference implementation, which makes it a faithful mirror of one console rather than
-an independent second implementation — the conformance suite is what will let the two
-be told apart.
+a URL, and `moy.py export` turns any cart into one. It is *built from* the reference
+implementation, which makes it a faithful mirror of one console rather than an
+independent second implementation — telling the two apart is what the conformance
+suite is for, and it now exists.
+
+Two things still make the picture honest rather than finished. §11 names the
+WebAssembly player as the tiebreaker for golden frames, and the current goldens come
+from moycore instead — narrower than it sounds, since
+[conformance/parity.py](conformance/parity.py) shows moycore byte-identical to the
+rasterizer the player is built from, but it needs a browser harness to close. And
+moycore is a *second* implementation of the same raster, not an independent one: it
+was extracted from the reference, which is exactly why the parity check is part of
+the repo rather than a one-off.
 
 ## Contributing
 
