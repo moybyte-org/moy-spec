@@ -6,7 +6,7 @@
     "h": 240
   },
   "generated_by": "moycore 0.1.0",
-  "provenance": "Rendered by moycore, which is byte-identical to the reference console's rasterizer (conformance/parity.py). SPEC.md 11 makes the WebAssembly player the tiebreaker; re-basing these on a captured player frame needs a browser harness and is not done yet.",
+  "provenance": "Rendered by moycore. Confirmed pixel-identical on all core scenes by two other implementations: the reference console's own rasterizer (conformance/parity.py) and the shipped WebAssembly player's JavaScript replayer (conformance/player.mjs), the tiebreaker SPEC.md 11 names.",
   "scenes": [
     {
       "name": "primitives",
@@ -25,9 +25,16 @@
     {
       "name": "text",
       "core": true,
-      "calls": 15,
-      "frame_sha256": "7348292253b26e7268cd7f54183909350efabe3acf8ce90e384a38cd047cb807",
+      "calls": 14,
+      "frame_sha256": "0d164d46f63a1c49414c5449249ee839f3c05815a99b6166dbac3f5497eb1bdc",
       "note": "The whole printable range (SPEC.md 6), then bytes outside it,\nwhich must draw nothing and still advance 8px."
+    },
+    {
+      "name": "text_bytes",
+      "core": false,
+      "calls": 6,
+      "frame_sha256": "2aa22242e1da0d9ad6f3515134afeb9b2f56e530e41863191a404478286f1dfc",
+      "note": "Bytes outside 0x20-0x7F. NOT part of conformance: SPEC.md 6\nsays \"codepoints\" where a Lua string is a byte string, and the\ntwo readings advance `print` differently. Golden kept ready."
     },
     {
       "name": "camera_clip",

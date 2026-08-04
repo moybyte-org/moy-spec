@@ -19,12 +19,9 @@ verified is just a record of what the code did that day:
   3. The generated carts must load through moycore.load_cart -- if the suite's
      own carts do not pass the loader, the suite is not testing what it claims.
 
-PROVENANCE, stated plainly: these goldens are rendered by moycore. SPEC.md 11
-makes the WebAssembly player the tiebreaker, and binding the goldens to it
-needs a browser harness that does not exist yet. moycore is byte-identical to
-the reference console's rasterizer (conformance/parity.py), which is the same
-code the player is built from -- so these should already agree, and the day the
-harness lands is the day that stops being "should".
+PROVENANCE: these goldens are rendered by moycore, and the WebAssembly player
+SPEC.md 11 names as the tiebreaker agrees with them on all 7 core scenes, pixel
+for pixel -- see conformance/player.mjs and the README.
 """
 
 import hashlib
@@ -52,6 +49,9 @@ NOTES = {
              "instead of clipping, or wraps a row, fails here and nowhere else.",
     "text": "The whole printable range (SPEC.md 6), then bytes outside it,\n"
             "which must draw nothing and still advance 8px.",
+    "text_bytes": "Bytes outside 0x20-0x7F. NOT part of conformance: SPEC.md 6\n"
+                  "says \"codepoints\" where a Lua string is a byte string, and the\n"
+                  "two readings advance `print` differently. Golden kept ready.",
     "camera_clip": "camera and clip TOGETHER. clip is screen space, applied\n"
                    "after the camera offset -- an implementation that clips in\n"
                    "world space passes both features separately and fails this.",
@@ -164,7 +164,7 @@ def main():
         print("  %-12s %4d calls  %s  %s"
               % (name, len(calls),
                  manifest_scenes[-1]["frame_sha256"][:16],
-                 "" if name not in scenes.EXCLUDED else "(excluded: SPEC.md 6.1)"))
+                 "" if name not in scenes.EXCLUDED else "(excluded)"))
 
     if problems:
         print("\nBUILD FAILED:")
@@ -178,10 +178,11 @@ def main():
         "raster": {"w": moycore.WIDTH, "h": moycore.HEIGHT},
         "generated_by": "moycore %s" % moycore.__version__,
         "provenance": (
-            "Rendered by moycore, which is byte-identical to the reference "
-            "console's rasterizer (conformance/parity.py). SPEC.md 11 makes the "
-            "WebAssembly player the tiebreaker; re-basing these on a captured "
-            "player frame needs a browser harness and is not done yet."),
+            "Rendered by moycore. Confirmed pixel-identical on all core scenes "
+            "by two other implementations: the reference console's own "
+            "rasterizer (conformance/parity.py) and the shipped WebAssembly "
+            "player's JavaScript replayer (conformance/player.mjs), the "
+            "tiebreaker SPEC.md 11 names."),
         "scenes": manifest_scenes,
     }, indent=2) + "\n")
     print("\n%d scenes built (%d in core conformance)."

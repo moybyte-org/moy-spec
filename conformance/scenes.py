@@ -117,15 +117,36 @@ def text(c, sheet, tilemap):
             row += 1
     if line:
         c.print(line, 8, 8 + row * 10, 7)
-    # Outside 0x20-0x7F: draws nothing, advances 8px like any glyph. Written as
-    # single bytes on purpose -- a Lua string is a byte string, so a multi-byte
-    # character would advance once per BYTE on a real host and once per
-    # codepoint here, and SPEC.md 6 does not yet say which is right.
-    c.print("A" + chr(0x00) + "B" + chr(0x1F) + "C" + chr(0xFF) + "D", 8, 60, 10)
     c.print("", 8, 72, 7)
     c.print("negative", -20, 84, 12)
     for i in range(8):
         c.print("colour %d" % i, 8, 96 + i * 9, i + 8)
+
+
+def text_bytes(c, sheet, tilemap):
+    """Bytes outside 0x20-0x7F: SPEC.md 6 says they draw nothing and advance 8px
+    like any glyph.
+
+    EXCLUDED from core conformance, and the reason is a spec question rather
+    than an implementation one. SPEC.md 6 says "codepoints", but a Lua string is
+    a BYTE string -- so on a real host a multi-byte character advances once per
+    byte, while an implementation iterating decoded text advances once per
+    codepoint. Both readings are defensible and the spec does not pick.
+
+    Keeping it as its own scene rather than deleting it: the moment SPEC.md 6
+    says "bytes" (or says "codepoints" and means it), this becomes a core scene
+    and the golden already exists.
+
+    Running it also turned up a real limit in the reference WebAssembly player:
+    it serializes its draw-command stream as JSON, so a `print` carrying byte
+    0xFF fails with UnicodeError and the frame is lost. A cart may legally print
+    that byte, so the transport -- not the raster -- is what needs widening."""
+    c.cls(1)
+    c.print("A" + chr(0x00) + "B", 8, 8, 10)
+    c.print("C" + chr(0x1F) + "D", 8, 20, 10)
+    c.print("E" + chr(0x7F) + "F", 8, 32, 10)      # 0x7F is IN range -- draws
+    c.print("G" + chr(0xFF) + "H", 8, 44, 10)
+    c.print(chr(0x00) * 4 + "TAIL", 8, 56, 7)      # leading blanks still advance
 
 
 def camera_clip(c, sheet, tilemap):
@@ -261,6 +282,7 @@ SCENES = (
     ("primitives", primitives),
     ("edges", edges),
     ("text", text),
+    ("text_bytes", text_bytes),
     ("camera_clip", camera_clip),
     ("pal_palt", pal_palt),
     ("sprites", sprites),
@@ -270,7 +292,7 @@ SCENES = (
 
 # Scenes that exercise SPEC.md 6.1 and are therefore NOT part of conformance
 # until it settles (SPEC.md 11: "so is everything in 6.1 until it leaves TBD").
-EXCLUDED = ("provisional",)
+EXCLUDED = ("provisional", "text_bytes")
 
 
 def core_scenes():

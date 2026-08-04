@@ -189,7 +189,7 @@ def main(argv):
                 core_total += 1
             continue
         count, first = compare(golden, got)
-        tag = "  (SPEC.md 6.1, not counted)" if excluded else ""
+        tag = "  (excluded, not counted)" if excluded else ""
         if count == 0:
             print("  ok    %-12s%s" % (name, tag))
         else:

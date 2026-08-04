@@ -73,16 +73,41 @@ golden/hashes.json   sha256 per frame, plus the suite manifest
 | `tilemap` | `map()` regions, offsets, scale, colorkey, and a region starting out of range |
 | `provisional` | SPEC.md 6.1 verbs — **not counted**, SPEC.md 11 excludes 6.1 until it settles |
 
-## Provenance — read this before trusting a golden
+## Provenance
 
-These goldens are rendered by **moycore**. SPEC.md 11 makes the **WebAssembly
-player** the tiebreaker, and re-basing the goldens on frames captured from it
-needs a browser harness that does not exist yet.
+The goldens are rendered by **moycore**, and the WebAssembly player SPEC.md 11
+names as the tiebreaker **agrees with them on all 7 core scenes, pixel for
+pixel**:
 
-That is a real gap, and it is narrower than it sounds: `conformance/parity.py`
-shows moycore byte-identical to the reference console's rasterizer, which is the
-code the player is built from. So these frames *should* already be the player's
-frames. The day the harness lands is the day "should" becomes "are".
+```
+python3 conformance/run.py --player "node conformance/player.mjs {cart} {out}"
+```
+
+`player.mjs` boots the shipped player headlessly in plain node — no browser, no
+npm — and rasterizes its command stream through the page's own JavaScript
+replayer, which it extracts from `runner/index.html` at run time rather than
+vendoring (so there is no copy to drift).
+
+That agreement is worth more than a provenance note, because the JS replayer is
+the only **independent** implementation in the project. moycore was extracted
+from the reference console's rasterizer, so `parity.py` proves the extraction
+faithful but cannot catch a bug that was always in it. The page's replayer is
+hand-written JavaScript sharing no code with either — so where it agrees, the
+agreement means something.
+
+### What running it found
+
+Exactly 200 pixels differed on every scene: a 20×10 box at (299, 229). That is
+`runtime/perf_hud.py`'s FPS chip, drawn by the console into the cart's *own*
+raster. A golden frame must not contain an FPS counter, and neither should
+somebody's published web export. Fixed upstream — the player now takes
+`hud=False` and spec bundles pass it; `MOY_HUD=1` forces the chip back on and
+reproduces the 200 pixels exactly.
+
+The two excluded scenes both fail against the player, for reasons already
+documented above: `text_bytes` because its `print` of byte 0xFF cannot survive
+the player's JSON command transport (UnicodeError), and `provisional` because
+its `sspr` rejects the 10-argument form SPEC.md 7.1 gives it.
 
 ## Determinism, and one hole in it
 
