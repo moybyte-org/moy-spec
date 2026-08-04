@@ -20,8 +20,25 @@ art tools already work; this CLI supplies the loop around them.
     moy.py demo                  fetch Celeste Classic (PICO-8), port it, run
                                  it -- the one-command show-off
 
+Before you ship, and to work with the art tools you already own:
+
+    moy.py check <cart.moy>      what the TIGHTEST conforming host would say:
+                                 manifest, sandbox ceiling, undeclared
+                                 extensions, the SPEC.md 1.1 budget. Findable
+                                 from a laptop instead of from a handheld you
+                                 do not own
+    moy.py pack <cart.moy>       the folder -> ONE file you can attach, link or
+                                 list. Deterministic: same folder, same bytes
+    moy.py unpack <cart.moyc>    ... and back to a folder
+    moy.py gfx <cart.moy>        sprites.moygfx <-> PNG, so Aseprite/GIMP/
+          [--import file.png]    Piskel edit your sheet
+    moy.py map <cart.moy>        map.moymap <-> CSV, so Tiled edits your level
+          [--import file.csv]
+    moy.py conform [--player C]  run the conformance suite (SPEC.md 11)
+
 Pure Python stdlib, no dependencies. The player it wraps is runner/ (see
-runner/BUILD.md); the spec it implements is SPEC.md.
+runner/BUILD.md); the spec it implements is SPEC.md; the console as a library
+is moycore/.
 """
 
 import http.server
@@ -287,9 +304,230 @@ def cmd_demo(args):
     cmd_run(["celeste.moy"] + rest)
 
 
+# --- check / pack / assets / conform -----------------------------------------
+#
+# These four lean on moycore/ -- the console as a library. They are here rather
+# than as separate scripts because they belong to the same loop as `run`: you
+# scaffold, you run, you check before you ship. A tool you have to remember the
+# name of is a tool nobody runs.
+
+def _moycore():
+    sys.path.insert(0, HERE)
+    import moycore
+    return moycore
+
+
+def cmd_check(args):
+    """Everything decidable about a cart from its own bytes."""
+    if not args:
+        die("usage: moy.py check <cart.moy>")
+    moycore = _moycore()
+    from moycore import check as _check
+    from moycore import pack as _pack
+
+    src = args[0]
+    if os.path.isdir(cart_dir(src)):
+        src = cart_dir(src)
+        files = _pack.read_folder(src)
+    elif os.path.isfile(src):
+        files = _pack.read_pack(src)
+    else:
+        die("no such cart: " + src)
+
+    try:
+        cart = moycore.Cart.from_files(files, supported_extensions=("layers", "viewport"))
+    except moycore.CartError as exc:
+        print("%s: FAILS TO LOAD" % src)
+        print("  error  %s" % exc)
+        sys.exit(1)
+
+    findings = _check.check_cart(cart, files)
+    print("%s -- %s" % (src, cart.title))
+    print("  id     %s" % _pack.content_id(files))
+    for level, code, msg in findings:
+        print("  %-6s %s: %s" % (level, code, msg))
+    verdict = _check.worst(findings)
+    if verdict == "error":
+        print("\nNOT conforming. A strict host may refuse this cart.")
+        sys.exit(1)
+    if verdict == "warn":
+        print("\nRuns, but not everywhere -- see the warnings above.")
+        sys.exit(0)
+    print("\nOK.")
+
+
+def cmd_pack(args):
+    """Folder -> one deterministic file (see proposals/single-file-cart.md)."""
+    if not args:
+        die("usage: moy.py pack <cart.moy> [out%s]" % _moycore().pack.EXT)
+    moycore = _moycore()
+    from moycore import pack as _pack
+    src = cart_dir(args[0])
+    if not os.path.isdir(src):
+        die("no such cart folder: " + src)
+    files = _pack.read_folder(src)
+    files.pop("moy-api.lua", None)      # editor stubs are never part of the game
+    try:
+        moycore.Cart.from_files(files, supported_extensions=("layers", "viewport"))
+    except moycore.CartError as exc:
+        die("refusing to pack a cart that does not load: %s" % exc)
+    blob = _pack.pack_bytes(files)
+    out = args[1] if len(args) > 1 else src[:-4] + _pack.EXT
+    with open(out, "wb") as f:
+        f.write(blob)
+    print("%s  (%d files, %d bytes)" % (out, len(files), len(blob)))
+    print("id %s" % _pack.content_id(files))
+
+
+def cmd_unpack(args):
+    if not args:
+        die("usage: moy.py unpack <cart%s> [out.moy]" % _moycore().pack.EXT)
+    _moycore()
+    from moycore import pack as _pack
+    src = args[0]
+    if not os.path.isfile(src):
+        die("no such file: " + src)
+    files = _pack.read_pack(src)
+    base = os.path.basename(src)
+    if base.endswith(_pack.EXT):
+        base = base[:-len(_pack.EXT)]
+    out = args[1] if len(args) > 1 else base + ".moy"
+    if os.path.exists(out):
+        die("already exists: " + out)
+    _pack.write_folder(out, files)
+    print("%s  (%d files)" % (out, len(files)))
+
+
+def _sheet_png_palette(cart):
+    """The 16 colours a sheet PNG carries. SPEC.md 2.3: sprite pixels are
+    indices 0-15, so the export is a 16-colour image -- which is also what makes
+    it open correctly as indexed art in Aseprite instead of as RGB the artist
+    then has to quantize back."""
+    return list(cart.palette[:16])
+
+
+def cmd_gfx(args):
+    """sprites.moygfx <-> PNG."""
+    if not args:
+        die("usage: moy.py gfx <cart.moy> [--import sheet.png] [--out sheet.png]")
+    moycore = _moycore()
+    from moycore import png as _png
+    src = cart_dir(args[0])
+    if not os.path.isdir(src):
+        die("no such cart: " + src)
+    cart = moycore.load_cart(src)
+    gfx_path = os.path.join(src, "sprites.moygfx")
+
+    if "--import" in args:
+        png_path = args[args.index("--import") + 1]
+        w, h, px = _png.read_rgb(png_path)
+        if w != moycore.sheet.SHEET_W:
+            die("sheet PNG must be %d pixels wide (this one is %d)"
+                % (moycore.sheet.SHEET_W, w))
+        if h > moycore.sheet.SHEET_H:
+            die("sheet PNG is %d rows; the sheet is at most %d (SPEC.md 3.2)"
+                % (h, moycore.sheet.SHEET_H))
+        pal16 = _sheet_png_palette(cart)
+        sheet = moycore.SpriteSheet()
+        inexact = 0
+        cache = {}
+        for i in range(w * h):
+            rgb = px[i]
+            v = cache.get(rgb)
+            if v is None:
+                v = _png.nearest_index(rgb, pal16)
+                if tuple(pal16[v]) != rgb:
+                    inexact += 1
+                cache[rgb] = v
+            sheet.pix[i] = v
+        with open(gfx_path, "w", encoding="utf-8", newline="\n") as f:
+            f.write(sheet.to_hex() + "\n")
+        print("wrote %s (%d rows)" % (gfx_path, h))
+        if inexact:
+            print("  note: %d distinct colours were not in the cart's first 16 and "
+                  "were snapped to the nearest; SPEC.md 2.3 holds sprite pixels to "
+                  "indices 0-15" % inexact)
+        return
+
+    out = args[args.index("--out") + 1] if "--out" in args else src[:-4] + "-sheet.png"
+    sheet = cart.sheet
+    rows = sheet.h
+    while rows > 8 and not any(sheet.pix[(rows - 8) * sheet.w:rows * sheet.w]):
+        rows -= 8            # trim trailing blank tile rows, like to_hex does
+    _png.write_indexed(out, sheet.w, rows, sheet.pix[:sheet.w * rows],
+                       _sheet_png_palette(cart))
+    print("%s  (%dx%d, %d tiles)" % (out, sheet.w, rows, (rows // 8) * sheet.cols))
+
+
+def cmd_map(args):
+    """map.moymap <-> CSV."""
+    if not args:
+        die("usage: moy.py map <cart.moy> [--import level.csv] [--out level.csv] [--tiled]")
+    moycore = _moycore()
+    src = cart_dir(args[0])
+    if not os.path.isdir(src):
+        die("no such cart: " + src)
+    cart = moycore.load_cart(src)
+    map_path = os.path.join(src, "map.moymap")
+    # Tiled's CSV export is 1-based with 0 for empty -- which is byte-for-byte
+    # what a .moymap cell already stores (SPEC.md 3.3: each cell holds tile_id+1).
+    # So --tiled is not a conversion, it is the absence of one.
+    tiled = "--tiled" in args
+
+    if "--import" in args:
+        csv_path = args[args.index("--import") + 1]
+        with open(csv_path, encoding="utf-8") as f:
+            text = f.read()
+        rows = []
+        for line in text.split("\n"):
+            line = line.strip().rstrip(",")
+            if not line:
+                continue
+            rows.append([int(v.strip()) for v in line.split(",") if v.strip() != ""])
+        if not rows:
+            die("%s has no rows" % csv_path)
+        h = len(rows)
+        w = max(len(r) for r in rows)
+        if w > moycore.sheet.MAP_MAX or h > moycore.sheet.MAP_MAX:
+            die("map is %dx%d; SPEC.md 3.3 caps each dimension at %d"
+                % (w, h, moycore.sheet.MAP_MAX))
+        tm = moycore.TileMap(w, h)
+        for y in range(h):
+            for x in range(len(rows[y])):
+                v = rows[y][x]
+                tm.mset(x, y, (v - 1) if tiled else v)
+        with open(map_path, "w", encoding="utf-8", newline="\n") as f:
+            f.write(tm.to_hex() + "\n")
+        print("wrote %s (%dx%d)" % (map_path, w, h))
+        return
+
+    out = args[args.index("--out") + 1] if "--out" in args else src[:-4] + "-map.csv"
+    tm = cart.tilemap
+    lines = []
+    for y in range(tm.h):
+        vals = []
+        for x in range(tm.w):
+            t = tm.mget(x, y)
+            vals.append(str(t + 1 if tiled else t))
+        lines.append(",".join(vals))
+    with open(out, "w", encoding="utf-8", newline="\n") as f:
+        f.write("\n".join(lines) + "\n")
+    print("%s  (%dx%d, %s)" % (out, tm.w, tm.h,
+                               "Tiled gids" if tiled else "tile ids, -1 empty"))
+
+
+def cmd_conform(args):
+    """Run the conformance suite (SPEC.md 11)."""
+    sys.path.insert(0, HERE)
+    from conformance import run as _run
+    sys.exit(_run.main(args))
+
+
 def main():
     cmds = {"new": cmd_new, "run": cmd_run, "export": cmd_export,
-            "port": cmd_port, "demo": cmd_demo}
+            "port": cmd_port, "demo": cmd_demo,
+            "check": cmd_check, "pack": cmd_pack, "unpack": cmd_unpack,
+            "gfx": cmd_gfx, "map": cmd_map, "conform": cmd_conform}
     if len(sys.argv) < 2 or sys.argv[1] not in cmds:
         print(__doc__.strip())
         sys.exit(0 if len(sys.argv) < 2 else 1)
