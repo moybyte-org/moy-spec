@@ -6,9 +6,9 @@
 -- calls conformance pixel-identical, so any difference is a bug in one
 -- of the two implementations and the point is to find out which.
 --
--- Bytes outside 0x20-0x7F. NOT part of conformance: SPEC.md 6
--- says "codepoints" where a Lua string is a byte string, and the
--- two readings advance `print` differently. Golden kept ready.
+-- Bytes outside 0x20-0x7F, which draw nothing and still advance
+-- 8px. SPEC.md 6: print walks BYTES, so a two-byte UTF-8
+-- character takes two cells, not one.
 
 function _draw()
   cls(1)
@@ -17,4 +17,5 @@ function _draw()
   print("E\127F", 8, 32, 10)
   print("G\255H", 8, 44, 10)
   print("\0\0\0\0TAIL", 8, 56, 7)
+  print("caf\195\169", 8, 68, 11)
 end

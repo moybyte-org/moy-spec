@@ -127,25 +127,27 @@ def text_bytes(c, sheet, tilemap):
     """Bytes outside 0x20-0x7F: SPEC.md 6 says they draw nothing and advance 8px
     like any glyph.
 
-    The spec question this used to raise is settled: SPEC.md 6 now says BYTES,
-    because a Lua string is a byte string, the device's C text kernel walks
-    bytes, and so does the framebuf.text this font came from. Both rasterizers
-    agree accordingly.
+    A core scene, and the one that took the longest to become one. SPEC.md 6
+    used to say "codepoints", which is not implementable consistently: a Lua
+    string IS a byte string, so a host that decoded before drawing advanced the
+    cursor 8px where one that did not advanced 16, and every character after it
+    landed somewhere else. The reference console was itself split -- its device
+    kernel walked bytes, its host font walked codepoints.
 
-    STILL EXCLUDED, for an implementation reason rather than a spec one: a
-    `print` carrying byte 0xFF cannot cross the reference WebAssembly player's
-    wire. It dies at the Lua->Python boundary, where every mp_obj_new_str* in
-    MicroPython either validates UTF-8 or requires it, and would die again at
-    the JSON command stream even if it got past. Carrying arbitrary bytes needs
-    a coordinated change -- bytes out of lua_to_mp, an escaped wire form, and a
-    replayer that accepts it -- so this scene graduates to core the day that
-    lands. The golden is already here waiting."""
+    Getting this scene to pass took the whole chain: the spec saying bytes, both
+    rasterizers walking them, the Lua bridge handing back a byte string instead
+    of raising UnicodeError on anything past ASCII, a wire form that can carry
+    those bytes, and a replayer that reads it. Nothing here is exotic -- it is
+    just the first cart that ever printed a byte no one had printed before."""
+    # BYTES, not a str: SPEC.md 6 says print walks bytes, and a str would be
+    # UTF-8-encoded on the way in -- b"\xff" is one cell, "\xff" would be two.
     c.cls(1)
-    c.print("A" + chr(0x00) + "B", 8, 8, 10)
-    c.print("C" + chr(0x1F) + "D", 8, 20, 10)
-    c.print("E" + chr(0x7F) + "F", 8, 32, 10)      # 0x7F is IN range -- draws
-    c.print("G" + chr(0xFF) + "H", 8, 44, 10)
-    c.print(chr(0x00) * 4 + "TAIL", 8, 56, 7)      # leading blanks still advance
+    c.print(b"A\x00B", 8, 8, 10)
+    c.print(b"C\x1fD", 8, 20, 10)
+    c.print(b"E\x7fF", 8, 32, 10)          # 0x7F is IN range -- it draws
+    c.print(b"G\xffH", 8, 44, 10)
+    c.print(b"\x00\x00\x00\x00TAIL", 8, 56, 7)   # blanks still advance
+    c.print("caf\u00e9", 8, 68, 11)        # a str: UTF-8, so 5 cells not 4
 
 
 def camera_clip(c, sheet, tilemap):
@@ -291,7 +293,7 @@ SCENES = (
 
 # Scenes that exercise SPEC.md 6.1 and are therefore NOT part of conformance
 # until it settles (SPEC.md 11: "so is everything in 6.1 until it leaves TBD").
-EXCLUDED = ("provisional", "text_bytes")
+EXCLUDED = ("provisional",)
 
 
 def core_scenes():

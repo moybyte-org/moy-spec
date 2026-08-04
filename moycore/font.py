@@ -41,27 +41,17 @@ def glyph(code):
 def as_bytes(s):
     """A string argument to `print` as the BYTE sequence SPEC.md 6 says it is.
 
-    `bytes`/`bytearray` pass through. A `str` is taken one byte per character,
-    NOT UTF-8-encoded -- because in the only language core defines, a string IS
-    a byte string, and a host handing moycore a str is representing those bytes.
-    UTF-8-encoding here would make `print(chr(0xFF))` advance 16px in Python and
-    8px in Lua for the same cart, which is exactly the disagreement that made
-    this rule necessary.
+    `bytes`/`bytearray` pass through: that is the exact form, and the one a host
+    should prefer, since a Lua string may hold bytes no `str` can represent.
 
-    A character above U+00FF cannot be one byte, so it is a programming error
-    rather than something to guess at."""
+    A `str` is UTF-8-encoded. That is the encoding that round-trips -- a str
+    reaching a host came from decoding the cart's own UTF-8 bytes -- and it is
+    what the reference console's device kernel draws, since it is handed the
+    str's buffer and a MicroPython str's buffer is its UTF-8. So
+    `print("\\u00e9")` occupies two cells here exactly as it does there."""
     if isinstance(s, (bytes, bytearray)):
         return s
-    s = str(s)
-    out = bytearray(len(s))
-    for i in range(len(s)):
-        c = ord(s[i])
-        if c > 0xFF:
-            raise ValueError(
-                "print() takes a byte string; U+%04X does not fit in one byte "
-                "(encode it yourself if you meant UTF-8)" % c)
-        out[i] = c
-    return out
+    return str(s).encode("utf-8")
 
 
 def draw(put, s, x, y):

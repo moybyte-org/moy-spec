@@ -49,9 +49,9 @@ NOTES = {
              "instead of clipping, or wraps a row, fails here and nowhere else.",
     "text": "The whole printable range (SPEC.md 6), then bytes outside it,\n"
             "which must draw nothing and still advance 8px.",
-    "text_bytes": "Bytes outside 0x20-0x7F. NOT part of conformance: SPEC.md 6\n"
-                  "says \"codepoints\" where a Lua string is a byte string, and the\n"
-                  "two readings advance `print` differently. Golden kept ready.",
+    "text_bytes": "Bytes outside 0x20-0x7F, which draw nothing and still advance\n"
+                  "8px. SPEC.md 6: print walks BYTES, so a two-byte UTF-8\n"
+                  "character takes two cells, not one.",
     "camera_clip": "camera and clip TOGETHER. clip is screen space, applied\n"
                    "after the camera offset -- an implementation that clips in\n"
                    "world space passes both features separately and fails this.",

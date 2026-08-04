@@ -27,6 +27,27 @@ cart calls.
 import json
 
 
+def wire_text(s):
+    """A print() argument in trace form: an ASCII str, or a list of byte values.
+
+    JSON cannot hold byte 0xFF inside a string, and a trace has to survive being
+    read back by any language -- so anything past ASCII travels as numbers,
+    which every JSON parser agrees about."""
+    if isinstance(s, (bytes, bytearray)):
+        b = bytes(s)
+    else:
+        b = str(s).encode("utf-8")
+    for ch in b:
+        if ch >= 0x80:
+            return list(b)
+    return b.decode("ascii")
+
+
+def text_arg(v):
+    """A trace's text argument back to what a Canvas takes."""
+    return bytes(v) if isinstance(v, list) else v
+
+
 class RecordingCanvas:
     """Wraps a Canvas: draws for real, and records what a cart would have
     called to produce the same thing."""
@@ -81,7 +102,11 @@ class RecordingCanvas:
         return self._c.trib(x1, y1, x2, y2, x3, y3, c)
 
     def print(self, s, x, y, c, scale=1):
-        self._rec("print", s, x, y, c); return self._c.print(s, x, y, c)
+        # Text is recorded the way the reference player's wire carries it: a
+        # plain string while it is ASCII, a list of byte values otherwise. Same
+        # convention on purpose -- a trace and a frame payload should not
+        # disagree about what a string is (SPEC.md 6: print walks bytes).
+        self._rec("print", wire_text(s), x, y, c); return self._c.print(s, x, y, c)
 
     def camera(self, x=None, y=None):
         if x is None:
@@ -164,7 +189,7 @@ def replay(calls, canvas, sheet=None, tilemap=None):
         elif verb == "trib":
             canvas.trib(a[0], a[1], a[2], a[3], a[4], a[5], a[6])
         elif verb == "print":
-            canvas.print(a[0], a[1], a[2], a[3])
+            canvas.print(text_arg(a[0]), a[1], a[2], a[3])
         elif verb == "camera":
             canvas.camera(*a)
         elif verb == "clip":
@@ -199,6 +224,8 @@ def _lua_string(s):
     codepoint. The two disagree, and SPEC.md 6 says "codepoints" without saying
     which one it means. Until that is settled the suite stays inside one byte
     per character, where every implementation agrees."""
+    if isinstance(s, (bytes, bytearray)):
+        s = "".join(chr(b) for b in s)
     out = ['"']
     for ch in s:
         o = ord(ch)
@@ -222,6 +249,12 @@ def _lua_value(v):
         return "true" if v else "false"
     if isinstance(v, str):
         return _lua_string(v)
+    if isinstance(v, list):
+        # A text argument carried as byte values (see wire_text). In Lua that is
+        # a plain string literal again -- \ddd names a byte exactly -- because
+        # Lua strings ARE byte strings, which is the whole reason SPEC.md 6 says
+        # print walks bytes.
+        return _lua_string(bytes(v))
     return repr(v)
 
 

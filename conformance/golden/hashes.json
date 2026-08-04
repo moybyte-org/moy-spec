@@ -31,10 +31,10 @@
     },
     {
       "name": "text_bytes",
-      "core": false,
-      "calls": 6,
-      "frame_sha256": "2aa22242e1da0d9ad6f3515134afeb9b2f56e530e41863191a404478286f1dfc",
-      "note": "Bytes outside 0x20-0x7F. NOT part of conformance: SPEC.md 6\nsays \"codepoints\" where a Lua string is a byte string, and the\ntwo readings advance `print` differently. Golden kept ready."
+      "core": true,
+      "calls": 7,
+      "frame_sha256": "1b5411dccb1cef3a8b2d858d9fb214112b65027950f36b96eb18765b8d125e78",
+      "note": "Bytes outside 0x20-0x7F, which draw nothing and still advance\n8px. SPEC.md 6: print walks BYTES, so a two-byte UTF-8\ncharacter takes two cells, not one."
     },
     {
       "name": "camera_clip",
