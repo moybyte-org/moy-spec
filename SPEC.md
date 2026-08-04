@@ -409,8 +409,15 @@ There is no display-time palette (§12.1).
 `print` has no scale parameter; text is always 8px. The 8 × 8 font must be
 byte-identical across implementations or all text conformance fails — it ships as
 `font.bin` beside this spec: 96 glyphs covering ASCII `0x20`–`0x7F`, 8 bytes per
-glyph, one byte per **column** left to right, LSB = top row. Codepoints outside
-that range draw nothing and advance 8px like any glyph.
+glyph, one byte per **column** left to right, LSB = top row.
+
+**`print` walks its argument one BYTE per cell**, not one character. Bytes outside
+`0x20`–`0x7F` draw nothing and advance 8px like any glyph, so a two-byte UTF-8
+character occupies two blank cells rather than one. This is not a preference: a
+Lua string *is* a byte string (§4), so any host that decoded first would advance
+the cursor differently from one that did not, and the same cart would lay out
+differently on a desktop simulator and a handheld. A cart wanting non-ASCII text
+draws it from its own sheet.
 
 `font.bin` is MicroPython's `font_petme128_8x8`, MIT-licensed — shipping the
 glyph data means shipping that notice. See `THIRD_PARTY.md`.

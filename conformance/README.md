@@ -68,7 +68,7 @@ golden/hashes.json   sha256 per frame, plus the suite manifest
 | `primitives` | every core verb, plus 1×1 rects, r=0 and r=1 circles, zero-size rects |
 | `edges` | clipping — a host that clamps instead of clipping, or wraps a row |
 | `text` | the whole printable range at 8px fixed pitch |
-| `text_bytes` | bytes outside 0x20-0x7F — **not counted**, SPEC.md 6 says "codepoints" where a Lua string is bytes |
+| `text_bytes` | bytes outside 0x20-0x7F — **not counted**: the reference player cannot carry byte 0xFF across its wire (see below) |
 | `camera_clip` | `clip` is **screen** space, applied after `camera`; clipping in world space passes both features separately and fails this |
 | `pal_palt` | draw-time remap and sprite transparency together; `pal` must not touch pixels already drawn |
 | `sprites` | flips, integer scales, colorkeys, out-of-range tile ids, sprites under camera and clip |
@@ -106,10 +106,16 @@ somebody's published web export. Fixed upstream — the player now takes
 `hud=False` and spec bundles pass it; `MOY_HUD=1` forces the chip back on and
 reproduces the 200 pixels exactly.
 
-The two excluded scenes both fail against the player, for reasons already
-documented above: `text_bytes` because its `print` of byte 0xFF cannot survive
-the player's JSON command transport (UnicodeError), and `provisional` because
-its `sspr` rejects the 10-argument form SPEC.md 7.1 gives it.
+It also found `sspr` rejecting the 10-argument form SPEC.md 7.1 gives it — a
+cap of 8 in the Lua binding, so the full form had never worked on *any* host,
+boards included. Fixed upstream; `provisional` now matches too, which puts 8 of
+the 9 scenes in agreement.
+
+`text_bytes` is the one that still cannot run. A `print` carrying byte 0xFF dies
+at the player's Lua-to-Python boundary — every `mp_obj_new_str*` in MicroPython
+either validates UTF-8 or requires it — and would die again at the JSON command
+stream if it got past. That is an implementation limit, not a spec ambiguity:
+SPEC.md 6 now says `print` walks **bytes**, and both rasterizers do.
 
 ## Determinism, and one hole in it
 

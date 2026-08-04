@@ -29,26 +29,58 @@ if len(DATA) != _COUNT * WIDTH:
         % (len(DATA), _COUNT * WIDTH, _COUNT, WIDTH))
 
 
-def glyph(ch):
-    """The 8 column-bytes for character `ch`, or None when it is outside
-    0x20-0x7F (the caller advances anyway -- see `draw`)."""
-    n = ord(ch) - FIRST
+def glyph(code):
+    """The 8 column-bytes for byte value `code`, or None outside 0x20-0x7F (the
+    caller advances anyway -- see `draw`)."""
+    n = code - FIRST
     if 0 <= n < _COUNT:
         return DATA[n * WIDTH:(n + 1) * WIDTH]
     return None
 
 
+def as_bytes(s):
+    """A string argument to `print` as the BYTE sequence SPEC.md 6 says it is.
+
+    `bytes`/`bytearray` pass through. A `str` is taken one byte per character,
+    NOT UTF-8-encoded -- because in the only language core defines, a string IS
+    a byte string, and a host handing moycore a str is representing those bytes.
+    UTF-8-encoding here would make `print(chr(0xFF))` advance 16px in Python and
+    8px in Lua for the same cart, which is exactly the disagreement that made
+    this rule necessary.
+
+    A character above U+00FF cannot be one byte, so it is a programming error
+    rather than something to guess at."""
+    if isinstance(s, (bytes, bytearray)):
+        return s
+    s = str(s)
+    out = bytearray(len(s))
+    for i in range(len(s)):
+        c = ord(s[i])
+        if c > 0xFF:
+            raise ValueError(
+                "print() takes a byte string; U+%04X does not fit in one byte "
+                "(encode it yourself if you meant UTF-8)" % c)
+        out[i] = c
+    return out
+
+
 def draw(put, s, x, y):
     """Render `s` at (x, y), calling put(px, py) once per set pixel.
 
-    The reference rasterization of `print`: column j left to right, bit 0 of
-    each column byte is the TOP row, 8px advance per character including the
-    ones that draw nothing. A backend supplies `put`; text ends up identical
-    everywhere because the scan order and the bytes are both fixed."""
+    The reference rasterization of `print`: one BYTE per cell, column j left to
+    right, bit 0 of each column byte is the TOP row, 8px advance per byte
+    including the ones that draw nothing.
+
+    Bytes, not codepoints (SPEC.md 6). A Lua string is a byte string, the
+    device's C text kernel walks bytes, and MicroPython's framebuf.text -- which
+    this font came from and matches -- walks bytes. An implementation that
+    decoded first would advance the cursor 8px for a two-byte character where
+    every other host advances 16, so the same cart would lay out differently on
+    a desktop simulator and a handheld."""
     cx = int(x)
     y = int(y)
-    for ch in str(s):
-        col = glyph(ch)
+    for code in as_bytes(s):
+        col = glyph(code)
         if col is not None:
             for j in range(WIDTH):
                 bits = col[j]
@@ -62,6 +94,6 @@ def draw(put, s, x, y):
 
 
 def width(s):
-    """Pixel width of `s` -- len * 8, since the font is fixed-pitch and SPEC.md 6
-    gives `print` no scale parameter."""
-    return len(str(s)) * ADVANCE
+    """Pixel width of `s` -- one 8px cell per BYTE, since the font is
+    fixed-pitch and SPEC.md 6 gives `print` no scale parameter."""
+    return len(as_bytes(s)) * ADVANCE

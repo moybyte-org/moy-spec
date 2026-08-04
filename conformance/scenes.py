@@ -127,20 +127,19 @@ def text_bytes(c, sheet, tilemap):
     """Bytes outside 0x20-0x7F: SPEC.md 6 says they draw nothing and advance 8px
     like any glyph.
 
-    EXCLUDED from core conformance, and the reason is a spec question rather
-    than an implementation one. SPEC.md 6 says "codepoints", but a Lua string is
-    a BYTE string -- so on a real host a multi-byte character advances once per
-    byte, while an implementation iterating decoded text advances once per
-    codepoint. Both readings are defensible and the spec does not pick.
+    The spec question this used to raise is settled: SPEC.md 6 now says BYTES,
+    because a Lua string is a byte string, the device's C text kernel walks
+    bytes, and so does the framebuf.text this font came from. Both rasterizers
+    agree accordingly.
 
-    Keeping it as its own scene rather than deleting it: the moment SPEC.md 6
-    says "bytes" (or says "codepoints" and means it), this becomes a core scene
-    and the golden already exists.
-
-    Running it also turned up a real limit in the reference WebAssembly player:
-    it serializes its draw-command stream as JSON, so a `print` carrying byte
-    0xFF fails with UnicodeError and the frame is lost. A cart may legally print
-    that byte, so the transport -- not the raster -- is what needs widening."""
+    STILL EXCLUDED, for an implementation reason rather than a spec one: a
+    `print` carrying byte 0xFF cannot cross the reference WebAssembly player's
+    wire. It dies at the Lua->Python boundary, where every mp_obj_new_str* in
+    MicroPython either validates UTF-8 or requires it, and would die again at
+    the JSON command stream even if it got past. Carrying arbitrary bytes needs
+    a coordinated change -- bytes out of lua_to_mp, an escaped wire form, and a
+    replayer that accepts it -- so this scene graduates to core the day that
+    lands. The golden is already here waiting."""
     c.cls(1)
     c.print("A" + chr(0x00) + "B", 8, 8, 10)
     c.print("C" + chr(0x1F) + "D", 8, 20, 10)
