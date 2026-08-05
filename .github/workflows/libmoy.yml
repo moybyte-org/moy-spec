@@ -106,23 +106,21 @@ jobs:
         working-directory: libmoy
 
       # Linking is not running (the lesson this repo keeps re-learning). Wine
-      # executes the actual artifact against a self-quitting cart that touches
-      # the provisional verbs; rc=0 or the job is red. The env pins are test-rig
-      # honesty, not product configuration: the dummy drivers make it headless,
-      # the DLL overrides suppress Wine's first-run dialog (which reads as a
-      # silent hang), and SDL_RENDER_VSYNC=0 sidesteps simulated vsync against
-      # the dummy display, which stalls ~1s per frame and reads as 1 fps.
+      # executes the actual artifact against test/smoke.moy, the committed
+      # cart that calls every verb family; rc=0 or the job is red. The env
+      # pins are test-rig honesty, not product configuration: the dummy
+      # drivers make it headless, the DLL overrides suppress Wine's first-run
+      # dialog (which reads as a silent hang), and SDL_RENDER_VSYNC=0
+      # sidesteps simulated vsync against the dummy display, which stalls ~1s
+      # per frame and reads as 1 fps.
       - name: It runs, not just links (Wine)
         run: |
           sudo apt-get install -y -qq wine64
-          mkdir -p smoke.moy
-          printf '{"format":"moy-1","title":"smoke","main":"main.lua"}' > smoke.moy/manifest.json
-          printf 'local n=0\nfunction _update(dt) n=n+1 if n>30 then quit() end end\nfunction _draw() cls(1) tri(100,20,160,30,130,80,8) tline(0,100,319,100,0,0,65536,0) end\n' > smoke.moy/main.lua
           cd dist-win
           WINEDLLOVERRIDES="mscoree,mshtml=d" WINEDEBUG=-all \
             SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy SDL_RENDER_VSYNC=0 \
-            timeout 120 wine ./moy-play.exe ../smoke.moy
-          echo "the Windows player ran a cart and exited cleanly"
+            timeout 120 wine ./moy-play.exe ../test/smoke.moy
+          echo "the Windows player ran the all-verbs cart and exited cleanly"
         working-directory: libmoy
 
       - uses: actions/upload-artifact@v4
@@ -171,24 +169,28 @@ jobs:
           pyinstaller moy.spec
 
       # The native player for the non-Windows legs, so every OS bundle is CLI
-      # + player (Windows gets its player from the mingw job). Both links are
-      # static on purpose: the Linux binary carries SDL2 built from source in
-      # this same glibc-2.31 container -- SDL dlopens X11/Wayland/ALSA/Pulse
-      # at runtime, so static SDL2 still finds whatever the user's desktop
-      # actually runs -- and the macOS binary carries Homebrew's libSDL2.a so
-      # the download does not require Homebrew.
-      - name: Build moy-play (Linux, static SDL2)
-        if: runner.os == 'Linux'
+      # + player (Windows gets its player from the mingw job). SDL 2.30.11 is
+      # built from source and linked STATICALLY on both: SDL dlopens
+      # X11/Wayland/ALSA/Pulse at runtime (Cocoa is a system framework), so
+      # the binary stays self-contained -- on Linux, ldd shows nothing beyond
+      # libc. On macOS there is no packaged alternative anyway: Homebrew's
+      # sdl2 is now sdl2-compat, an SDL3 shim with no static library, which is
+      # how the first macOS build of this step failed.
+      - name: Build moy-play (static SDL2 from source)
+        if: runner.os != 'Windows'
+        shell: bash
         working-directory: libmoy
         run: |
-          apt-get update -qq
-          apt-get install -y -qq libx11-dev libxext-dev libxrandr-dev libxi-dev \
-            libxcursor-dev libxfixes-dev libxss-dev libgl1-mesa-dev \
-            libasound2-dev libpulse-dev libwayland-dev wayland-protocols libxkbcommon-dev
+          if [ "$RUNNER_OS" = Linux ]; then
+            apt-get update -qq
+            apt-get install -y -qq libx11-dev libxext-dev libxrandr-dev libxi-dev \
+              libxcursor-dev libxfixes-dev libxss-dev libgl1-mesa-dev \
+              libasound2-dev libpulse-dev libwayland-dev wayland-protocols libxkbcommon-dev
+          fi
           curl -sL -o sdl.tar.gz https://github.com/libsdl-org/SDL/releases/download/release-2.30.11/SDL2-2.30.11.tar.gz
           tar xf sdl.tar.gz
           (cd SDL2-2.30.11 && ./configure --disable-shared --enable-static \
-             --prefix=$PWD/prefix >/dev/null && make -j"$(nproc)" >/dev/null && make install >/dev/null)
+             --prefix=$PWD/prefix >/dev/null && make -j"$(getconf _NPROCESSORS_ONLN)" >/dev/null && make install >/dev/null)
           SDLC=SDL2-2.30.11/prefix/bin/sdl2-config
           cc -std=c99 -O2 -DMOY_WITH_LUA -Iinclude -Ivendor/lua \
             -ISDL2-2.30.11/prefix/include $($SDLC --cflags) \
@@ -196,33 +198,18 @@ jobs:
             vendor/lua/*.c $($SDLC --static-libs) \
             -o ../dist/moy-play
 
-      - name: Build moy-play (macOS, static SDL2)
-        if: runner.os == 'macOS'
-        working-directory: libmoy
-        run: |
-          brew install -q sdl2
-          SDL="$(brew --prefix sdl2)"
-          test -f "$SDL/lib/libSDL2.a"
-          LIBS=$("$SDL/bin/sdl2-config" --static-libs | sed "s|-lSDL2|$SDL/lib/libSDL2.a|")
-          cc -std=c99 -O2 -DMOY_WITH_LUA -Iinclude -Ivendor/lua \
-            -I"$SDL/include" -I"$SDL/include/SDL2" \
-            port/sdl2/main.c src/moy_canvas.c src/moy_sprite.c src/moy_data.c src/moy_lua.c \
-            vendor/lua/*.c $LIBS \
-            -o ../dist/moy-play
-
       # Same bar as the Windows player's Wine gate: the binary that ships must
-      # RUN a cart that touches the provisional verbs and exit cleanly, not
-      # just link. Headless via SDL's dummy drivers.
-      - name: The player runs a cart
+      # RUN a cart and exit cleanly, not just link. test/smoke.moy calls every
+      # verb family -- goldens judge correctness elsewhere; this proves the
+      # packaged binary reaches every verb path on its own OS. Headless via
+      # SDL's dummy drivers.
+      - name: The player runs the all-verbs cart
         if: runner.os != 'Windows'
         shell: bash
         run: |
-          mkdir -p psmoke.moy
-          printf '{"format":"moy-1","title":"smoke","main":"main.lua"}' > psmoke.moy/manifest.json
-          printf 'local n=0\nfunction _update(dt) n=n+1 if n>30 then quit() end end\nfunction _draw() cls(1) tri(100,20,160,30,130,80,8) tline(0,100,319,100,0,0,65536,0) end\n' > psmoke.moy/main.lua
           SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy SDL_RENDER_VSYNC=0 \
-            ./dist/moy-play psmoke.moy
-          echo "the native player ran a cart and exited cleanly"
+            ./dist/moy-play libmoy/test/smoke.moy
+          echo "the native player ran the all-verbs cart and exited cleanly"
 
       - name: Smoke every command
         shell: bash
