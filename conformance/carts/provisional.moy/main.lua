@@ -7,8 +7,8 @@
 -- of the two implementations and the point is to find out which.
 --
 -- SPEC.md 6.1 verbs. NOT part of conformance -- SPEC.md 11
--- excludes 6.1 until it leaves TBD. Kept so the golden already
--- exists when it settles.
+-- excludes 6.1 until its promotion gates clear. Kept so the
+-- golden already exists when they do.
 
 function _draw()
   cls(1)

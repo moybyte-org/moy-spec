@@ -184,6 +184,17 @@ static int l_sspr(lua_State *L)
     return 0;
 }
 
+static int l_tline(lua_State *L)
+{
+    moy_console *con = con_of(L);
+    moy_tline(con->canvas, con->sheet, con->map,
+              argi(L, 1, 0), argi(L, 2, 0), argi(L, 3, 0), argi(L, 4, 0),
+              (int32_t)argi(L, 5, 0), (int32_t)argi(L, 6, 0),
+              (int32_t)argi(L, 7, 0), (int32_t)argi(L, 8, 0),
+              argi(L, 9, -1));
+    return 0;
+}
+
 static int l_map(lua_State *L)
 {
     moy_console *con = con_of(L);
@@ -341,7 +352,7 @@ static const luaL_Reg VERBS[] = {
     {"rnd", l_rnd}, {"flr", l_flr}, {"quit", l_quit},
     {"sfx", l_sfx}, {"music", l_music},
     /* PROVISIONAL -- SPEC.md 6.1, not part of core 0.1. */
-    {"tri", l_tri}, {"trib", l_trib}, {"sspr", l_sspr},
+    {"tri", l_tri}, {"trib", l_trib}, {"sspr", l_sspr}, {"tline", l_tline},
     {NULL, NULL}
 };
 

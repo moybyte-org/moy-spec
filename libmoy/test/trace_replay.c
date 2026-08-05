@@ -295,6 +295,7 @@ int main(int argc, char **argv)
             else if (!strcmp(verb, "spr"))    moy_spr(&c, &sheet, N(0), N(1), N(2), N(3), N(4), N(5));
             else if (!strcmp(verb, "sspr"))   moy_sspr(&c, &sheet, N(0), N(1), N(2), N(3), N(4), N(5), N(6), N(7), N(8), N(9));
             else if (!strcmp(verb, "map"))    moy_map_draw(&c, &map, &sheet, N(0), N(1), N(2), N(3), N(4), N(5), N(6), N(7));
+            else if (!strcmp(verb, "tline"))  moy_tline(&c, &sheet, &map, N(0), N(1), N(2), N(3), (int32_t)N(4), (int32_t)N(5), (int32_t)N(6), (int32_t)N(7), N(8));
             else {
                 /* Never skipped: an unimplemented verb is a failure to report,
                  * not a line to step over on the way to a green result. */

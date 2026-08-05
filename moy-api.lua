@@ -103,7 +103,8 @@ function trib(x1, y1, x2, y2, x3, y3, c) end
 ---before each pixel the texel (u>>16, v>>16) is sampled, then u,v advance by
 ---du,dv. Empty map cells draw nothing. The Mode 7 verb: one call per
 ---scanline, perspective lives in how du,dv change BETWEEN scanlines.
----Provisional (SPEC.md 6.1) -- specified, not yet implemented anywhere.
+---Provisional (SPEC.md 6.1) -- in moycore and libmoy, golden-checked;
+---device kernels pending.
 ---@param x0 integer
 ---@param y0 integer
 ---@param x1 integer

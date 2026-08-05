@@ -166,7 +166,7 @@ local function s_draft()
   local w = 24 + flr(20 * math.sin(t * 2))
   sspr(8, 0, 8, 8, 220, 80, w * 2, w * 2)       -- arbitrary stretch of tile 1
   print("tri/trib + sspr stretch", 60, 180, 6)
-  print("(tline is specced, unbuilt; the", 20, 200, 5)
+  print("(tline: in moycore+libmoy; the", 20, 200, 5)
   print("batch verbs are deleted -- 6.1)", 20, 212, 5)
 end
 

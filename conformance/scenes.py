@@ -263,8 +263,8 @@ def tilemap_scene(c, sheet, tilemap):
 
 
 def provisional(c, sheet, tilemap):
-    """SPEC.md 6.1 verbs. Excluded from conformance until 6.1 leaves TBD --
-    kept as a scene so the day it settles there is already a golden."""
+    """SPEC.md 6.1 verbs. Excluded from conformance until each clears its
+    promotion gates -- kept as a scene so the golden already exists."""
     c.cls(1)
     c.tri(20, 20, 100, 40, 60, 100, 8)
     c.trib(20, 20, 100, 40, 60, 100, 7)
@@ -279,6 +279,52 @@ def provisional(c, sheet, tilemap):
     c.sspr(sheet, 0, 8, 8, 8, 20, 190, 0, 40)              # zero dest: nothing
 
 
+def provisional_tline(c, sheet, tilemap):
+    """SPEC.md 6.1 tline: exactly line()'s pixels, texture-stepped across the
+    map in 16.16 fixed point. A separate scene from `provisional` so a host
+    that has tri/sspr but not tline fails one scene, not both. Excluded for
+    the same reason and by the same rule.
+
+    The map fixture is 20 x 15 cells = a 160 x 120 pixel virtual texture, its
+    populated 10 x 6 corner surrounded by empty cells -- so most lines here
+    cross both."""
+    F = 65536                                     # 1.0 in 16.16
+    c.cls(1)
+    # A Mode-7-shaped fan: one call per scanline, du widening as the line
+    # "recedes". All the perspective is BETWEEN calls, none inside one.
+    for i in range(40):
+        c.tline(tilemap, sheet, 0, 8 + i, 159, 8 + i,
+                0, (i * 3 * F) // 2, F // 4 + i * (F // 64), 0)
+    # The same texture under Bresenham's diagonal pixel set.
+    c.tline(tilemap, sheet, 170, 8, 300, 60, 0, 0, F // 2, F // 3)
+    # Wrap: u starts one full texture-width negative and walks through zero;
+    # the texture must repeat, not clamp or vanish.
+    c.tline(tilemap, sheet, 0, 60, 159, 60, -160 * F, 4 * F, 2 * F, 0)
+    # A raycaster's column: vertical walk, v-stepped.
+    c.tline(tilemap, sheet, 310, 8, 310, 100, 4 * F, 0, 0, F // 2)
+    # colorkey drops the checker's light squares; palt the dark ones. Same
+    # texels, opposite holes.
+    c.tline(tilemap, sheet, 8, 110, 120, 110, 0, 24 * F, F // 2, 0, 7)
+    c.palt(12, 1)
+    c.tline(tilemap, sheet, 8, 116, 120, 116, 0, 24 * F, F // 2, 0)
+    c.palt()
+    # camera moves where the line LANDS, never what it samples: these two
+    # draw identical texel runs 8,6 apart on screen.
+    c.tline(tilemap, sheet, 150, 110, 262, 110, 0, 40 * F, F // 2, 0)
+    c.camera(-8, -6)
+    c.tline(tilemap, sheet, 150, 110, 262, 110, 0, 40 * F, F // 2, 0)
+    c.camera()
+    # clip: the texture cursor advances under the mask too, so the visible
+    # stretch stays texel-aligned with its screen x (u == x * 1.0 here).
+    c.clip(8, 130, 60, 20)
+    c.tline(tilemap, sheet, 0, 140, 200, 140, 0, 0, F, 0)
+    c.clip()
+    # A single-pixel line, and a line sampling only empty cells: one texel,
+    # then nothing at all.
+    c.tline(tilemap, sheet, 200, 100, 200, 100, 0, 0, F, F)
+    c.tline(tilemap, sheet, 8, 160, 300, 160, 0, 90 * F, F, 0)
+
+
 SCENES = (
     ("primitives", primitives),
     ("edges", edges),
@@ -289,11 +335,13 @@ SCENES = (
     ("sprites", sprites),
     ("tilemap", tilemap_scene),
     ("provisional", provisional),
+    ("provisional_tline", provisional_tline),
 )
 
 # Scenes that exercise SPEC.md 6.1 and are therefore NOT part of conformance
-# until it settles (SPEC.md 11: "so is everything in 6.1 until it leaves TBD").
-EXCLUDED = ("provisional",)
+# until each verb clears its promotion gates (SPEC.md 11: reported, not
+# counted).
+EXCLUDED = ("provisional", "provisional_tline")
 
 
 def core_scenes():

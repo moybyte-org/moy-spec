@@ -410,6 +410,59 @@ class Canvas:
                     continue
                 put(dx + i, ty, p)
 
+    def tline(self, tilemap, sheet, x0, y0, x1, y1, u, v, du, dv, colorkey=-1):
+        """Textured line: exactly line()'s pixels, sampling the MAP as a
+        virtual texture.
+
+        u, v, du, dv are 16.16 FIXED-POINT integers -- the cart multiplies its
+        floats by 65536. Before each pixel the texel (u >> 16, v >> 16) is
+        sampled; afterwards u += du, v += dv -- for EVERY walked pixel, drawn
+        or not, so a clipped or empty stretch cannot desynchronise the walk.
+        Python's >> and % both floor, which is the arithmetic SPEC.md 6.1
+        pins; a C port must floor too, not truncate.
+
+        Texel (px, py) lives in map cell (px >> 3, py >> 3); an empty cell
+        draws nothing; a placed tile draws its sheet pixel through pal, palt
+        and the optional colorkey exactly as spr would. Texture coordinates
+        wrap modulo the map's pixel size. The screen walk goes through _put,
+        so camera and clip move where the line LANDS, never what it samples.
+        PROVISIONAL: SPEC.md 6.1."""
+        x0 = int(x0); y0 = int(y0)
+        x1 = int(x1); y1 = int(y1)
+        u = int(u); v = int(v)
+        du = int(du); dv = int(dv)
+        ck = int(colorkey)
+        tw = tilemap.w * sheet.TILE
+        th = tilemap.h * sheet.TILE
+        palt = self._palt
+        mget = tilemap.mget
+        pget = sheet.pget
+        put = self._put
+        dx = abs(x1 - x0)
+        dy = -abs(y1 - y0)
+        sx = 1 if x0 < x1 else -1
+        sy = 1 if y0 < y1 else -1
+        err = dx + dy
+        while True:
+            px = (u >> 16) % tw
+            py = (v >> 16) % th
+            tid = mget(px >> 3, py >> 3)
+            if tid >= 0:
+                p = pget((tid % 16) * 8 + (px & 7), (tid // 16) * 8 + (py & 7))
+                if p != ck and not palt[p & 63]:
+                    put(x0, y0, p)
+            u += du
+            v += dv
+            if x0 == x1 and y0 == y1:
+                break
+            e2 = 2 * err
+            if e2 >= dy:
+                err += dy
+                x0 += sx
+            if e2 <= dx:
+                err += dx
+                y0 += sy
+
     def map(self, tilemap, sheet, mx=0, my=0, w=None, h=None,
             sx=0, sy=0, colorkey=-1, scale=1):
         """Blit a w x h CELL region of the tilemap (top-left cell mx, my) to

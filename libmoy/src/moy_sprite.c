@@ -111,6 +111,48 @@ void moy_sspr(moy_canvas *c, const moy_sheet *s, int sx, int sy, int sw, int sh,
     }
 }
 
+void moy_tline(moy_canvas *c, const moy_sheet *s, const moy_map *m,
+               int x0, int y0, int x1, int y1,
+               int32_t u, int32_t v, int32_t du, int32_t dv, int colorkey)
+{
+    /* Exactly moy_line's pixels, sampling the MAP as a virtual texture --
+     * (m->w*8 x m->h*8 pixels), texel (uu>>16, vv>>16), advancing u,v for
+     * EVERY walked pixel, clipped or empty alike. PROVISIONAL (SPEC.md 6.1).
+     *
+     * The accumulators are 64-bit so a long line with a large step cannot
+     * overflow (signed overflow is UB in C and bignum in the reference --
+     * int64 keeps the two identical for any input a cart can express). The
+     * shift and modulo must FLOOR, as the reference's do: >> of a negative
+     * value is arithmetic on every supported target, and the modulo is
+     * corrected by hand. */
+    int dx = x1 > x0 ? x1 - x0 : x0 - x1;
+    int dy = y1 > y0 ? y0 - y1 : y1 - y0;
+    int sx = x0 < x1 ? 1 : -1;
+    int sy = y0 < y1 ? 1 : -1;
+    int err = dx + dy;
+    int tw = m->w * MOY_TILE, th = m->h * MOY_TILE;
+    int64_t uu = u, vv = v;
+    for (;;) {
+        int px = (int)((uu >> 16) % tw); if (px < 0) px += tw;
+        int py = (int)((vv >> 16) % th); if (py < 0) py += th;
+        int tid = moy_mget(m, px >> 3, py >> 3);
+        if (tid >= 0) {
+            int p = moy_sheet_pget(s, (tid & 15) * MOY_TILE + (px & 7),
+                                      (tid >> 4) * MOY_TILE + (py & 7));
+            if (p != colorkey && !c->palt[p & 63])
+                moy_put(c, x0, y0, p);
+        }
+        uu += du;
+        vv += dv;
+        if (x0 == x1 && y0 == y1) break;
+        {
+            int e2 = 2 * err;
+            if (e2 >= dy) { err += dy; x0 += sx; }
+            if (e2 <= dx) { err += dx; y0 += sy; }
+        }
+    }
+}
+
 /* ----------------------------------------------------------------- map -- */
 
 void moy_map_init(moy_map *m, uint8_t *cells, int w, int h)

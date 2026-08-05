@@ -62,8 +62,12 @@ NOTES = {
     "tilemap": "map() regions, screen offsets, scale, colorkey, camera, clip,\n"
                "and a region starting outside the map.",
     "provisional": "SPEC.md 6.1 verbs. NOT part of conformance -- SPEC.md 11\n"
-                   "excludes 6.1 until it leaves TBD. Kept so the golden already\n"
-                   "exists when it settles.",
+                   "excludes 6.1 until its promotion gates clear. Kept so the\n"
+                   "golden already exists when they do.",
+    "provisional_tline": "SPEC.md 6.1 tline: line()'s pixels, texture-stepped\n"
+                         "across the map in 16.16 fixed point. Excluded like\n"
+                         "`provisional`, and separate so a host with tri/sspr\n"
+                         "but no tline fails one scene, not both.",
 }
 
 

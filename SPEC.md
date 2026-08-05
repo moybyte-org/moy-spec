@@ -429,7 +429,8 @@ glyph data means shipping that notice. See `THIRD_PARTY.md`.
 
 > **The set is decided; the verbs are provisional.** `tri`, `trib` and `sspr` are
 > implemented in every reference implementation and checked by the suite's
-> provisional scene; `tline` is specified here and implemented nowhere yet. None
+> provisional scene; `tline` is implemented in the reference library and the C
+> core, golden-checked, and not yet on a device. None
 > are core 0.1: each is promoted by the gates at the end of this section, on
 > evidence rather than argument. The batch verbs that used to fill this section
 > are **deleted**, and the measurements that deleted them are recorded below so
@@ -510,9 +511,9 @@ what this table is for.
 
 1. **It has a native kernel in the reference console.** The floor board runs the
    interpreted fallbacks at 7.5 ms per `tri` and 36 ms per small `sspr` — a verb
-   slower than the frame it draws into cannot honestly be specced. (`tri` and
-   `sspr` both have C kernels in `libmoy/`; the reference console still owes its
-   own. `tline` exists nowhere.)
+   slower than the frame it draws into cannot honestly be specced. (All four
+   have C kernels in `libmoy/`; the reference console still owes its own for
+   `tri`, `sspr` and `tline`.)
 2. **The suite has golden frames for it** beyond the provisional scene, promoted
    into the counted set.
 3. **It has a measured row in the reference bench on both reference boards**, so

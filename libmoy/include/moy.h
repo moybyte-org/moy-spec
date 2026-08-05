@@ -155,6 +155,16 @@ void moy_map_draw(moy_canvas *c, const moy_map *m, const moy_sheet *s,
                   int mx, int my, int w, int h, int sx, int sy,
                   int colorkey, int scale);
 
+/* Textured line: exactly moy_line's pixels, sampling the MAP as a virtual
+ * texture of m->w*8 x m->h*8 pixels. u, v, du, dv are 16.16 fixed point --
+ * the texel (u>>16, v>>16) is sampled before each pixel, then u += du,
+ * v += dv, for every walked pixel whether drawn or not. Coordinates wrap
+ * modulo the map's pixel size; empty cells draw nothing. The Mode 7 verb.
+ * PROVISIONAL (SPEC.md 6.1). */
+void moy_tline(moy_canvas *c, const moy_sheet *s, const moy_map *m,
+               int x0, int y0, int x1, int y1,
+               int32_t u, int32_t v, int32_t du, int32_t dv, int colorkey);
+
 /* -- the host seam (SPEC.md 7.3, 9) -------------------------------------- */
 
 /* SPEC.md 7.3's logical buttons. Each host maps its own hardware onto them --

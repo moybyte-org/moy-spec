@@ -137,6 +137,11 @@ class RecordingCanvas:
         self._rec("spr", tile, x, y, colorkey, scale, flip)
         return self._c.spr_tile(sheet, tile, x, y, colorkey, scale, flip)
 
+    def tline(self, tilemap, sheet, x0, y0, x1, y1, u, v, du, dv, colorkey=-1):
+        self._rec("tline", x0, y0, x1, y1, u, v, du, dv, colorkey)
+        return self._c.tline(tilemap, sheet, x0, y0, x1, y1, u, v, du, dv,
+                             colorkey)
+
     def sspr(self, sheet, sx, sy, sw, sh, dx, dy, dw=None, dh=None,
              colorkey=-1, flip=0):
         dw = sw if dw is None else dw
@@ -160,7 +165,7 @@ ARITY = {
     "cls": (1,), "pix": (3,), "line": (5,), "rect": (5,), "rectb": (5,),
     "circ": (4,), "circb": (4,), "print": (4,), "camera": (0, 2),
     "clip": (0, 4), "pal": (0, 2), "palt": (0, 2), "spr": (6,),
-    "map": (8,), "tri": (7,), "trib": (7,), "sspr": (10,),
+    "map": (8,), "tri": (7,), "trib": (7,), "sspr": (10,), "tline": (9,),
 }
 
 
@@ -203,6 +208,9 @@ def replay(calls, canvas, sheet=None, tilemap=None):
         elif verb == "sspr":
             canvas.sspr(sheet, a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7],
                         a[8], a[9])
+        elif verb == "tline":
+            canvas.tline(tilemap, sheet, a[0], a[1], a[2], a[3], a[4], a[5],
+                         a[6], a[7], a[8])
         elif verb == "map":
             canvas.map(tilemap, sheet, a[0], a[1], a[2], a[3], a[4], a[5],
                        a[6], a[7])

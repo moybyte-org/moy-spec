@@ -253,6 +253,11 @@ def make_api(canvas, cart=None, input=None, audio=None, pmem=None,
             return
         canvas.sspr(sheet, sx, sy, sw, sh, dx, dy, dw, dh, colorkey, flip)
 
+    def tline(x0, y0, x1, y1, u, v, du, dv, colorkey=-1):
+        if sheet is None or tilemap is None:
+            return
+        canvas.tline(tilemap, sheet, x0, y0, x1, y1, u, v, du, dv, colorkey)
+
     def map_(mx=0, my=0, w=None, h=None, sx=0, sy=0, colorkey=-1, scale=1):
         if sheet is None or tilemap is None:
             return
@@ -351,6 +356,7 @@ def make_api(canvas, cart=None, input=None, audio=None, pmem=None,
         "tri": canvas.tri,
         "trib": canvas.trib,
         "sspr": sspr,
+        "tline": tline,
     }
 
     if "layers" in extensions:
