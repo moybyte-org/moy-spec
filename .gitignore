@@ -18,3 +18,4 @@ _site/
 
 # Claude Code's local config -- not part of the spec.
 .claude/
+.pmem
