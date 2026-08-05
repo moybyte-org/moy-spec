@@ -138,17 +138,27 @@ jobs:
   # export, THE CONFORMANCE SUITE from inside the frozen binary (which proves
   # every bundled data file), and push -- both its honest failure on a
   # console-less runner and a real tier-0 push to a marker volume.
+  # The Linux leg builds inside Debian 11 (glibc 2.31), NOT on the runner's
+  # own Ubuntu: a PyInstaller binary demands the glibc it was built against,
+  # so building on ubuntu-latest quietly ships a binary that refuses to start
+  # on anything older -- found the hard way, on a 22.04 machine, from the
+  # first published tar. Old builder, wide audience.
   moy-cli:
     name: moy CLI (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - {os: ubuntu-latest, container: "python:3.12-bullseye"}
+          - {os: windows-latest, container: ""}
+          - {os: macos-latest, container: ""}
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
+        if: matrix.container == ''
         with:
           python-version: "3.12"
 
