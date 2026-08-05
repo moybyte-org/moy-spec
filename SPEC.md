@@ -440,8 +440,9 @@ glyph data means shipping that notice. See `THIRD_PARTY.md`.
 
 > **The set is decided; the verbs are provisional.** `tri`, `trib` and `sspr` are
 > implemented in every reference implementation and checked by the suite's
-> provisional scene; `tline` is implemented in the reference library and the C
-> core, golden-checked, and not yet on a device. None
+> provisional scene; `tline` is implemented in the reference library, the C
+> core, and the reference console's native kernels (2026-08), golden-checked,
+> and measured on the floor board. None
 > are core 0.1: each is promoted by the gates at the end of this section, on
 > evidence rather than argument. The batch verbs that used to fill this section
 > are **deleted**, and the measurements that deleted them are recorded below so
@@ -505,7 +506,7 @@ budgets against):
 
 | technique | shape | floor-board budget |
 |---|---|---|
-| Mode 7 plane | ~120 `tline` calls | **~8 ms for a half-screen plane, measured on the FASTER reference board** (~210 ns/texel). The first kernel measured ~25 ms — two 64-bit software modulos per texel — and this row is what caught it; the fix (reduce once, wrap by conditional subtract) moved no pixel, which the golden proves. The floor board's own row is still owed |
+| Mode 7 plane | ~120 `tline` calls | **~8 ms for a half-screen plane, measured on the FASTER reference board** (~210 ns/texel). The first kernel measured ~25 ms — two 64-bit software modulos per texel — and this row is what caught it; the fix (reduce once, wrap by conditional subtract) moved no pixel, which the golden proves. Floor board (2026-08 bench): 100 full-width lines cost ~14 ms over the ~18 ms baseline frame, ~440 ns/texel — a half-screen plane ≈ 17 ms, at the 30 Hz edge beside the baseline compose; third-screen planes are comfortable |
 | raycaster | script DDA + `sspr`/`rect` columns | measured on glass: ~32 fps full-res, past 60 at half-res |
 | flat-shaded polygons | `tri` per face | dispatch + fill, small triangles near the call floor |
 | scaled sprites, billboards | `sspr` | sub-ms each |
@@ -523,8 +524,8 @@ what this table is for.
 1. **It has a native kernel in the reference console.** The floor board runs the
    interpreted fallbacks at 7.5 ms per `tri` and 36 ms per small `sspr` — a verb
    slower than the frame it draws into cannot honestly be specced. (All four
-   have C kernels in `libmoy/`; the reference console still owes its own for
-   `tri`, `sspr` and `tline`.)
+   have C kernels in `libmoy/`; the reference console grew native `tri`,
+   `sspr` and `tline` kernels in its 2026-08 build.)
 2. **The suite has golden frames for it** beyond the provisional scene, promoted
    into the counted set.
 3. **It has a measured row in the reference bench on both reference boards**, so
