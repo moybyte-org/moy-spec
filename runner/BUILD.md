@@ -1,10 +1,10 @@
 # The web player build
 
-These three files are the moy web player: a MicroPython-WASM build of the
-reference console, frozen bytecode inside the .wasm, plus the page (a JS
-replayer of the draw-command stream -- itself a complete implementation of
-the SPEC.md verb raster). Fully static; a cart bundle beside them is a
-playable game at a URL.
+These four files are the moy web player: a MicroPython-WASM build of the
+reference console, frozen bytecode inside the .wasm, a worker that owns the VM
+and the frame loop, plus the page -- a JS replayer of the draw-command stream,
+and itself a complete, independent implementation of the SPEC.md verb raster.
+Fully static; a cart bundle beside them is a playable game at a URL.
 
 These files are PINNED, not copied by hand. `runner/VERSION` records which
 build they are -- source commit, branch, and a sha256 per file -- and
