@@ -39,6 +39,10 @@ Before you ship, and to work with the art tools you already own:
           [--update]             its files still match; --update pins the
           [--channel beta]       latest CONFORMANCE-GATED release, or a local
           [--from dist-spec/]    build if you are working on the player
+    moy.py play <cart.moy>       run the cart in the NATIVE desktop player
+                                 (moy-play, the C console -- ships beside moy
+                                 in the release download). `run` is the dev
+                                 loop in the browser; `play` is just playing
     moy.py push <cart.moy>       copy the cart onto a connected console --
           [--to <where>]         a volume with a moy-console.json marker, a
           [--list]               serial port, or http://<console>. Probes per
@@ -778,6 +782,35 @@ def cmd_conform(args):
     sys.exit(_run.main(args))
 
 
+def cmd_play(args):
+    """Run a cart in the native desktop player.
+
+    moy-play is the C console (libmoy) with its SDL2 port -- a sibling binary,
+    not something this CLI contains. The lookup order is where it actually is:
+    beside this executable in a release download, or libmoy's build dir in a
+    checkout."""
+    if not args:
+        die("usage: %s play <cart.moy>" % PROG)
+    src = cart_dir(args[0])
+    if not os.path.isdir(src):
+        die("no such cart: " + src)
+    exe = "moy-play.exe" if sys.platform == "win32" else "moy-play"
+    candidates = []
+    if FROZEN:
+        candidates.append(os.path.join(
+            os.path.dirname(os.path.abspath(sys.executable)), exe))
+    else:
+        candidates.append(os.path.join(HERE, "libmoy", "build", exe))
+    found = next((c for c in candidates if os.path.isfile(c)), None)
+    if found is None:
+        hint = ("it ships beside moy in the release download" if FROZEN
+                else "`make play` in libmoy/ builds it")
+        die("moy-play not found (looked for %s) -- %s"
+            % (", ".join(candidates), hint))
+    import subprocess
+    sys.exit(subprocess.call([found, src]))
+
+
 def cmd_push(args):
     """Copy a cart onto a connected console (proposals/sideload.md)."""
     sys.path.insert(0, HERE)
@@ -840,7 +873,7 @@ def main():
             "port": cmd_port, "demo": cmd_demo,
             "check": cmd_check, "pack": cmd_pack, "unpack": cmd_unpack,
             "gfx": cmd_gfx, "map": cmd_map, "conform": cmd_conform,
-            "player": cmd_player, "push": cmd_push}
+            "player": cmd_player, "push": cmd_push, "play": cmd_play}
     if len(sys.argv) < 2 or sys.argv[1] not in cmds:
         print(__doc__.strip().replace("moy.py ", PROG + " "))
         sys.exit(0 if len(sys.argv) < 2 else 1)

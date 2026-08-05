@@ -339,6 +339,83 @@ static int l_music(lua_State *L)
     return 0;
 }
 
+/* The rest of SPEC.md 8.2 and 7.3's optional input. Every one of these must
+ * EXIST in the cart's globals whether or not the host wired a hook: 8.2 says
+ * a silent host "MUST NOT error", and the first Celeste port crashed on its
+ * pause menu because music_stop was nil. Absence of hardware is expressed in
+ * the RETURN VALUES the spec assigns to it, never as a missing symbol. */
+
+static int l_beep(lua_State *L)
+{
+    moy_console *con = con_of(L);
+    if (con->host.beep)
+        con->host.beep(con->host.user, (float)lua_tonumber(L, 1),
+                       lua_isnoneornil(L, 2) ? 0.15f : (float)lua_tonumber(L, 2));
+    return 0;
+}
+
+static int l_music_stop(lua_State *L)
+{
+    moy_console *con = con_of(L);
+    if (con->host.music_stop) con->host.music_stop(con->host.user);
+    return 0;
+}
+
+static int l_sound_stop(lua_State *L)
+{
+    moy_console *con = con_of(L);
+    if (con->host.sound_stop) con->host.sound_stop(con->host.user, argi(L, 1, -1));
+    return 0;
+}
+
+static int l_volume(lua_State *L)
+{
+    moy_console *con = con_of(L);
+    if (con->host.volume) con->host.volume(con->host.user, argi(L, 1, 0));
+    return 0;
+}
+
+static int l_touch(lua_State *L)
+{
+    moy_console *con = con_of(L);
+    int v[4];
+    if (!con->host.touch || !con->host.touch(con->host.user, v))
+        return 0;                       /* no pointer: touch() reads as nil */
+    lua_pushinteger(L, v[0]);
+    lua_pushinteger(L, v[1]);
+    lua_pushboolean(L, v[2]);
+    lua_pushboolean(L, v[3]);
+    return 4;
+}
+
+static int push_key(lua_State *L, int (*fn)(void *, int), void *user)
+{
+    if (lua_isnoneornil(L, 1))          /* no argument: the last typed code */
+        lua_pushinteger(L, fn ? fn(user, -1) : 0);
+    else
+        lua_pushboolean(L, fn && fn(user, (int)lua_tointeger(L, 1)));
+    return 1;
+}
+
+static int l_key(lua_State *L)
+{
+    moy_console *con = con_of(L);
+    return push_key(L, con->host.key, con->host.user);
+}
+
+static int l_keyp(lua_State *L)
+{
+    moy_console *con = con_of(L);
+    return push_key(L, con->host.keyp, con->host.user);
+}
+
+static int l_textmode(lua_State *L)
+{
+    moy_console *con = con_of(L);
+    if (con->host.textmode) con->host.textmode(con->host.user, lua_toboolean(L, 1));
+    return 0;
+}
+
 /* -- installation -------------------------------------------------------- */
 
 static const luaL_Reg VERBS[] = {
@@ -350,7 +427,11 @@ static const luaL_Reg VERBS[] = {
     {"btn", l_btn}, {"btnp", l_btnp}, {"players", l_players},
     {"time", l_time}, {"pmem", l_pmem}, {"cfg", l_cfg},
     {"rnd", l_rnd}, {"flr", l_flr}, {"quit", l_quit},
-    {"sfx", l_sfx}, {"music", l_music},
+    {"sfx", l_sfx}, {"music", l_music}, {"beep", l_beep},
+    {"music_stop", l_music_stop}, {"sound_stop", l_sound_stop},
+    {"volume", l_volume},
+    {"touch", l_touch}, {"key", l_key}, {"keyp", l_keyp},
+    {"textmode", l_textmode},
     /* PROVISIONAL -- SPEC.md 6.1, not part of core 0.1. */
     {"tri", l_tri}, {"trib", l_trib}, {"sspr", l_sspr}, {"tline", l_tline},
     {NULL, NULL}

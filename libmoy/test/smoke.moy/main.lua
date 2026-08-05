@@ -1,10 +1,32 @@
--- Every verb family, thirty frames, quit. The ship gate for the desktop
+-- EVERY core verb, thirty frames, quit. The ship gate for the desktop
 -- players: the conformance goldens judge correctness, this proves the
 -- PACKAGED binary reaches every verb path and exits cleanly on its own OS.
+-- Every symbol the API declares is called, because a verb the binding forgot
+-- to register is nil -- which is how a Celeste port crashed on its pause
+-- menu (music_stop) while every golden stayed green.
 local n = 0
 
 function _update(dt)
   n = n + 1
+  sfx(0)
+  music(0)
+  beep(440, 0.05)
+  volume(7)
+  sound_stop()
+  music_stop()
+  key(90)
+  keyp()
+  textmode(false)
+  local tx = touch()
+  mset(0, 0, 1)
+  if mget(0, 0) ~= 1 then error("mget") end
+  if flr(1.5) ~= 1 then error("flr") end
+  if players() < 1 then error("players") end
+  local r = rnd(1)
+  local ms = time()
+  cfg("smoke", "default")
+  btnp("a")
+  pmem(0, pmem(0))
   if n > 30 then quit() end
 end
 

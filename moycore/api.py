@@ -282,6 +282,10 @@ def make_api(canvas, cart=None, input=None, audio=None, pmem=None,
         if audio is not None:
             audio.music(track, loop)
 
+    def beep(freq, dur=0.15):
+        if audio is not None:
+            audio.beep(freq, dur)
+
     def music_stop():
         if audio is not None:
             audio.music_stop()
@@ -289,6 +293,10 @@ def make_api(canvas, cart=None, input=None, audio=None, pmem=None,
     def sound_stop(chan=None):
         if audio is not None:
             audio.sound_stop(chan)
+
+    def volume(level):
+        if audio is not None:
+            audio.volume(level)
 
     # -- state and utility (SPEC.md 9) --------------------------------------
 
@@ -340,8 +348,10 @@ def make_api(canvas, cart=None, input=None, audio=None, pmem=None,
         # audio
         "sfx": sfx,
         "music": music,
+        "beep": beep,
         "music_stop": music_stop,
         "sound_stop": sound_stop,
+        "volume": volume,
         # state and utility
         "time": clock,
         "pmem": pmem_,

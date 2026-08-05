@@ -190,6 +190,20 @@ typedef struct {
     void     (*pmem_set)(void *user, int slot, int32_t value);
     void     (*sfx)(void *user, int n, int chan);
     void     (*music)(void *user, int track, int loop);
+    /* The rest of SPEC.md 8.2, same rule: NULL is a conforming no-op. The
+     * verbs still EXIST in the cart's world either way -- a cart calling
+     * music_stop() on a silent host must get silence, not an error. */
+    void     (*beep)(void *user, float freq_hz, float dur_s);
+    void     (*music_stop)(void *user);
+    void     (*sound_stop)(void *user, int chan);            /* chan < 0: all */
+    void     (*volume)(void *user, int level);
+    /* SPEC.md 7.3's optional input. NULL means the hardware is absent, and
+     * the verbs answer accordingly: touch() reads nil, key()/keyp() read
+     * false (0 for the no-argument form), textmode() is a no-op. */
+    int      (*touch)(void *user, int out_xyth[4]);          /* 0 = no pointer */
+    int      (*key)(void *user, int code);                   /* code < 0: last typed */
+    int      (*keyp)(void *user, int code);
+    void     (*textmode)(void *user, int on);
     void     (*quit)(void *user);                            /* SPEC.md 9 */
     /* SPEC.md 9: a value from the cart's config.json, or NULL. The console
      * never parses JSON -- config is the author's tuning surface and reading
