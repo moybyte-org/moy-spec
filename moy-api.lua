@@ -16,14 +16,15 @@
 -- and spreadsheet/document assets); those belong to that console, so they are
 -- deliberately absent here -- a cart calling them is non-portable.
 --
--- Screen: 320x240, palette-indexed (64 colours, indices 0-63; 0-15 are the
--- classic base 16). Sheet: 512 8x8 tiles (16 per row). Origin top-left,
--- +x right, +y down. A cart defines up to three globals the console calls:
--- _init(), _update(dt), _draw().
+-- Screen: 320x240 by default -- a manifest may declare "canvas": "160x120" or
+-- "128x128" (SPEC.md 3.1) -- palette-indexed (64 colours, indices 0-63; 0-15
+-- are the classic base 16). Sheet: 512 8x8 tiles (16 per row). Origin
+-- top-left, +x right, +y down. A cart defines up to three globals the console
+-- calls: _init(), _update(dt), _draw().
 
----Screen width in pixels (320).
+---Canvas width in pixels (320 unless the manifest declares a smaller canvas).
 W = 320
----Screen height in pixels (240).
+---Canvas height in pixels (240 unless the manifest declares a smaller canvas).
 H = 240
 
 -- --- clear / pixels ---------------------------------------------------------

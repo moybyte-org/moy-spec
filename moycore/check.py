@@ -294,10 +294,11 @@ def check_cart(cart, files=None, findings=None):
                          "cart is %s across %d files (source %s)"
                          % (budget.human(total), len(files),
                             budget.human(len(cart.source.encode("utf-8"))))))
+        cw, ch = cart.canvas_size
         findings.append(("info", "budget",
                          "fixed allocations: framebuffer %s, sheet %s, map %s of %s; "
                          "cart heap %s is runtime and not decidable from here"
-                         % (budget.human(budget.FRAMEBUFFER),
+                         % (budget.human(cw * ch),
                             budget.human(budget.SPRITE_SHEET),
                             budget.human(budget.tilemap_bytes(tm)),
                             budget.human(budget.TILEMAP),

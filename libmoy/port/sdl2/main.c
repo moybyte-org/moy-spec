@@ -241,7 +241,7 @@ static void load_map(const char *dir, moy_map *m)
 
 /* A manifest field, by minimal scan. A real host wants a JSON parser -- it has
  * `extensions` and `runtime` to refuse on (SPEC.md 3.1, 10) and a possible
- * `palette` to honour (2.2). This example reads the two fields it needs. */
+ * `palette` to honour (2.2). This example reads the fields it needs. */
 static void manifest_str(const char *text, const char *key, char *out, size_t n)
 {
     char pat[64];
@@ -266,10 +266,10 @@ int main(int argc, char **argv)
     SDL_Renderer *ren;
     SDL_Texture *tex;
     char path[1024], mainfile[256] = "main.lua", title[256] = "moy";
-    char fps_s[16] = "30", err[512];
+    char fps_s[16] = "30", canvas_s[16] = "320x240", err[512];
     char *manifest, *source;
     const char *cart = NULL;
-    int i, scale = 3, fullscreen = 0, fps, frame_ms;
+    int i, scale = 3, fullscreen = 0, fps, frame_ms, cw, ch;
     uint32_t last;
 
     for (i = 1; i < argc; i++) {
@@ -283,6 +283,7 @@ int main(int argc, char **argv)
     manifest = slurp(path, NULL);
     manifest_str(manifest, "main", mainfile, sizeof mainfile);
     manifest_str(manifest, "title", title, sizeof title);
+    manifest_str(manifest, "canvas", canvas_s, sizeof canvas_s);
     /* fps is a number, not a string, so scan it as one. SPEC.md 5: 30 or 60,
      * and anything else falls back to the guaranteed 30. */
     if (manifest) {
@@ -294,7 +295,16 @@ int main(int argc, char **argv)
     frame_ms = 1000 / fps;
     free(manifest);
 
-    moy_canvas_init(&canvas, frame, MOY_W, MOY_H);
+    /* SPEC.md 1: three canvas sizes, closed set; anything else is refused,
+     * never run at the wrong dimensions. */
+    if (sscanf(canvas_s, "%dx%d", &cw, &ch) != 2 ||
+        !((cw == 320 && ch == 240) || (cw == 160 && ch == 120) ||
+          (cw == 128 && ch == 128))) {
+        fprintf(stderr, "moy-play: this player has no \"%s\" canvas (SPEC.md 3.1)\n", canvas_s);
+        return 2;
+    }
+
+    moy_canvas_init(&canvas, frame, cw, ch);
     moy_sheet_init(&sheet, sheet_pix);
     moy_map_init(&map, map_cells, 20, 15);
     load_sheet(cart);
@@ -373,7 +383,7 @@ int main(int argc, char **argv)
     }
 
     win = SDL_CreateWindow(title, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                           MOY_W * scale, MOY_H * scale,
+                           cw * scale, ch * scale,
                            fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
     {   /* vsync only when the display reports a real refresh rate. The loop
          * paces itself with SDL_Delay regardless, so vsync is tear-avoidance,
@@ -387,13 +397,13 @@ int main(int argc, char **argv)
             rflags |= SDL_RENDERER_PRESENTVSYNC;
         ren = SDL_CreateRenderer(win, -1, rflags);
     }
-    /* SPEC.md 1: a host whose glass is not 320x240 scales and/or letterboxes,
-     * and integer scaling is recommended. SDL does both for us. */
-    SDL_RenderSetLogicalSize(ren, MOY_W, MOY_H);
+    /* SPEC.md 1: a host whose glass does not match the canvas scales and/or
+     * letterboxes, and integer scaling is recommended. SDL does both for us. */
+    SDL_RenderSetLogicalSize(ren, cw, ch);
     SDL_RenderSetIntegerScale(ren, SDL_TRUE);
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "nearest");
     tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888,
-                            SDL_TEXTUREACCESS_STREAMING, MOY_W, MOY_H);
+                            SDL_TEXTUREACCESS_STREAMING, cw, ch);
 
     host.t0 = SDL_GetTicks();
     if (moy_lua_init(L, err, sizeof err)) { fprintf(stderr, "moy-play: _init: %s\n", err); return 1; }
@@ -432,12 +442,12 @@ int main(int argc, char **argv)
         {   /* pixels out: the one place the console's colours become anyone's */
             const uint8_t *pal = moy_palette_default;
             int p;
-            for (p = 0; p < MOY_W * MOY_H; p++) {
+            for (p = 0; p < cw * ch; p++) {
                 const uint8_t *e = pal + (size_t)frame[p] * 3;
                 pixels[p] = 0xFF000000u | ((uint32_t)e[0] << 16) | ((uint32_t)e[1] << 8) | e[2];
             }
         }
-        SDL_UpdateTexture(tex, NULL, pixels, MOY_W * 4);
+        SDL_UpdateTexture(tex, NULL, pixels, cw * 4);
         SDL_RenderClear(ren);
         SDL_RenderCopy(ren, tex, NULL, NULL);
         SDL_RenderPresent(ren);

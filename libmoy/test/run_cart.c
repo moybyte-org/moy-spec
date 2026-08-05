@@ -118,6 +118,36 @@ static void load_map(const char *path, moy_map *m)
     moy_map_init(m, map_cells, w, h);
 }
 
+/* The declared canvas (SPEC.md 3.1): default 320x240, and a value outside the
+ * closed set refuses the cart -- running at a size it did not ask for would
+ * break every coordinate in it. Returns 0 on an unknown value. */
+static int manifest_canvas(const char *dir, int *w, int *h)
+{
+    char path[1024];
+    char *text;
+    const char *p;
+    int ok = 1;
+    *w = MOY_W;
+    *h = MOY_H;
+    snprintf(path, sizeof path, "%s/manifest.json", dir);
+    text = slurp(path, NULL);
+    if (!text) return 1;
+    p = strstr(text, "\"canvas\"");
+    if (p && (p = strchr(p + 8, '"')) != NULL) {
+        int cw = 0, ch = 0;
+        if (sscanf(p + 1, "%dx%d", &cw, &ch) == 2 &&
+            ((cw == 320 && ch == 240) || (cw == 160 && ch == 120) ||
+             (cw == 128 && ch == 128))) {
+            *w = cw;
+            *h = ch;
+        } else {
+            ok = 0;
+        }
+    }
+    free(text);
+    return ok;
+}
+
 /* The manifest's `main` (SPEC.md 3.1), by a deliberately minimal scan rather
  * than a JSON parser: a host has one already, and this needs one field. */
 static void manifest_main(const char *dir, char *out, size_t outlen)
@@ -152,7 +182,7 @@ int main(int argc, char **argv)
     char path[1024], mainfile[256], err[512] = {0};
     char *source;
     const char *cart = NULL, *out = NULL;
-    int i, frames = 2;
+    int i, frames = 2, cw, ch;
 
     for (i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--frames") && i + 1 < argc) frames = atoi(argv[++i]);
@@ -164,7 +194,12 @@ int main(int argc, char **argv)
         return 2;
     }
 
-    moy_canvas_init(&canvas, frame, MOY_W, MOY_H);
+    if (!manifest_canvas(cart, &cw, &ch)) {
+        fprintf(stderr, "run_cart: this cart declares a canvas size this "
+                        "player does not have (SPEC.md 3.1)\n");
+        return 2;
+    }
+    moy_canvas_init(&canvas, frame, cw, ch);
     moy_sheet_init(&sheet, sheet_pix);
     moy_map_init(&map, map_cells, 20, 15);
     snprintf(path, sizeof path, "%s/sprites.moygfx", cart);
@@ -222,7 +257,7 @@ int main(int argc, char **argv)
     {
         FILE *f = fopen(out, "wb");
         if (!f) { perror(out); return 2; }
-        fwrite(frame, 1, sizeof frame, f);
+        fwrite(frame, 1, (size_t)(cw * ch), f);
         fclose(f);
     }
     return 0;

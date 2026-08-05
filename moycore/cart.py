@@ -31,6 +31,7 @@ DEFAULT_MAIN = "main.lua"
 DEFAULT_FPS = 30
 VALID_FPS = (30, 60)
 INPUT_KINDS = ("buttons", "touch", "keyboard")
+CANVAS_SIZES = ("320x240", "160x120", "128x128")
 ICON_MAX_TILES = 4
 
 MANIFEST = "manifest.json"
@@ -156,6 +157,13 @@ class Cart:
             return _palette.MOY64
         return _palette.parse(v)
 
+    @property
+    def canvas_size(self):
+        """The declared raster as (w, h): (320, 240) unless the manifest says
+        smaller (SPEC.md 3.1). Hand this to Canvas(width, height)."""
+        w, h = (self.manifest.get("canvas") or CANVAS_SIZES[0]).split("x")
+        return int(w), int(h)
+
     def icon(self):
         return _normalize_icon(self.manifest.get("icon"), self.sheet.count)
 
@@ -196,6 +204,14 @@ class Cart:
             if missing:
                 raise Unsupported(
                     "this console does not implement: %s" % ", ".join(str(m) for m in missing))
+
+        # canvas is the other capability field (SPEC.md 1, 3.1): a size outside
+        # the closed set is refused, never run at the wrong dimensions.
+        cv = manifest.get("canvas")
+        if cv is not None and cv not in CANVAS_SIZES:
+            raise Unsupported(
+                'this console has no %r canvas; a moy-1 cart declares one of: %s'
+                % (cv, ", ".join(CANVAS_SIZES)))
 
         main = manifest.get("main") or DEFAULT_MAIN
         if main not in files:

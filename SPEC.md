@@ -50,7 +50,7 @@ desktop simulator, and someone else's OS.
 
 | property | value |
 |---|---|
-| Screen | **320 × 240**, palette-indexed |
+| Screen | **320 × 240**, palette-indexed; a cart may declare a smaller canvas (§3.1) |
 | Palette | **64 entries** (§2), indices 0–63, cart-replaceable |
 | Sprite sheet | **512 tiles** of 8 × 8, drawn from palette indices **0–15** |
 | Tilemap | one grid, cells hold a tile id 0–254 |
@@ -59,9 +59,18 @@ desktop simulator, and someone else's OS.
 | Language | **Lua 5.4**, sandboxed (§4) |
 | Origin | top-left, `+x` right, `+y` down |
 
-A host whose physical display is not 320 × 240 scales and/or letterboxes the console
-raster onto its glass. The cart never learns the physical resolution. Integer scaling
-is recommended; the choice is the host's.
+The canvas defaults to **320 × 240**. A cart wanting a chunkier look may declare a
+smaller raster in its manifest — `"canvas": "160x120"` or `"canvas": "128x128"`
+(§3.1) — and then plays entirely in it: every verb clips to it and `W`/`H` report
+it (§9). The set is **closed** — these three sizes, not arbitrary dimensions — so
+a host still provisions for a fixed-size machine (§1.1) and can pick its scaler
+per size ahead of time. A `canvas` value outside the set MUST be refused like an
+unknown `runtime` (§3.1): running a cart at a size it did not ask for would break
+every coordinate in it.
+
+A host whose physical display does not match the canvas scales and/or letterboxes
+the console raster onto its glass. The cart never learns the physical resolution.
+Integer scaling is recommended; the choice is the host's.
 
 ### 1.1 Memory the host must provide
 
@@ -71,7 +80,7 @@ runs:
 
 | allocation | size | note |
 |---|---|---|
-| Framebuffer | **75 KB** | 320 × 240 at one byte per index. A host rendering direct to RGB565 pays 150 KB instead — its choice, not the cart's |
+| Framebuffer | **75 KB** | 320 × 240 at one byte per index; a smaller declared canvas uses a prefix of the same reservation. A host rendering direct to RGB565 pays 150 KB instead — its choice, not the cart's |
 | Sprite sheet | **32 KB** | 128 × 256 pixels, one byte per pixel in RAM |
 | Tilemap | **16 KB** | one byte per cell, up to 128 × 128 cells |
 | Cart heap | **192 KB** | the Lua VM and everything the cart allocates |
@@ -202,6 +211,7 @@ wants to accept an archive unpacks it and hands the console a folder.
 | `version` | no | integer, author's own versioning |
 | `main` | no | entry script, default `main.lua` |
 | `fps` | no | `30` (default) or `60` — see §5 |
+| `canvas` | no | raster size: `"320x240"` (default), `"160x120"` or `"128x128"` — see §1 |
 | `input` | no | input groups the cart reads — see §7.3 |
 | `palette` | no | 64 RGB hex strings replacing the default table — see §2.2 |
 | `extensions` | no | optional features required — see §10 |
@@ -212,7 +222,8 @@ A host MUST ignore manifest fields it does not recognise. Implementations hang
 vendor metadata there (the reference console records editor state in fields of its
 own), and future minor versions may add fields — neither may break an existing host.
 
-**`runtime` is the one exception, and it is refused rather than ignored.** Lua is
+**`runtime` and an out-of-set `canvas` are the exceptions, refused rather than
+ignored** (for `canvas`, see §1). Lua is
 core's only binding, so `"runtime"` absent or `"lua"` is the portable case and every
 conforming host runs it. A host that does not implement the named binding MUST
 refuse the cart cleanly, exactly as it refuses an unimplemented extension (§10) —
@@ -815,6 +826,10 @@ full-screen layer (§1.1).
 `view(w, h)` declares a logical viewport smaller than the canvas; the host composites
 that centered region at the largest integer scale that fits. This is how a converted
 128 × 128 PICO-8 cart fills a screen instead of sitting in a 320 × 240 letterbox.
+Declaring `"canvas": "128x128"` (§3.1) reaches the same look through the manifest —
+the raster itself shrinks and `W`/`H` change with it — with no extension involved;
+`view` is for choosing (or changing) the region at runtime while keeping the full
+canvas underneath.
 
 ### Not here: networking
 

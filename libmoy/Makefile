@@ -113,7 +113,15 @@ $(AUDIOT): test/audio_test.c $(LIB)
 audio-test: $(AUDIOT)
 	./$(AUDIOT)
 
-test: conform conform-lua audio-test
+# A declared canvas (SPEC.md 3.1) resizes the raster: the cart itself asserts
+# W/H, and the dumped frame must be exactly 160x120 bytes.
+lowres: $(RUNCART)
+	./$(RUNCART) test/lowres.moy build/lowres.bin --frames 1
+	@test "$$(wc -c < build/lowres.bin)" -eq 19200 \
+	  && echo "lowres: 160x120 frame is 19200 bytes" \
+	  || { echo "lowres: frame is $$(wc -c < build/lowres.bin) bytes, want 19200"; exit 1; }
+
+test: conform conform-lua audio-test lowres
 
 clean:
 	rm -f $(OBJ) $(LUA_OBJ) src/moy_lua.o $(LIB)
