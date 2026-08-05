@@ -494,7 +494,7 @@ budgets against):
 
 | technique | shape | floor-board budget |
 |---|---|---|
-| Mode 7 plane | ~120 `tline` calls | **~25 ms measured on the FASTER reference board** with the unoptimized reference kernel (~660 ns/texel: per-texel modulo and cross-call sampling). The earlier ~5 ms figure here was derived from fill rates and was wrong — the kernel owes an optimization pass before this row fits a frame, which is precisely what gate 3 exists to force |
+| Mode 7 plane | ~120 `tline` calls | **~8 ms for a half-screen plane, measured on the FASTER reference board** (~210 ns/texel). The first kernel measured ~25 ms — two 64-bit software modulos per texel — and this row is what caught it; the fix (reduce once, wrap by conditional subtract) moved no pixel, which the golden proves. The floor board's own row is still owed |
 | raycaster | script DDA + `sspr`/`rect` columns | measured on glass: ~32 fps full-res, past 60 at half-res |
 | flat-shaded polygons | `tri` per face | dispatch + fill, small triangles near the call floor |
 | scaled sprites, billboards | `sspr` | sub-ms each |
