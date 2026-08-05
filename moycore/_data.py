@@ -14,10 +14,19 @@ duplicate.
 No os.path: MicroPython's os module is a subset, and this has to import there.
 """
 
-_HERE = __file__.rsplit("/", 1)[0] if "/" in __file__ else "."
+# Both separators by hand: on Windows (CPython, or a PyInstaller bundle)
+# __file__ carries backslashes, and rsplit("/") alone would quietly fall back
+# to "./" -- a cwd-dependent read is exactly the drift this module refuses.
+_SEP = "\\" if "\\" in __file__ else "/"
+_HERE = __file__.rsplit(_SEP, 1)[0] if _SEP in __file__ else "."
+_PARENT = _HERE.rsplit(_SEP, 1)[0] if _SEP in _HERE else "."
 
 # Repo root first (the normative location), then the package itself (vendored).
-SEARCH = (_HERE + "/../", _HERE + "/", "./")
+# The parent is computed textually rather than spelled "/../": in a frozen
+# bundle the package directory exists only inside the module archive, and a
+# path that traverses THROUGH it fails even when the target file is right
+# there at the root.
+SEARCH = (_PARENT + "/", _HERE + "/", "./")
 
 
 class DataError(Exception):

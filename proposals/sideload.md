@@ -54,17 +54,22 @@ For consoles with a bidirectional USB/UART console. Line-oriented, over
 whatever serial the device already has:
 
 ```
-moy?                          -> one line: the descriptor JSON (below)
-moy-put <path> <bytes>        -> receiver replies "moy-ok", sender streams
-                                 base64 in <= 512-byte lines, ends with "."
-moy-del <path>                -> remove a cart file/folder
-moy-rescan                    -> refresh the cart list now
-moy-run <title>               -> optional: launch a cart by title
+moy?                          -> one line: "moy-info " + the descriptor JSON
+moy-put <path> <bytes>        -> "moy-ok"; the sender streams base64 in
+                                 <= 512-byte lines and ends with "."; the
+                                 receiver writes the file and replies
+                                 "moy-ok" again, or "moy-err <reason>"
+moy-del <path>                -> "moy-ok" / "moy-err <reason>"
+moy-rescan                    -> "moy-ok"
+moy-run <title>               -> "moy-ok" / "moy-err <reason>"; optional
 ```
 
 Paths are relative to `cart_root` and must not escape it. Everything else the
 console prints on serial is noise the tool ignores; replies are prefixed
-`moy-` so the two interleave safely with logging.
+`moy-` so the two interleave safely with logging. The tool probes only
+USB-backed serial ports (a console on a bare UART is reachable with an
+explicit `--to <port>`), and probing is one `moy?\n` line -- inert to any
+firmware that does not speak this.
 
 ## Tier 2 — network (optional; the convenience tier)
 
@@ -111,10 +116,19 @@ mode over serial/HTTP, then copy files. The tool never carries a device
 database; a console that answers the probe is supported, including consoles
 by vendors this repository has never heard of. That is the point.
 
+This tool EXISTS: `moy.py push` (client code in `sideload.py`, and included
+in the released `moy` binaries). All three probes and all three transports
+are implemented and tested against mocks — `--list` shows what a probe finds,
+`--to <dir|port|url>` skips probing, and a push to a marker-less directory
+works with a warning, so an SD card is a valid target today. What does not
+exist yet is any firmware that answers: until a console ships the marker file
+or the protocol, `push` fails honestly, printing exactly where it looked.
+
 ## Status of implementations
 
 | | tier 0 | tier 1 | tier 2 |
 |---|---|---|---|
+| `moy push` (this repo) | done | sender done (needs pyserial; bundled in releases) | client + mDNS done |
 | moybyte P4 | SD (marker pending) | dev-serial exists, protocol pending | webserver exists, endpoints pending |
 | moybyte T-Deck | SD (marker pending) | RX untested (listener never ported) | same as P4 |
 | libmoy example | disk mode planned (S3-class, TinyUSB; builds in CI, proven on hardware with native USB) | — | — |

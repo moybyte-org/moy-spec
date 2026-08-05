@@ -19,21 +19,33 @@ provisional — each verb joins core when it clears the promotion gates stated t
 The batch verbs that section once carried are deleted, with the measurements that
 deleted them on record.
 
-## Play a cart on Windows
+## Download it
 
-No Python, no browser, no install:
-[**moy-play-windows-x64.zip**](https://github.com/moybyte-org/moy-spec/releases/tag/player-latest)
-— unzip, then **drag a `.moy` cart folder onto `moy-play.exe`**. Arrows/WASD are
-the d-pad, Z/X (or J/K) are A/B, Enter is run, Esc quits. It is the C console
-([libmoy/](libmoy/)) with its ~250-line SDL2 port, rebuilt by CI on every push
-and executed under Wine against a real cart before it is allowed to ship — the
-zip is never newer than its last passing run.
+No Python, no install: [**the rolling release**](https://github.com/moybyte-org/moy-spec/releases/tag/player-latest)
+carries native builds, rebuilt by CI on every push.
+
+- **Windows** — `moy-windows-x64.zip`: `moy.exe`, the whole toolchain in one
+  executable, plus `moy-play.exe`, the native player — **drag a `.moy` cart
+  folder onto it**. Arrows/WASD are the d-pad, Z/X (or J/K) are A/B, Enter is
+  run, Esc quits. The player is the C console ([libmoy/](libmoy/)) with its
+  ~250-line SDL2 port, executed under Wine against a real cart before it may
+  ship.
+- **Linux / macOS** — `moy-linux-x64.tar.gz` / `moy-macos-arm64.tar.gz`: the
+  `moy` CLI as one binary (the macOS build is Apple Silicon and unsigned —
+  first run is right-click → Open).
+
+`moy.exe`/`moy` is everything the next section does — `new`, `run`, `check`,
+`pack`, `gfx`, `map`, `conform`, `push` — with the browser player and the
+conformance suite bundled in. Each binary ran its full command set on its own
+OS in CI before it was allowed into the release, so the download is never
+newer than its last passing run.
 
 ## Write a game
 
 Python 3.8+ and a browser. Nothing else — no packages, no build step. Any OS
 (on Windows, `python` instead of `python3`; the player runs in the browser, so
-the OS never touches the game).
+the OS never touches the game). The downloaded binary above runs the same
+commands without Python: `moy new mygame`, `moy run mygame.moy`.
 
 ```
 python3 moy.py new mygame

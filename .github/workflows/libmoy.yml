@@ -80,13 +80,11 @@ jobs:
   # A Windows player, because most game developers are on Windows and "download
   # a zip, drag your cart onto the exe" is the difference between trying moy and
   # not. Cross-compiled with mingw -- the same ~250-line SDL2 port the Makefile
-  # builds on Linux, nothing Windows-specific in the source. The zip is the
-  # whole install: moy-play.exe + SDL2.dll + a README.
+  # builds on Linux, nothing Windows-specific in the source. Ships inside
+  # moy-windows-x64.zip, assembled with the CLI by the release job below.
   windows-player:
     name: moy-play.exe (mingw)
     runs-on: ubuntu-latest
-    permissions:
-      contents: write            # the rolling `player-latest` release below
     steps:
       - uses: actions/checkout@v4
 
@@ -132,21 +130,105 @@ jobs:
           name: moy-play-windows-x64
           path: libmoy/dist-win/
 
-      # A rolling release, so the README can link a stable URL that needs no
-      # GitHub login and never expires -- artifacts do both. One tag, refreshed
-      # on every main push AFTER the Wine test above has passed; the download is
-      # always the newest player that provably ran a cart.
-      - name: Refresh the player-latest release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+  # The CLI as one native executable per OS, so "download moy and you have the
+  # toolchain" holds on machines with no Python. PyInstaller cannot
+  # cross-compile, hence one runner per OS -- which also means every binary is
+  # smoke-tested on the OS it ships for, not under emulation. The smoke is the
+  # real command set end to end: scaffold, check, pack round-trip, asset
+  # export, THE CONFORMANCE SUITE from inside the frozen binary (which proves
+  # every bundled data file), and push -- both its honest failure on a
+  # console-less runner and a real tier-0 push to a marker volume.
+  moy-cli:
+    name: moy CLI (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # pyserial is the one optional battery: the SOURCE stays stdlib-only
+      # (serial probing degrades to "skipped" without it), but a frozen bundle
+      # cannot pip-install later, so it ships included.
+      - name: Build
+        run: |
+          pip install pyinstaller pyserial
+          pyinstaller moy.spec
+
+      - name: Smoke every command
+        shell: bash
+        run: |
+          M="$PWD/dist/moy"; [ -f "$M" ] || M="$PWD/dist/moy.exe"
+          mkdir smoke && cd smoke
+          "$M" new t
+          "$M" check t.moy
+          "$M" pack t.moy
+          "$M" unpack t.moyc roundtrip.moy
+          "$M" gfx t.moy
+          "$M" map t.moy
+          "$M" conform
+          if "$M" push t.moy; then
+            echo "push claims it found a console on a CI runner"; exit 1
+          fi
+          mkdir vol
+          echo '{"moy_console":"0.1","name":"ci","cart_root":"carts"}' > vol/moy-console.json
+          "$M" push t.moy --to vol
+          test -f vol/carts/t.moy/main.lua
+          echo "every command ran from the frozen binary"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: moy-cli-${{ matrix.os }}
+          path: dist/
+
+  # A rolling release, so the README can link a stable URL that needs no
+  # GitHub login and never expires -- artifacts do both. One tag, refreshed on
+  # every main push AFTER the tests above have passed: the Windows zip is the
+  # Wine-run-tested player plus the natively smoke-tested CLI, the tars are
+  # the CLI for the other two. The download is never newer than its last
+  # passing run.
+  release:
+    name: rolling release (player-latest)
+    needs: [windows-player, moy-cli]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: art
+
+      - name: Assemble the bundles
+        run: |
+          mkdir win lin mac
+          cp art/moy-play-windows-x64/moy-play.exe art/moy-play-windows-x64/SDL2.dll win/
+          cp art/moy-cli-windows-latest/moy.exe win/
+          printf 'moy -- the toy console, bundled for Windows.\r\n\r\nmoy-play.exe   the native player: drag a .moy cart folder onto it.\r\n               Arrows/WASD = d-pad, Z/X (or J/K) = A/B, Enter = run, Esc = quit.\r\nmoy.exe        the whole toolchain, no Python needed: `moy new mygame`,\r\n               `moy run mygame.moy` (browser, hot reload), check, pack,\r\n               gfx/map PNG+CSV round-trips, conform, push. Run `moy` with\r\n               no arguments for the full list.\r\n\r\nSpec and source: https://github.com/moybyte-org/moy-spec\r\n' > win/README.txt
+          (cd win && zip -q ../moy-windows-x64.zip *)
+          printf 'moy -- the cart developer CLI, one binary, no Python needed.\n\n  ./moy new mygame          scaffold a cart\n  ./moy run mygame.moy      play in your browser, hot reload on save\n  ./moy                     the full command list\n\nmacOS note: the binary is unsigned -- first run is right-click -> Open,\nor `xattr -d com.apple.quarantine moy`.\n\nSpec and source: https://github.com/moybyte-org/moy-spec\n' > README.txt
+          install -m 755 art/moy-cli-ubuntu-latest/moy lin/moy && cp README.txt lin/
+          install -m 755 art/moy-cli-macos-latest/moy mac/moy && cp README.txt mac/
+          tar -C lin -czf moy-linux-x64.tar.gz moy README.txt
+          tar -C mac -czf moy-macos-arm64.tar.gz moy README.txt
+
+      - name: Refresh the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cd libmoy/dist-win && zip -q ../../moy-play-windows-x64.zip * && cd ../..
           gh release view player-latest >/dev/null 2>&1 || \
-            gh release create player-latest --title "moy-play for Windows (rolling)" \
-              --notes "The desktop player, rebuilt and Wine-run-tested by CI on every push to main. Unzip, then drag a .moy cart folder onto moy-play.exe. Arrows/WASD = d-pad, Z/X or J/K = A/B, Enter/Space = run, Esc = quit." \
-              --latest=false
-          gh release upload player-latest moy-play-windows-x64.zip --clobber
+            gh release create player-latest --title "moy (rolling)" --notes "placeholder" --latest=false
+          gh release edit player-latest --title "moy (rolling): the CLI + Windows player" \
+            --notes "The moy toolchain as native executables, rebuilt and smoke-tested by CI on every push to main. moy-windows-x64.zip holds moy.exe (the whole CLI: scaffold, browser run with hot reload, check, pack, asset round-trips, the conformance suite, push-to-console) plus moy-play.exe, the native player you drag a .moy cart onto. The Linux and macOS tars hold the CLI; macOS is Apple Silicon and unsigned (first run: right-click, Open). Every asset ran its full command set on its own OS before it was allowed here."
+          gh release upload player-latest moy-windows-x64.zip moy-linux-x64.tar.gz moy-macos-arm64.tar.gz --clobber
+          gh release delete-asset player-latest moy-play-windows-x64.zip --yes 2>/dev/null || true
 
   # The ESP-IDF component, built for real silicon.
   #

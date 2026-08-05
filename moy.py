@@ -39,6 +39,12 @@ Before you ship, and to work with the art tools you already own:
           [--update]             its files still match; --update pins the
           [--channel beta]       latest CONFORMANCE-GATED release, or a local
           [--from dist-spec/]    build if you are working on the player
+    moy.py push <cart.moy>       copy the cart onto a connected console --
+          [--to <where>]         a volume with a moy-console.json marker, a
+          [--list]               serial port, or http://<console>. Probes per
+                                 proposals/sideload.md; --list shows what it
+                                 found, --to skips probing (a directory, a
+                                 port, or a URL)
 
 Pure Python stdlib, no dependencies. The player it wraps is runner/ (see
 runner/BUILD.md); the spec it implements is SPEC.md; the console as a library
@@ -52,8 +58,41 @@ import shutil
 import sys
 import webbrowser
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-RUNNER = os.path.join(HERE, "runner")
+# Frozen (PyInstaller) or a checkout: HERE is where the data files live. In a
+# onefile binary that is the extraction dir (sys._MEIPASS), which vanishes on
+# exit -- read-only territory, which _writable_runner below accounts for.
+FROZEN = getattr(sys, "frozen", False)
+HERE = getattr(sys, "_MEIPASS",
+               os.path.dirname(os.path.abspath(__file__)))
+PROG = "moy" if FROZEN else "moy.py"
+
+
+def _user_runner():
+    """Where `player --update` may write when frozen: a per-user data dir.
+    The bundled runner/ updates with every moy release; this dir exists only
+    if the user explicitly pinned a different player, and then wins."""
+    if sys.platform == "win32":
+        base = os.environ.get("LOCALAPPDATA",
+                              os.path.expanduser("~\\AppData\\Local"))
+    elif sys.platform == "darwin":
+        base = os.path.expanduser("~/Library/Application Support")
+    else:
+        base = os.environ.get("XDG_DATA_HOME",
+                              os.path.expanduser("~/.local/share"))
+    return os.path.join(base, "moy", "runner")
+
+
+def _pick_runner():
+    bundled = os.path.join(HERE, "runner")
+    if not FROZEN:
+        return bundled
+    user = _user_runner()
+    if os.path.isfile(os.path.join(user, "VERSION")):
+        return user
+    return bundled
+
+
+RUNNER = _pick_runner()
 # Which files the player bundle contains is the PLAYER's business, not this
 # CLI's -- it grew a worker.js when the console moved off the main thread. So
 # the pin (runner/VERSION) is authoritative, and an unpinned runner/ is read
@@ -615,6 +654,7 @@ def cmd_player(args):
     Python and a browser and nothing else, and a `moy.py run` that needs the
     network on first use would not be that.
     """
+    global RUNNER
     channel = "stable"
     if "--channel" in args:
         channel = args[args.index("--channel") + 1]
@@ -622,6 +662,10 @@ def cmd_player(args):
         die("unknown channel %r (want: %s)" % (channel, ", ".join(sorted(PLAYER_CHANNELS))))
 
     if "--update" not in args:
+        if FROZEN:
+            print("player files: %s%s" % (
+                RUNNER, "" if RUNNER == _user_runner()
+                else "  (bundled with this build)"))
         pin = _pin()
         if pin is None:
             print("runner/: not pinned (no %s)" % VERSION_FILE)
@@ -644,6 +688,12 @@ def cmd_player(args):
     import tarfile
     import tempfile
     import urllib.request
+
+    # Frozen, the bundle is read-only (and gone on exit) -- an explicit pin
+    # lives in the per-user dir, which _pick_runner prefers from then on.
+    if FROZEN:
+        RUNNER = _user_runner()
+        os.makedirs(RUNNER, exist_ok=True)
 
     # --from <dir>: pin a bundle built locally (firmware/web_runner/dist-spec)
     # instead of a release. For anyone working ON the player -- otherwise
@@ -728,14 +778,71 @@ def cmd_conform(args):
     sys.exit(_run.main(args))
 
 
+def cmd_push(args):
+    """Copy a cart onto a connected console (proposals/sideload.md)."""
+    sys.path.insert(0, HERE)
+    import sideload
+
+    if "--list" in args:
+        consoles, notes = sideload.probe()
+        for c in consoles:
+            print("  %s" % c)
+        for n in notes:
+            print("  %s" % n)
+        if not consoles:
+            print("no moy console found -- a console advertises itself per "
+                  "proposals/sideload.md")
+            sys.exit(1)
+        return
+
+    if not args:
+        die("usage: %s push <cart.moy> [--to <volume|port|url>] [--list]" % PROG)
+    src = cart_dir(args[0])
+    if not os.path.isdir(src):
+        die("no such cart: " + src)
+
+    # Refuse to push a cart that does not load -- same bar as `pack`. The
+    # worst place to discover a broken manifest is on the handheld.
+    moycore = _moycore()
+    from moycore import pack as _pack
+    files = _pack.read_folder(src)
+    files.pop("moy-api.lua", None)
+    try:
+        moycore.Cart.from_files(files, supported_extensions=("layers", "viewport"))
+    except moycore.CartError as exc:
+        die("refusing to push a cart that does not load: %s" % exc)
+
+    try:
+        if "--to" in args:
+            console = sideload.target_console(args[args.index("--to") + 1])
+        else:
+            consoles, notes = sideload.probe()
+            if not consoles:
+                print("moy: no moy console found", file=sys.stderr)
+                for n in notes:
+                    print("  %s" % n, file=sys.stderr)
+                print("a console advertises itself per proposals/sideload.md; "
+                      "--to <dir|port|url> targets one directly", file=sys.stderr)
+                sys.exit(1)
+            if len(consoles) > 1:
+                for c in consoles:
+                    print("  %s" % c, file=sys.stderr)
+                die("%d consoles found -- pick one with --to" % len(consoles))
+            console = consoles[0]
+        print("pushing to %s" % console)
+        sideload.push(console, src)
+    except sideload.SideloadError as exc:
+        die(str(exc))
+
+
 def main():
     cmds = {"new": cmd_new, "run": cmd_run, "export": cmd_export,
             "port": cmd_port, "demo": cmd_demo,
             "check": cmd_check, "pack": cmd_pack, "unpack": cmd_unpack,
             "gfx": cmd_gfx, "map": cmd_map, "conform": cmd_conform,
-            "player": cmd_player}
+            "player": cmd_player, "push": cmd_push}
     if len(sys.argv) < 2 or sys.argv[1] not in cmds:
-        print(__doc__.strip())
+        print(__doc__.strip().replace("moy.py ", PROG + " "))
         sys.exit(0 if len(sys.argv) < 2 else 1)
     cmds[sys.argv[1]](sys.argv[2:])
 
