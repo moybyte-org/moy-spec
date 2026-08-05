@@ -59,14 +59,15 @@ start here.
 
 **Here:** the 320×240 indexed raster and every SPEC.md §6 verb, camera / clip /
 pal / palt, sprites with flips, scales and colorkeys, `sspr`, the tilemap, the
-8×8 font, the 64-entry palette, and RGB888/RGB565 resolution at flush time.
+8×8 font, the 64-entry palette, RGB888/RGB565 resolution at flush time, and the
+Lua binding with SPEC.md §4.1's sandbox.
 
-**Not here, on purpose:** a Lua VM, a frame loop, a filesystem, a clock, a
-launcher. SPEC.md §4 says a cart is Lua 5.4 and §0 puts operating systems
-permanently out of scope; which Lua, and which loop, are yours. The verb table
-is the narrow waist — a Lua binding, a WASM import table and a native binding
-are each a few hundred lines of glue on top of this, rather than a new port of
-the console.
+**Not here, on purpose:** a VM, a frame loop, a filesystem, a launcher. libmoy
+binds to whatever `lua_State` you hand it — `vendor/lua` is a convenience, not a
+dependency — and the loop belongs to your platform. The verb table is the narrow
+waist, and the Lua binding is the evidence: `src/moy_lua.c` is ~400 lines, which
+is what a WASM import table or a native binding would also cost. If binding a
+language took a thousand lines the "narrow waist" claim would be false.
 
 `moy_canvas` is a plain struct you place yourself. Nothing here calls `malloc`.
 
@@ -84,11 +85,46 @@ regenerates `src/moy_data.c` and records which spec commit it came from. A
 transcribed array of 192 numbers would compile, run, look right, and disagree
 with every other implementation about colour 37.
 
+## Running actual carts
+
+```
+make lua            # build/run_cart -- runs a .moy cart through libmoy + Lua
+make conform-lua    # the suite again, but through REAL carts rather than traces
+make play           # build/moy-play -- a desktop console (SDL2)
+```
+
+`moy-play mygame.moy` is a playable console in about 250 lines
+(`port/sdl2/main.c`), and that file is the porting layer as a worked example
+rather than a description. What a platform owes libmoy is four things:
+
+| | |
+|---|---|
+| **pixels out** | resolve the index framebuffer through the palette, put it on your glass |
+| **buttons in** | map your hardware onto SPEC.md 7.3's seven logical buttons |
+| **a clock** | milliseconds |
+| **persistence** | 256 signed 32-bit slots, if you have anywhere to put them |
+
+Audio is optional — SPEC.md 8.3 says silence is a valid rendering. Everything
+else is libmoy's.
+
+`port/esp-idf/` is the same shim as an IDF component. Its README is explicit
+about what has and has not been run on hardware.
+
+## The sandbox is real, not documentation
+
+SPEC.md 4.1's ceiling is enforced by `io`, `os`, `debug`, `package` and
+`coroutine` **not being compiled in at all** — their sources are removed from
+`vendor/lua`, and the binding opens only `base`, `math`, `string` and `table`
+by hand rather than calling `luaL_openlibs` (which would pull all of them in
+and leave the sandbox depending on nil-ing them out afterwards). A cart
+reaching for any of them fails, as SPEC.md 11 requires of every conforming host.
+
 ## Status
 
-**Stage A: the raster, conforming.** Next is the Lua binding (the VM is already
-vendored C in the reference implementation), then the porting layer with SDL2
-and ESP-IDF as worked examples.
+**Stages A, B and C: the raster, the Lua binding, and the porting layer.** The
+suite passes through both paths — recorded traces and real Lua carts. Next is
+hardware verification of the ESP-IDF shim, and audio (SPEC.md 8), which is
+absent because silence conforms and nothing yet needed it.
 
 ## Licence
 

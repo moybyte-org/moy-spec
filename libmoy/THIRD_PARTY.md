@@ -20,3 +20,21 @@ Generated from the spec's normative `palette.json`. Indices 0-15 are PICO-8's
 base palette, reproduced byte-exact by SPEC.md 2 so converted carts keep their
 colours; PICO-8 is Lexaloffle Games LLP's, and the values are stated as data in
 a public specification rather than copied from its source.
+
+## Lua (`vendor/lua/`)
+
+Lua 5.4.7, upstream, MIT-licensed:
+
+    Copyright (C) 1994-2024 Lua.org, PUC-Rio
+    https://www.lua.org/  --  full text in vendor/lua/COPYRIGHT
+
+Vendored as a convenience, not a dependency: `moy_lua_open` binds to whichever
+`lua_State` you hand it, so a host with its own Lua does not need this copy.
+
+Two things about it are deliberate. It is configured `LUA_32BITS`, which moy
+SPEC.md 4.2 requires ("integers are 32-bit and wrap ... floats are 32-bit") and
+which SPEC.md 11 assumes of the build that generates golden frames. And the
+sources for `io`, `os`, `debug`, `package`, `coroutine` and `linit` are removed
+rather than merely left unregistered — SPEC.md 4.1 calls its sandbox "a maximum,
+not a suggestion", and this is what makes "absent entirely" true of the machine
+code and not only of the global table.

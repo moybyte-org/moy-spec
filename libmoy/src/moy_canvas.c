@@ -263,3 +263,33 @@ void moy_palette_rgb565(const moy_canvas *c, const uint8_t *pal, uint16_t *out)
     }
     for (i = 0; i < n; i++) out[i] = tab[c->pix[i] & 63];
 }
+
+/* ------------------------------------------------------------- console --- */
+
+void moy_console_init(moy_console *con, moy_canvas *c, moy_sheet *s, moy_map *m)
+{
+    memset(con, 0, sizeof *con);
+    con->canvas = c;
+    con->sheet = s;
+    con->map = m;
+    con->rng = 1;
+}
+
+void moy_srand(moy_console *con, uint32_t seed)
+{
+    con->rng = seed ? seed : 0x9E3779B9u;
+}
+
+float moy_rnd(moy_console *con, float n)
+{
+    /* xorshift32. SPEC.md 9 fixes rnd()'s RANGE and says nothing about its
+     * sequence, so two conforming hosts may disagree on every number and both
+     * be right -- which is exactly why no conformance scene may call it. A
+     * defined generator here at least makes the question askable. */
+    uint32_t x = con->rng ? con->rng : 0x9E3779B9u;
+    x ^= x << 13;
+    x ^= x >> 17;
+    x ^= x << 5;
+    con->rng = x;
+    return (float)((double)x / 4294967296.0) * n;
+}

@@ -1,0 +1,14 @@
+menu "libmoy"
+
+config MOY_WITH_LUA
+    bool "Build the Lua binding"
+    default y
+    help
+      Compile src/moy_lua.c and the vendored Lua 5.4 (already configured with
+      LUA_32BITS, which moy SPEC.md 4.2 requires). Turn this off if your host
+      drives the console from C, or if you are supplying your own lua_State --
+      libmoy binds to whichever you hand it.
+
+      Costs roughly 200 KB of flash for the VM.
+
+endmenu

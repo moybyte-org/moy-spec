@@ -45,6 +45,28 @@ jobs:
           git diff --exit-code src/moy_data.c
         working-directory: libmoy
 
-      - name: Conformance
+      - name: Conformance (recorded traces -- the raster)
         run: make conform
+        working-directory: libmoy
+
+      # The same suite through a real .moy cart, parsed and run as Lua. Checks
+      # the binding and the sandbox, which a trace cannot reach: a raster bug
+      # fails both, a binding bug only this one.
+      - name: Conformance (real carts -- the console)
+        run: make conform-lua
+        working-directory: libmoy
+
+      - name: The SPEC.md 4.1 sandbox holds
+        run: |
+          mkdir -p /tmp/sbx.moy
+          echo '{"format":"moy-1","title":"s","main":"main.lua"}' > /tmp/sbx.moy/manifest.json
+          for reach in "io.open('/etc/passwd')" "os.time()" "require('os')" \
+                       "load('return 1')" "debug.getinfo(1)" "coroutine.create(print)" \
+                       "collectgarbage()" "package.path"; do
+            printf 'function _draw() cls(1) local x = %s end\n' "$reach" > /tmp/sbx.moy/main.lua
+            if ./build/run_cart /tmp/sbx.moy /tmp/sbx.bin 2>/dev/null; then
+              echo "SANDBOX BREACH: $reach was allowed"; exit 1
+            fi
+          done
+          echo "all eight reaches refused"
         working-directory: libmoy

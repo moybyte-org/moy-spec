@@ -155,6 +155,75 @@ void moy_map_draw(moy_canvas *c, const moy_map *m, const moy_sheet *s,
                   int mx, int my, int w, int h, int sx, int sy,
                   int colorkey, int scale);
 
+/* -- the host seam (SPEC.md 7.3, 9) -------------------------------------- */
+
+/* SPEC.md 7.3's logical buttons. Each host maps its own hardware onto them --
+ * a d-pad, a keyboard, a trackball, an on-screen pad -- and no two
+ * implementations need the same physical controls. `run` is the only optional
+ * one; a cart MUST be playable with the other six. */
+typedef enum {
+    MOY_BTN_LEFT = 0, MOY_BTN_RIGHT, MOY_BTN_UP, MOY_BTN_DOWN,
+    MOY_BTN_A, MOY_BTN_B, MOY_BTN_RUN, MOY_BTN_COUNT
+} moy_button;
+
+/* Everything the console needs FROM a platform, and nothing else. This is the
+ * porting surface: implement these and moy runs. Any of them may be NULL --
+ * a console with no audio hardware leaves sfx NULL, and SPEC.md 8.3 says
+ * silence is a valid rendering, so the cart neither knows nor cares. */
+typedef struct {
+    void *user;
+    int      (*btn)(void *user, moy_button b, int player);   /* held now */
+    int      (*btnp)(void *user, moy_button b, int player);  /* pressed this tick */
+    int      (*players)(void *user);                         /* always >= 1 */
+    uint32_t (*time_ms)(void *user);                         /* since the cart started */
+    int32_t  (*pmem_get)(void *user, int slot);              /* 256 slots, signed 32-bit */
+    void     (*pmem_set)(void *user, int slot, int32_t value);
+    void     (*sfx)(void *user, int n, int chan);
+    void     (*music)(void *user, int track, int loop);
+    void     (*quit)(void *user);                            /* SPEC.md 9 */
+    /* SPEC.md 9: a value from the cart's config.json, or NULL. The console
+     * never parses JSON -- config is the author's tuning surface and reading
+     * it is a host's job. */
+    const char *(*cfg)(void *user, const char *key);
+} moy_host;
+
+/* What a cart is given: the canvas it draws on, the assets it draws from, and
+ * the platform underneath. One struct so a language binding has one thing to
+ * bind to -- which is the whole reason the verb table is the narrow waist. */
+typedef struct {
+    moy_canvas *canvas;
+    moy_sheet  *sheet;
+    moy_map    *map;
+    moy_host    host;
+    uint32_t    rng;        /* see moy_rnd */
+} moy_console;
+
+void moy_console_init(moy_console *con, moy_canvas *c, moy_sheet *s, moy_map *m);
+
+/* SPEC.md 9's rnd(). NOTE: the spec defines the RANGE but not the SEQUENCE, so
+ * two conforming hosts may differ on every number and both be right. This is
+ * xorshift32, stated here so the question is at least askable; a conformance
+ * scene cannot call rnd() until the spec picks one. */
+float moy_rnd(moy_console *con, float n);
+void  moy_srand(moy_console *con, uint32_t seed);
+
+/* -- the Lua binding (SPEC.md 4) ----------------------------------------- */
+/* Built only when MOY_WITH_LUA is defined, because the VM is yours: libmoy
+ * binds to whatever lua_State you hand it rather than embedding one. */
+#ifdef MOY_WITH_LUA
+struct lua_State;
+/* Install the SPEC.md 4.1 sandbox (base minus load/dofile/require/
+ * collectgarbage, plus math, string and table) and the whole verb table as
+ * globals on `L`, bound to `con`. Returns 0 on success. */
+int moy_lua_open(struct lua_State *L, moy_console *con);
+/* Run the three cart hooks, if the cart defined them. Return 0 on success; on
+ * a Lua error, non-zero with the message in `err` (SPEC.md 4.3: an error
+ * terminates the cart and the host reports it with the script line number). */
+int moy_lua_init  (struct lua_State *L, char *err, size_t errlen);
+int moy_lua_update(struct lua_State *L, float dt, char *err, size_t errlen);
+int moy_lua_draw  (struct lua_State *L, char *err, size_t errlen);
+#endif
+
 /* -- palette and font (SPEC.md 2, 6) ------------------------------------- */
 
 /* The default table, straight from the spec's palette.json (generated, see
