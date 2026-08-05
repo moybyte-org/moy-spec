@@ -87,15 +87,31 @@ pixels through the `pix` import pays a trampoline per pixel — 76,800 crossings
 per frame, dead at any VM speed. The fix is one import:
 
 ```c
-void blit(i32 ptr);   /* ptr: 76,800 bytes in linear memory, one palette
-                         index per pixel, row-major 320 × 240 */
+void blit(i32 ptr, i32 pal_ptr);   /* ptr: 76,800 bytes in linear memory, one
+                                      palette index per pixel, row-major
+                                      320 × 240. pal_ptr: 0, or 192 bytes of
+                                      RGB — a 64-entry palette presented with
+                                      THIS frame */
 ```
 
-Called at most once per `_draw`. The host validates the range, reads the bytes
-through `pal`-free resolution (the buffer is already indices), and treats the
-result exactly as a §6-drawn frame — same palette resolve, same conformance
-comparison. A cart may freely mix `blit` with ordinary verbs; draw order is call
-order.
+Called at most once per `_draw`. The host validates the ranges, resolves the
+indices through the frame's palette (`pal_ptr` if given, else the cart's §2.2
+palette, else the default), and treats the result exactly as a §6-drawn frame.
+A cart may freely mix `blit` with ordinary verbs; draw order is call order.
+
+**The per-frame palette is deliberate, and it does not reopen §12.1.** That
+decision forbids retroactively re-meaning pixels already drawn on a retained
+canvas; a `blit` is a complete frame delivered together with its own palette —
+nothing is retained, nothing re-meant, and the host's cost is rebuilding a
+64-entry LUT per frame, which is noise. What it buys is the entire class of
+runtime-palette work the fixed §2.2 table cannot express: palette-driven fades
+and flashes, palette cycling (plasma, waterfalls), and — the case that surfaced
+it — emulation. An emulated console's palette RAM changes at runtime; with a
+per-frame palette, any game holding ≤ 64 simultaneous colors maps exactly,
+fades included. (The NES needs none of this: its 54-entry master palette is
+fixed hardware and fits §2.2 as-is. The GB's 4 shades likewise. GBA/SNES
+titles at full palette load stay out — > 64 simultaneous is the line, and
+per-scanline palettes are a bridge deliberately not crossed.)
 
 Measured budget: ~4.6 M pixel-writes/s from AOT code into linear memory against
 476 M ops/s of arithmetic — a full-screen software raster lands ~17 ms on the
@@ -106,6 +122,29 @@ stays opaque, and hosts keep every freedom of depth, scale and byte order.
 Assets stay host-side (`spr`, `map`, `sspr` render as ever). A later revision may
 add read-only asset access into linear memory (`sheet_read(ptr)`-shaped) if a
 ported engine demonstrates the need; it is deliberately absent until one does.
+
+## PCM audio — the hardware tier's second gap
+
+SPEC.md §8 is a tracker-shaped data model, which is right for authored carts and
+useless for an emulated APU or a ported engine's mixer: those produce a sample
+stream. The binding wants one import:
+
+```c
+i32 snd(i32 ptr, i32 nframes);   /* nframes of signed 16-bit mono (or LR
+                                    interleaved stereo; TBD with the first
+                                    implementation) at a host-declared rate.
+                                    Returns frames accepted -- a full return
+                                    means keep feeding, 0 means the host's
+                                    buffer is full this tick */
+```
+
+§8.3 already makes silence a valid rendering, so a host without audio hardware
+accepts and drops — the cart cannot tell, exactly as with `sfx`. Rate, channel
+count and buffer depth get pinned by the first implementation, not guessed
+here; what is decided now is only that the compiled tier's audio surface is
+**samples, not the §8 data model** — the same finding as the framebuffer and
+the per-frame palette, from a third angle: this tier programs the console's
+hardware, not the script tier's abstractions.
 
 ## Determinism
 
