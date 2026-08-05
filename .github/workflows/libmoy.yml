@@ -1,0 +1,50 @@
+name: libmoy
+
+# Build the C core and run this repository's conformance suite against it.
+#
+# libmoy lives here rather than in its own repository precisely so this job can
+# exist: a change to the spec, the goldens or the scenes turns the C
+# implementation red on the same push, with no pin to bump and no second
+# checkout. It is the reason the directory is in-tree.
+#
+# Cheap enough to run on everything -- no toolchain to install, no cache to
+# warm. `cc` and Python are all it needs, which is also the claim libmoy makes
+# about itself.
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+jobs:
+  conform:
+    name: build + conformance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # -Werror only in CI: a warning that reaches main is a warning nobody
+      # will fix, but a contributor mid-change should not be blocked by one.
+      - name: Build
+        run: make CFLAGS="-std=c99 -O2 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wstrict-prototypes -Werror -Iinclude"
+        working-directory: libmoy
+
+      # The embedded palette and font are generated from palette.json and
+      # font.bin. Regenerating must be a no-op -- if it is not, someone edited
+      # the generated file by hand or the spec's data moved without the C
+      # following, and either way the two have silently forked.
+      - name: The embedded data still matches the spec
+        run: |
+          make data
+          git diff --exit-code src/moy_data.c
+        working-directory: libmoy
+
+      - name: Conformance
+        run: make conform
+        working-directory: libmoy

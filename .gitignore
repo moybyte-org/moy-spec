@@ -15,3 +15,6 @@ __pycache__/
 # The generated site (site/build.py). CI builds it from the canonical sources
 # on every push -- a checked-in copy could only ever be stale.
 _site/
+
+# Claude Code's local config -- not part of the spec.
+.claude/
