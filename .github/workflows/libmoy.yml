@@ -115,3 +115,28 @@ jobs:
                  -DIDF_TARGET=${{ matrix.target }} \
                  build
         working-directory: libmoy/example/esp-idf
+
+  # ... and then actually run it.
+  #
+  # Compiling proves the component registers and the C is portable; it proves
+  # nothing about whether a line of it executes on an ESP32, and the four duties
+  # a host owes libmoy are exactly the four a compiler cannot check. Espressif's
+  # QEMU boots the example twice against one flash image and checks that the
+  # cart runs, the frame keeps changing, and pmem survives the power cycle --
+  # persistence that never reaches flash being indistinguishable from working
+  # persistence right up until something reboots.
+  #
+  # esp32, not esp32p4: QEMU does not emulate the P4. Different chip, still the
+  # difference between "it links" and "it runs".
+  qemu:
+    name: Runs on emulated esp32
+    runs-on: ubuntu-latest
+    container: espressif/idf:v5.5.1
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Boot it
+        shell: bash
+        run: |
+          . "$IDF_PATH/export.sh"
+          libmoy/test/esp_qemu.sh

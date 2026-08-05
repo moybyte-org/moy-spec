@@ -2,21 +2,32 @@
 
 ## Status
 
-**Built, not run.** CI builds the component for esp32p4 and esp32s3, with the
-Lua binding on and off, on every push — so the component registers, its headers
-resolve, its Kconfig applies, and the C is clean on both a RISC-V and an Xtensa
-ABI under the IDF's own `-Wall -Werror=all`. A flashable image comes out the
-other end.
+**Runs in emulation. Has never driven a panel.**
 
-**Nothing here has driven a panel.** No pixel has reached a display from this
-directory, no GPIO has been read, no NVS slot written on real hardware. The
-board-facing half of `example/esp-idf/main/main.c` — the parts marked *YOUR
-BOARD* — is written from the SDL2 port and the reference console's device layer
-and is the honest guesswork. Say so rather than discover it later.
+CI builds the component for esp32p4 and esp32s3, with the Lua binding on and
+off — so the component registers, its headers resolve, its Kconfig applies, and
+the C is clean on both a RISC-V and an Xtensa ABI under the IDF's own
+`-Wall -Werror=all`. It then boots the example under Espressif's QEMU twice
+against one flash image and checks that the cart executes, the framebuffer keeps
+changing, and `pmem` survives the power cycle. So the console runs on an
+emulated ESP32: Lua, the raster, the clock, and persistence.
+
+What that does **not** cover is the board. No pixel has reached a display from
+this directory, no GPIO has been read, and QEMU is not a timing model, so
+nothing here says whether it is fast enough. The parts of
+`example/esp-idf/main/main.c` marked *YOUR BOARD* are written from the SDL2 port
+and the reference console's device layer, and are the honest guesswork.
 
 What *has* been verified on an ESP32-P4 is the raster and the C kernel it
 mirrors, through moy-spec's conformance suite (see `conformance/`, and moybyte's
 `tools/p4_conformance.py`).
+
+To run the emulator yourself:
+
+```sh
+. $IDF_PATH/export.sh
+libmoy/test/esp_qemu.sh
+```
 
 ## Using it
 

@@ -323,6 +323,13 @@ void app_main(void)
         return;
     }
 
+    /* The cart counts boots in slot 0. Logging it here is the host reporting
+     * its own persistence, and it is the one host duty whose failure is
+     * otherwise invisible: a pmem_set that never reaches flash looks identical
+     * to a working one until the next power cycle. If this does not climb
+     * across resets, the NVS wiring is wrong. */
+    ESP_LOGI(TAG, "pmem[0] = %d", (int)h_pmem_get(NULL, 0));
+
     while (!quit_requested) {
         int64_t t0 = esp_timer_get_time();
 
@@ -344,10 +351,19 @@ void app_main(void)
          *   esp_lcd_panel_draw_bitmap(panel, 0, 0, MOY_W, MOY_H, rgb565);
          * Everything above this comment is board-independent. */
 
-        if (++frame % 30 == 0)
-            ESP_LOGI(TAG, "frame %d, %lld us/frame, %d bytes free",
+        /* The checksum is over the INDEX framebuffer, which is the thing the
+         * conformance suite compares (SPEC.md 11) -- so a value that changes
+         * frame to frame while your panel stays blank puts the fault after
+         * libmoy, not in it. That is the first question every bring-up asks. */
+        if (++frame % 30 == 0) {
+            uint32_t sum = 2166136261u;     /* FNV-1a */
+            for (int p = 0; p < MOY_W * MOY_H; p++)
+                sum = (sum ^ framebuffer[p]) * 16777619u;
+            ESP_LOGI(TAG, "frame %d, %lld us/frame, %d bytes free, frame %08x",
                      frame, esp_timer_get_time() - t0,
-                     (int)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+                     (int)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+                     (unsigned)sum);
+        }
 
         /* SPEC.md 5's 30 Hz tick. vTaskDelay is the crude version; a real host
          * paces off the panel's vsync so the frame lands with the refresh. */
