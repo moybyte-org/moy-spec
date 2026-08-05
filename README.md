@@ -19,6 +19,16 @@ provisional — each verb joins core when it clears the promotion gates stated t
 The batch verbs that section once carried are deleted, with the measurements that
 deleted them on record.
 
+## Play a cart on Windows
+
+No Python, no browser, no install:
+[**moy-play-windows-x64.zip**](https://github.com/moybyte-org/moy-spec/releases/tag/player-latest)
+— unzip, then **drag a `.moy` cart folder onto `moy-play.exe`**. Arrows/WASD are
+the d-pad, Z/X (or J/K) are A/B, Enter is run, Esc quits. It is the C console
+([libmoy/](libmoy/)) with its ~250-line SDL2 port, rebuilt by CI on every push
+and executed under Wine against a real cart before it is allowed to ship — the
+zip is never newer than its last passing run.
+
 ## Write a game
 
 Python 3.8+ and a browser. Nothing else — no packages, no build step. Any OS
@@ -146,6 +156,7 @@ own ground, the implementation is what changes — including the reference one.
 | Web player | **works** — [runner/](runner/), the reference console compiled to WASM; `moy.py` wraps it (scaffold, hot-reload run, export) |
 | Conformance suite | **runs** — [conformance/](conformance/), 10 scenes as real carts + golden frames + a runner that takes any player. Five implementations agree on every scene — moycore, the reference console, the web player's JS replayer, libmoy, and an **ESP32-P4** over serial — including the provisional §6.1 verbs, native on the P4 at frame-loop prices (tri 125µs, sspr/tline 165µs per op on glass) |
 | Cart checker | **works** — `moy.py check`: manifest, sandbox ceiling, undeclared extensions, the §1.1 budget |
+| Windows player | **ships** — [`moy-play-windows-x64.zip`](https://github.com/moybyte-org/moy-spec/releases/tag/player-latest), a rolling release rebuilt and run-tested (Wine, real cart, rc checked) by CI on every push to main |
 | Single-file cart | proposed — [proposals/single-file-cart.md](proposals/single-file-cart.md), implemented as `moy.py pack` |
 | Audio authoring | the gap — sprites and maps round-trip through PNG and CSV (above), `sfx.moysfx` has only the reference console's on-device editors; a desktop converter (tracker import or similar) is not started |
 | TIC-80 converter | not started |

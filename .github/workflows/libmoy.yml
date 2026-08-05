@@ -85,6 +85,8 @@ jobs:
   windows-player:
     name: moy-play.exe (mingw)
     runs-on: ubuntu-latest
+    permissions:
+      contents: write            # the rolling `player-latest` release below
     steps:
       - uses: actions/checkout@v4
 
@@ -129,6 +131,22 @@ jobs:
         with:
           name: moy-play-windows-x64
           path: libmoy/dist-win/
+
+      # A rolling release, so the README can link a stable URL that needs no
+      # GitHub login and never expires -- artifacts do both. One tag, refreshed
+      # on every main push AFTER the Wine test above has passed; the download is
+      # always the newest player that provably ran a cart.
+      - name: Refresh the player-latest release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd libmoy/dist-win && zip -q ../../moy-play-windows-x64.zip * && cd ../..
+          gh release view player-latest >/dev/null 2>&1 || \
+            gh release create player-latest --title "moy-play for Windows (rolling)" \
+              --notes "The desktop player, rebuilt and Wine-run-tested by CI on every push to main. Unzip, then drag a .moy cart folder onto moy-play.exe. Arrows/WASD = d-pad, Z/X or J/K = A/B, Enter/Space = run, Esc = quit." \
+              --latest=false
+          gh release upload player-latest moy-play-windows-x64.zip --clobber
 
   # The ESP-IDF component, built for real silicon.
   #
