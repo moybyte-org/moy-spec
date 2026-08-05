@@ -34,8 +34,8 @@ from conformance import scenes                    # noqa: E402
 
 REF_CANDIDATES = (
     os.environ.get("MOYBYTE"),
-    os.path.expanduser("~/Documents/Work/kidcode"),
-    os.path.expanduser("~/work/kidcode"),
+    os.path.expanduser("~/Documents/Work/moybyte"),
+    os.path.expanduser("~/work/moybyte"),
     os.path.expanduser("~/moybyte"),
 )
 
@@ -81,6 +81,7 @@ def run(ref_path, verbose=False):
     ref_canvas, ref_sheet_mod = build_ref(ref_path)
 
     failures = []
+    skipped = []
     for name, fn in scenes.SCENES:
         # The reference sheet is built at the SPEC's dimensions (16x32 tiles,
         # SPEC.md 3.2) rather than its own 16x16 default, so tile ids past 255
@@ -101,6 +102,7 @@ def run(ref_path, verbose=False):
                 # 6.1 promotes verbs on evidence, and which references carry
                 # them IS the evidence, so say it rather than crash on it.
                 print("  --    %s  (reference lacks it: %s)" % (name, exc))
+                skipped.append(name)
                 continue
             raise
         flush = getattr(rc, "flush_batch", None)
@@ -124,7 +126,7 @@ def run(ref_path, verbose=False):
                   "reference=%d moycore=%d"
                   % (name, diff["count"], diff["total"], diff["x"], diff["y"],
                      diff["ref"], diff["core"]))
-    return failures
+    return failures, skipped
 
 
 def main(argv):
@@ -138,11 +140,13 @@ def main(argv):
         print("        pass --ref /path/to/moybyte (or set MOYBYTE) to run it.")
         return 0
     print("parity: moycore vs %s" % ref)
-    failures = run(ref, verbose)
+    failures, skipped = run(ref, verbose)
+    compared = len(scenes.SCENES) - len(skipped)
+    tail = " (%d provisional skipped)" % len(skipped) if skipped else ""
     if failures:
-        print("\n%d of %d scenes differ." % (len(failures), len(scenes.SCENES)))
+        print("\n%d of %d scenes differ." % (len(failures), compared))
         return 1
-    print("all %d scenes byte-identical." % len(scenes.SCENES))
+    print("all %d scenes byte-identical%s." % (compared, tail))
     return 0
 
 
