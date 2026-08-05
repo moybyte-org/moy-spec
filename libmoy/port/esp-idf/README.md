@@ -98,6 +98,16 @@ with each of the four wired to a real IDF API.
 `sfx` and `music` may stay NULL. SPEC.md 8.3 makes silence a valid rendering, so
 a board with no audio is still conforming and the cart never finds out.
 
+## Getting carts onto a device
+
+How carts travel is host policy (the spec says nothing), but there is a
+proposed convention ladder — `proposals/sideload.md` — whose floor is "carts
+are folders on storage, plus a marker file". The planned reference for its
+USB disk mode (TinyUSB MSC, an explicit pause-and-serve mode, never
+concurrent filesystem access) belongs in this example's dependencies when it
+lands — like everything else the port needs, never in the library's, which
+requires nothing.
+
 ## Memory
 
 SPEC.md 1.1's floor is about 400 KB and the buffers above are most of it. On
