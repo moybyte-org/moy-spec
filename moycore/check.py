@@ -179,11 +179,24 @@ def check_source(source, manifest, findings):
     for ext in EXTENSION_VERBS:
         used = [v for v in EXTENSION_VERBS[ext] if _calls(code, v)]
         if used and ext not in declared:
-            findings.append(("error", "extensions",
-                             "the cart calls %s but does not declare \"%s\" in "
-                             "extensions; a host without it cannot refuse the cart "
-                             "cleanly and will crash partway in (SPEC.md 10)"
-                             % (", ".join(used), ext)))
+            # Opportunistic use is legitimate and different from a missing
+            # declaration: a cart that checks the verb exists before calling
+            # it runs everywhere, degraded where the extension is absent.
+            # Declaring would make those hosts refuse a cart that works.
+            guarded = all(("%s ~= nil" % v) in code or ("nil ~= %s" % v) in code
+                          or ("type(%s)" % v) in code for v in used)
+            if guarded:
+                findings.append(("info", "extensions",
+                                 "uses %s behind an existence check without declaring "
+                                 '"%s" -- optional use: hosts without the extension '
+                                 "run the cart degraded (SPEC.md 10)"
+                                 % (", ".join(used), ext)))
+            else:
+                findings.append(("error", "extensions",
+                                 "the cart calls %s but does not declare \"%s\" in "
+                                 "extensions; a host without it cannot refuse the cart "
+                                 "cleanly and will crash partway in (SPEC.md 10)"
+                                 % (", ".join(used), ext)))
     for ext in declared:
         if ext in EXTENSION_VERBS:
             if not any(_calls(code, v) for v in EXTENSION_VERBS[ext]):
