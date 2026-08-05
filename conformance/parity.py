@@ -82,13 +82,6 @@ def run(ref_path, verbose=False):
 
     failures = []
     for name, fn in scenes.SCENES:
-        if name in scenes.EXCLUDED:
-            # Provisional scenes (SPEC.md 6.1) exercise verbs moycore no
-            # longer carries; run.py excludes them from counting and parity
-            # cannot execute them at all.
-            if verbose:
-                print("  --    %s  (excluded)" % name)
-            continue
         # The reference sheet is built at the SPEC's dimensions (16x32 tiles,
         # SPEC.md 3.2) rather than its own 16x16 default, so tile ids past 255
         # exist on both sides and the comparison is about rasterization rather
@@ -98,7 +91,18 @@ def run(ref_path, verbose=False):
         scenes._fill_sheet(rs)
         scenes._fill_map(rt)
         rc = ref_canvas.Canvas(320, 240)
-        fn(rc, rs, rt)
+        try:
+            fn(rc, rs, rt)
+        except AttributeError as exc:
+            if name in scenes.EXCLUDED:
+                # A provisional verb (SPEC.md 6.1) this reference has not
+                # grown yet -- tline is spec'd, golden-checked in moycore and
+                # libmoy, and "not yet on a device". Not a parity failure:
+                # 6.1 promotes verbs on evidence, and which references carry
+                # them IS the evidence, so say it rather than crash on it.
+                print("  --    %s  (reference lacks it: %s)" % (name, exc))
+                continue
+            raise
         flush = getattr(rc, "flush_batch", None)
         if flush is not None:
             flush()          # the reference auto-batches sprites; moycore does not
