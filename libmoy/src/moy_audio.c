@@ -434,6 +434,7 @@ static float voice_sample(moy_voice *v, float dt, float rate)
     const moy_sfx_def *s = v->s;
     const moy_note *n;
     float step_dur, t, u, pitch, vol, g, w, slew;
+    float slide_from = -1.0f;           /* origin frequency when eff 1 */
     int idx = v->step, pitch_i;
 
     if (!s || !s->nsteps) return 0.0f;
@@ -444,10 +445,12 @@ static float voice_sample(moy_voice *v, float dt, float rate)
     pitch = (float)pitch_i;
     vol = (float)n->vol;
 
-    /* Arpeggio cycles the step's group of four at 30/15 notes/s -- the PITCH
-     * only; volume and wave stay the step's own. */
+    /* Arpeggio cycles the step's group of four -- the PITCH only; volume and
+     * wave stay the step's own. 30/15 notes/s, doubled on a fast sfx (15+
+     * steps/s; PICO-8 doubles at speed <= 8 ticks/note, same thing). */
     if (n->eff == 6 || n->eff == 7) {
-        float nps = n->eff == 6 ? 30.0f : 15.0f;
+        float nps = (n->eff == 6 ? 30.0f : 15.0f)
+                  * (s->speed >= 15.0f ? 2.0f : 1.0f);
         int k = (idx / 4) * 4 + (int)(t * nps) % 4;
         if (k < s->nsteps) {
             pitch_i = s->steps[k].pitch;
@@ -460,9 +463,13 @@ static float voice_sample(moy_voice *v, float dt, float rate)
 
     switch (n->eff) {
     case 1:                             /* slide from the channel's previous
-                                         * note; with none yet, from itself */
+                                         * note; with none yet, from itself.
+                                         * The glide is linear in FREQUENCY,
+                                         * not semitones (PICO-8/zepto8) --
+                                         * on a wide slide the curves differ
+                                         * audibly. */
         if (v->prev_pitch >= 0.0f) {
-            pitch = v->prev_pitch + (pitch - v->prev_pitch) * u;
+            slide_from = pitch_hz(v->prev_pitch);
             vol = v->prev_vol + (vol - v->prev_vol) * u;
         }
         break;
@@ -481,6 +488,7 @@ static float voice_sample(moy_voice *v, float dt, float rate)
     g = (pitch_i < 0 || vol <= 0.0f) ? 0.0f : vol / 7.0f;
     if (g > 0.0f) {
         float freq = pitch_hz(pitch);
+        if (slide_from > 0.0f) freq = slide_from + (freq - slide_from) * u;
         if (n->eff == 3) freq *= 1.0f - u;      /* drop: falls linearly to 0 */
         v->phase += freq * dt;
         v->phase -= (float)(int)v->phase;
@@ -513,12 +521,14 @@ static float voice_sample(moy_voice *v, float dt, float rate)
     if (v->amp < g) { v->amp += slew; if (v->amp > g) v->amp = g; }
     else            { v->amp -= slew; if (v->amp < g) v->amp = g; }
 
-    /* advance the sequencer; the finished step becomes the channel's
-     * previous SOUNDING note only if it actually sounded */
+    /* advance the sequencer; any KEYED step -- volume 0 included -- becomes
+     * the channel's previous note. In PICO-8 every tracker slot has a key,
+     * so a rest is still a slide origin; only moy's pitch -1 records
+     * nothing. */
     v->samp++;
     if ((float)v->samp >= step_dur * rate) {
         const moy_note *fin = &s->steps[v->step];
-        if (fin->pitch >= 0 && fin->vol > 0) {
+        if (fin->pitch >= 0) {
             v->prev_pitch = (float)fin->pitch;
             v->prev_vol = (float)fin->vol;
         }

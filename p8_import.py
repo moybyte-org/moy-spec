@@ -174,21 +174,21 @@ def gfx_to_kgfx(gfx_lines):
 #     zepto8 and fake-08 -- so PICO-8's octave labels sit two octaves below
 #     concert naming. moy pitch is a true semitone index (57 == A4 == 440 Hz),
 #     so the import TRANSPOSES: moy = p8 + 24. The 1:1 map this used to be
-#     played every ported cart two octaves deep. A volume-0 note becomes a
-#     REST (-1), like PICO-8.
+#     played every ported cart two octaves deep. A volume-0 note keeps its
+#     key ([pitch, wave, 0]) -- PICO-8 rests do, and a following slide
+#     (eff 1) glides from that key.
 #   * WAVE: all 8 builtin instruments map 1:1 (table below -- the two consoles
 #     number them differently). The 8 CUSTOM instruments (waveform 8..15,
 #     defined in __sfx__ slots 0..7) are still not modelled; we fold them onto
 #     the builtin in the low 3 bits (w & 7).
-#   * SPEED: PICO-8 "note duration" D is ticks-per-row at 120 ticks/sec, so the
-#     row rate is 120/D rows/sec. moy `speed` is steps/sec, so speed = round(
-#     120/D), clamped to >=1. D==0 is treated as 1.
+#   * SPEED: PICO-8 "note duration" D is ticks-per-row at 120 ticks/sec, so
+#     speed = 120/D steps/sec exactly (SPEC.md 8.1's speed is not
+#     integer-only; rounding it drifts the row clock). D==0 plays flat out.
 #   * EFFECTS: the nibble carries over VERBATIM -- moy uses PICO-8's
 #     numbering (1 slide, 2 vibrato, 3 drop, 4/5 fades, 6/7 arpeggio).
 #   * Trailing all-rest notes are trimmed so a mostly-empty SFX stays short.
 
 PICO8_PITCH_C0 = 24  # PICO-8 pitch 0 sounds at moy semitone 24 (its A "2" is A4)
-REST = -1
 
 # 8 PICO-8 builtin instruments -> the same 8 moy waveforms, renumbered.
 # p8: 0 triangle, 1 tilted saw, 2 saw, 3 square, 4 pulse, 5 organ, 6 noise,
@@ -245,7 +245,9 @@ def _sfx_line_to_dict(line):
         eff = int(chunk[4], 16) if chunk[4] in "01234567" else 0
         wave = _IMPORT_INSTRUMENT_TO_WAVE.get(instrument & 7, 0)
         if vol <= 0:
-            steps.append([REST, wave, 0])
+            # keep the key: a PICO-8 rest is silent but still the origin a
+            # following slide (eff 1) glides from
+            steps.append([PICO8_PITCH_C0 + pitch, wave, 0])
         elif eff:
             # the effect nibble carries over verbatim (p8 numbering)
             steps.append([PICO8_PITCH_C0 + pitch, wave, vol, eff])
@@ -254,7 +256,7 @@ def _sfx_line_to_dict(line):
     if 0 < loop_e <= len(steps) and loop_s < loop_e:
         # p8 loop range: play 0..loop_e once, then repeat loop_s..loop_e
         steps = steps[:loop_e]
-        if not any(st[0] != REST for st in steps):
+        if not any(st[2] for st in steps):
             return None
         d = {"speed": speed, "loop": True, "steps": steps}
         if loop_s:
@@ -264,7 +266,7 @@ def _sfx_line_to_dict(line):
         # p8's length trick: loop start with end 0 = "play this many notes"
         steps = steps[:loop_s]
     # trim trailing rests so a near-empty SFX doesn't carry 32 silent steps
-    while steps and steps[-1][0] == REST:
+    while steps and steps[-1][2] == 0:
         steps.pop()
     if not steps:
         return None

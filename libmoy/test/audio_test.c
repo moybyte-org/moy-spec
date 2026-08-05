@@ -182,7 +182,38 @@ int main(void)
          * retrigger forgot the channel's previous note. */
         int head = crossings(buf, RATE / 10);
         int tail = crossings(buf + RATE / 2 - RATE / 10, RATE / 10);
+        /* Halfway, a frequency-linear glide sits near (110+880)/2 = 495 Hz;
+         * a semitone-linear one near 110*8^0.5 = 311 Hz. ~99 vs ~62
+         * crossings in a tenth of a second. */
+        int mid = crossings(buf + RATE / 4 - RATE / 20, RATE / 10);
         check(tail > 4 * head, "slide glides from the pre-retrigger note");
+        check(mid > 80, "slide interpolates frequency, not semitones");
+    }
+
+    /* -- a keyed rest (vol 0) is a slide origin ----------------------- */
+    check(moy_bank_parse(&bank,
+        "{\"sfx\":[{\"speed\":4,\"steps\":[[33,0,7],[45,0,0]]}]}") == 0,
+        "keyed-rest bank");
+    moy_audio_init(&a, &bank, RATE);
+    moy_audio_sfx(&a, 0, 0);
+    moy_audio_render(&a, buf, RATE);
+    check(a.v[0].prev_pitch == 45.0f && a.v[0].prev_vol == 0.0f,
+          "a silent step with a key still sets the slide origin");
+
+    /* -- arpeggio doubles on a fast sfx ------------------------------- */
+    check(moy_bank_parse(&bank,
+        "{\"sfx\":[{\"speed\":16,\"loop\":true,"
+        "\"steps\":[[33,0,7,6],[57,0,7,6],[33,0,7,6],[57,0,7,6]]}]}") == 0,
+        "arp bank");
+    moy_audio_init(&a, &bank, RATE);
+    moy_audio_sfx(&a, 0, 0);
+    moy_audio_render(&a, buf, RATE / 4);
+    {
+        /* At 60 notes/s the window 1/60..2/60 s plays step 1 (A4): ~15
+         * crossings. At the slow 30 notes/s it would still be on step 0
+         * (A2): ~4. */
+        int c = crossings(buf + RATE / 60, RATE / 60);
+        check(c > 9, "fast-sfx arpeggio runs at 60 notes/s");
     }
 
     /* -- a 4-wide track: sfx steals voice 0, never drops -------------- */

@@ -657,13 +657,18 @@ verbatim):
 
 | eff | name | behaviour over the note's duration |
 |---|---|---|
-| `1` | slide | pitch and volume glide from the channel's previous note |
+| `1` | slide | frequency and volume glide from the channel's previous note — linear in **Hz**, not semitones, as in PICO-8 |
 | `2` | vibrato | pitch wobbles ±0.25 semitone (triangle LFO, 7.5 Hz) |
 | `3` | drop | frequency falls linearly to 0 |
 | `4` | fade in | volume ramps 0 → `vol` |
 | `5` | fade out | volume ramps `vol` → 0 |
-| `6` | arpeggio fast | cycles the note's group of four steps at 30 notes/s |
-| `7` | arpeggio slow | the same at 15 notes/s |
+| `6` | arpeggio fast | cycles the note's group of four steps at 30 notes/s — 60 on a fast SFX (15+ steps/s) |
+| `7` | arpeggio slow | the same at 15 notes/s — 30 on a fast SFX |
+
+A note with `vol` `0` but a real pitch is a **keyed rest**: silent, yet it still
+becomes the channel's previous note — the origin a following slide glides from.
+PICO-8 works this way (every tracker slot has a key), so ported slides land
+right. Only pitch `-1` leaves the slide origin untouched.
 
 An **SFX** is a short list of notes played in sequence:
 
