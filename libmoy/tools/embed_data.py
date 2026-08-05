@@ -18,17 +18,7 @@ import argparse
 import hashlib
 import json
 import os
-import subprocess
 import sys
-
-
-def spec_commit(spec):
-    try:
-        return subprocess.check_output(
-            ["git", "-C", spec, "rev-parse", "HEAD"],
-            stderr=subprocess.DEVNULL).decode().strip()
-    except Exception:
-        return None
 
 
 def main(argv=None):
@@ -56,7 +46,6 @@ def main(argv=None):
         s = entry.lstrip("#")
         rgb.extend((int(s[0:2], 16), int(s[2:4], 16), int(s[4:6], 16)))
 
-    commit = spec_commit(a.spec)
     out = a.out or os.path.join(os.path.dirname(os.path.dirname(
         os.path.abspath(__file__))), "src", "moy_data.c")
 
@@ -67,9 +56,13 @@ def main(argv=None):
         " * font.bin (SPEC.md 6). Both are data rather than prose precisely so that",
         " * implementations cannot drift on them, so neither is hand-written here.",
         " *",
-        " * Regenerate with:  make data SPEC=/path/to/moy-spec",
+        " * Regenerate with:  make data",
         " *",
-        " *   source: moy-spec%s" % (" @ " + commit if commit else ""),
+        " * The hashes are the drift check: regenerating must be a no-op, and CI",
+        " * asserts it. Deliberately NO commit id -- this file is versioned beside",
+        " * the data it comes from, so git already knows, and stamping HEAD here",
+        " * would change the file on every commit and make that check unsatisfiable.",
+        " *",
         " *   palette.json  sha256 %s" % hashlib.sha256(
             open(pal_path, "rb").read()).hexdigest(),
         " *   font.bin      sha256 %s" % hashlib.sha256(font).hexdigest(),
@@ -91,8 +84,8 @@ def main(argv=None):
 
     with open(out, "w", encoding="utf-8", newline="\n") as f:
         f.write("\n".join(lines))
-    print("wrote %s (%d palette entries, %d font bytes)%s"
-          % (out, len(palette), len(font), " from " + commit[:12] if commit else ""))
+    print("wrote %s (%d palette entries, %d font bytes)"
+          % (out, len(palette), len(font)))
     return 0
 
 

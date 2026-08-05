@@ -4,9 +4,13 @@
  * font.bin (SPEC.md 6). Both are data rather than prose precisely so that
  * implementations cannot drift on them, so neither is hand-written here.
  *
- * Regenerate with:  make data SPEC=/path/to/moy-spec
+ * Regenerate with:  make data
  *
- *   source: moy-spec @ 748a090362590c9d5ca6f4033e587b6449b4fce5
+ * The hashes are the drift check: regenerating must be a no-op, and CI
+ * asserts it. Deliberately NO commit id -- this file is versioned beside
+ * the data it comes from, so git already knows, and stamping HEAD here
+ * would change the file on every commit and make that check unsatisfiable.
+ *
  *   palette.json  sha256 662123d55cd19fbabae0266e57d8e98b555bd73d12af4c5fa6cb55622db63f43
  *   font.bin      sha256 b0db3489e4e877a8b901ba857c373f9f3dae73c71a9e2829f4d3696bc3586a34
  */
