@@ -54,12 +54,13 @@ import webbrowser
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RUNNER = os.path.join(HERE, "runner")
-# The player bundle. Which files it contains is the PLAYER's business, not this
-# CLI's -- it grew a worker.js when the console moved off the main thread -- so
-# the pin (runner/VERSION) is authoritative and this list is only the fallback
-# for a checkout that has not pinned yet.
-RUNNER_FILES_DEFAULT = ("index.html", "worker.js", "micropython.mjs", "micropython.wasm")
+# Which files the player bundle contains is the PLAYER's business, not this
+# CLI's -- it grew a worker.js when the console moved off the main thread. So
+# the pin (runner/VERSION) is authoritative, and an unpinned runner/ is read
+# from disk rather than guessed at. These are the files in runner/ that belong
+# to THIS repository rather than to the player, and are never exported.
 VERSION_FILE = "VERSION"
+RUNNER_NOT_PLAYER = frozenset((VERSION_FILE, "BUILD.md", "THIRD_PARTY.md"))
 
 # Where `moy.py player --update` fetches from. The reference implementation
 # publishes a rolling release per branch, and each one is CONFORMANCE-GATED:
@@ -547,11 +548,33 @@ def _pin():
 
 
 def runner_files():
-    """The bundle's files, from the pin when there is one."""
+    """The bundle's files: the pin's list when pinned, else whatever is actually
+    in runner/.
+
+    Never a hardcoded list of names that may not exist. A constant saying
+    `worker.js` while runner/ predated the worker is exactly how `export` came
+    to die on a FileNotFoundError -- the site build caught it, one commit after
+    the tooling that introduced it. A pinned file that is missing IS an error
+    and says so; an unpinned bundle is simply reported as found."""
     pin = _pin()
     if pin and pin.get("files"):
-        return tuple(sorted(pin["files"]))
-    return RUNNER_FILES_DEFAULT
+        want = sorted(pin["files"])
+        missing = [n for n in want if not os.path.isfile(os.path.join(RUNNER, n))]
+        if missing:
+            die("runner/ is missing %s -- the pin (runner/%s) lists it. "
+                "Re-run `moy.py player --update`."
+                % (", ".join(missing), VERSION_FILE))
+        return tuple(want)
+    # Unpinned: the player is whatever is there, minus this repository's own
+    # documentation of it.
+    if not os.path.isdir(RUNNER):
+        die("no runner/ -- run `moy.py player --update` to fetch the player")
+    found = tuple(sorted(
+        f for f in os.listdir(RUNNER)
+        if os.path.isfile(os.path.join(RUNNER, f)) and f not in RUNNER_NOT_PLAYER))
+    if not found:
+        die("runner/ has no player files -- run `moy.py player --update`")
+    return found
 
 
 def _sha256(path):
