@@ -29,8 +29,10 @@ FORBIDDEN_GLOBALS = (
     "load", "loadstring", "dofile", "require", "collectgarbage",
 )
 
-# SPEC.md 6.1 -- provisional, explicitly not part of core 0.1.
-PROVISIONAL_VERBS = ("tri", "trib", "sspr", "spr_batch", "rect_batch", "spans")
+# SPEC.md 6.1 -- provisional, explicitly not part of core 0.1. The batch verbs
+# that used to sit alongside these were deleted from the spec (6.1 records the
+# measurements); a cart using one now names an unknown verb, not a provisional one.
+PROVISIONAL_VERBS = ("tri", "trib", "sspr", "tline")
 
 # SPEC.md 10 standard extensions, and the verbs each one grants.
 EXTENSION_VERBS = {
@@ -198,8 +200,9 @@ def check_source(source, manifest, findings):
     used_prov = [v for v in PROVISIONAL_VERBS if _calls(code, v)]
     if used_prov:
         findings.append(("warn", "provisional",
-                         "uses %s, which SPEC.md 6.1 marks TBD and excludes from core "
-                         "0.1; these may be renamed or removed"
+                         "uses %s, which SPEC.md 6.1 marks provisional and excludes "
+                         "from core 0.1 until its promotion gates clear; semantics "
+                         "are frozen but a host may not implement it yet"
                          % ", ".join(used_prov)))
 
     # Declared input vs what the script actually reads. Advisory in both

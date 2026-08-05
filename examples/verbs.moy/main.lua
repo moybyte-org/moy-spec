@@ -157,17 +157,17 @@ local function s_layer()
   print("draw_layer pans it every frame", 20, 42, 7)
 end
 
--- 9 --------------------------------------------------- section 6.1 DRAFT ----
+-- 9 --------------------------------------------- section 6.1 provisional ----
 local function s_draft()
   cls(0)
-  print("SECTION 6.1 -- DRAFT, not core 0.1", 20, 30, 9)
+  print("SECTION 6.1 -- PROVISIONAL, not core 0.1", 20, 30, 9)
   tri(60, 160, 120, 60 + flr(20 * math.sin(t)), 180, 160, 12)  -- filled tri
   trib(60, 160, 120, 60 + flr(20 * math.sin(t)), 180, 160, 7)  -- outline
   local w = 24 + flr(20 * math.sin(t * 2))
   sspr(8, 0, 8, 8, 220, 80, w * 2, w * 2)       -- arbitrary stretch of tile 1
   print("tri/trib + sspr stretch", 60, 180, 6)
-  print("(spr_batch/rect_batch/spans live", 20, 200, 5)
-  print("here too; col_batch is unbuilt)", 20, 212, 5)
+  print("(tline is specced, unbuilt; the", 20, 200, 5)
+  print("batch verbs are deleted -- 6.1)", 20, 212, 5)
 end
 
 local screens = {

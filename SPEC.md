@@ -2,8 +2,10 @@
 
 > **Status: DRAFT 0.1.** Everything outside §6.1 is decided and implemented — it
 > describes a console that exists and runs games today, not a design sketch.
-> **§6.1 (batched fills and the 3D verbs) is explicitly TBD** and is not part of 0.1.
-> Decisions worth arguing about are collected in §12 with their reasoning.
+> **§6.1 (the 3D verbs) is provisional**: its membership is settled and its
+> semantics are frozen, but nothing in it is core 0.1 until each verb clears the
+> promotion gates stated there. Decisions worth arguing about are collected in
+> §12 with their reasoning.
 
 **moy** is a virtual console: a fixed raster, a fixed palette, a fixed set of
 drawing, input and audio verbs, and a cart format that packages a game against them.
@@ -395,8 +397,9 @@ canvas and honours the current `camera`, `clip` and `pal` state.
 | `rectb(x, y, w, h, c)` | rectangle **outline** |
 | `circ(cx, cy, r, c)` | **filled** circle |
 | `circb(cx, cy, r, c)` | circle **outline** |
-| `tri(x1, y1, x2, y2, x3, y3, c)` | **filled** triangle — ⚑ TBD, see §6.1 |
-| `trib(x1, y1, x2, y2, x3, y3, c)` | triangle **outline** — ⚑ TBD, see §6.1 |
+| `tri(x1, y1, x2, y2, x3, y3, c)` | **filled** triangle — provisional, see §6.1 |
+| `trib(x1, y1, x2, y2, x3, y3, c)` | triangle **outline** — provisional, see §6.1 |
+| `tline(x0, y0, x1, y1, u, v, du, dv, ck)` | textured line sampled from the map — provisional, see §6.1 |
 | `print(s, x, y, c)` | text, 8 × 8 fixed font |
 | `camera(x, y)` | offset subsequent draws by `-x, -y`. No args resets |
 | `clip(x, y, w, h)` | clip subsequent draws to a rect. No args resets |
@@ -422,71 +425,120 @@ draws it from its own sheet.
 `font.bin` is MicroPython's `font_petme128_8x8`, MIT-licensed — shipping the
 glyph data means shipping that notice. See `THIRD_PARTY.md`.
 
-### 6.1 Batched fills and the 3D verbs — ⚑ TBD
+### 6.1 The 3D verbs — provisional, membership settled
 
-> **This subsection is unsettled and is NOT part of 0.1.** Names, signatures and
-> membership are all still moving, and one of the verbs below has never been built
-> at all. They are written down so the shape can be argued about, not so anyone
-> implements them yet. Where a verb is implemented, this section gives its real
-> current signature rather than an idealised one.
+> **The set is decided; the verbs are provisional.** `tri`, `trib` and `sspr` are
+> implemented in every reference implementation and checked by the suite's
+> provisional scene; `tline` is specified here and implemented nowhere yet. None
+> are core 0.1: each is promoted by the gates at the end of this section, on
+> evidence rather than argument. The batch verbs that used to fill this section
+> are **deleted**, and the measurements that deleted them are recorded below so
+> they are not reinvented.
 
-**`rect_batch(items, n, ox, oy, c)`** — many filled rectangles in one call.
-`items` is a **flat** sequence of `x, y, w, h, c` quints (flat, not a list of
-tuples: one allocation instead of N, which is what makes a few-hundred-span frame
-affordable from a script). `n` is how many quints to read, `-1` for all; `ox, oy`
-offset every rect; `c` overrides every rect's color, `-1` to use each quint's own.
+**The membership rule.** A verb belongs here only if, without it, a cart would
+have to run a script loop that scales with **pixels**. Turning many calls into
+one is never a reason — batching is the engine's duty, settled below. Each verb
+exists because the cart holds information the host cannot infer — where the
+triangle is, what the camera sees this scanline — and hands it over in O(calls),
+with every per-pixel loop on the host's side of the boundary.
 
-**`spans(n)`** — a reusable buffer of `n * 5` slots to fill and hand to
-`rect_batch`, so a per-frame batch costs no allocation at all. Its existence is
-the tell that this group is about dispatch and memory traffic rather than drawing.
+**`tri(x1, y1, x2, y2, x3, y3, c)`** — filled triangle. Vertices sorted by y,
+both edges walked with **floor division** — not C truncation, which differs by
+one for negative numerators and costs a whole column on a leaning edge — and one
+inclusive horizontal span emitted per scanline. Four implementations already
+agree on every pixel of this; the text records what the goldens enforce.
 
-These are dispatch verbs rather than drawing features — but they are the ones that
-make software 3D viable at all. A raycaster's frame is a few hundred narrow vertical
-spans; issuing those one call at a time from a script is what makes raycasting
-impossible on an interpreted host rather than merely slow.
+**`trib(x1, y1, x2, y2, x3, y3, c)`** — the three edges, exactly `line`'s pixels.
+Fails the membership rule on its own (it *is* three `line` calls) and is kept for
+symmetry with `rect`/`rectb` and `circ`/`circb`, at no implementation cost.
 
-**`spr_batch(items, colorkey, scale)`** — many 1 × 1 tiles in one call. `items` is a
-sequence of `{tile, x, y}` or `{tile, x, y, flip}`. Semantically identical to calling
-`spr` in a loop, and a host may implement it as exactly that.
+**`sspr(sx, sy, sw, sh, dx, dy, dw, dh, colorkey, flip)`** (§7.1) — stretch a
+sheet **pixel** region to an arbitrary destination rect. Nearest-neighbour; the
+source texel of destination column `i` is `(i * sw) // dw` — exact integer
+arithmetic, nothing to round. This is the raycaster's textured wall slice at
+`dw = 1`, and non-integer sprite scaling everywhere else.
 
-**`col_batch(items, ...)`** — the same batch, the same pixels, declared as
-*columns*. **Not implemented anywhere; this is a proposal, not a description.**
+**`tline(x0, y0, x1, y1, u, v, du, dv, colorkey)`** — draw exactly the pixels
+`line(x0, y0, x1, y1)` would draw; before each pixel, sample the **map** at texel
+`(u >> 16, v >> 16)`, then advance `u += du`, `v += dv`. All four texture
+arguments are **16.16 fixed-point integers** — a cart computes in floats and
+multiplies by 65536 at the call.
 
-The reason it might need to exist: on reference hardware, tall narrow spans measured
-~4× the per-pixel cost of wide ones (~300ns/px against ~74ns/px), and that gap
-survived being moved out of a script into a C kernel — so it is memory order, not
-dispatch. Every pixel of a 1px-wide span lands in its own cache line. **A cart cannot
-choose its memory order; an engine can** — but only if the cart says the batch is
-column-shaped. Hence `rect_batch` for wide/boxy spans, `col_batch` for tall thin ones.
+Sampling: the map is read as a virtual texture of `w×8 by h×8` pixels (a full
+128 × 128 map is 1024 × 1024). Texel `(px, py)` lives in cell
+`(px >> 3, py >> 3)`; an empty cell draws nothing for that pixel (the cursor
+still advances); a placed tile draws its sheet pixel `(px & 7, py & 7)`, through
+`pal`, `palt` and the optional `colorkey` exactly as `spr` would. Texture
+coordinates wrap modulo the map's pixel size. The screen endpoints are
+camera-relative and clipped like any `line`; the texture walk is not — camera
+moves where the line lands, never what it samples.
 
-**`tri` / `trib`** (§6) and **`sspr`** (§7.1) belong to this same provisional group.
+Fixed point is the load-bearing choice. With float texture steps, a JS host, a
+MicroPython host and a C host would round differently in the last bit and the
+golden frames would stop being enforceable; with 16.16 integers every
+implementation performs identical arithmetic. And sampling the **map** rather
+than the sheet is what makes the verb worth having: 1024 × 1024 of texture is a
+racing track, and the sheet is still reachable through it by pointing cells at
+tiles.
 
-**What is unresolved:**
+`tline` is the Mode 7 verb. Along one scanline of a perspective ground plane the
+texture step is constant — all the perspective lives in how `du, dv` change
+*between* scanlines — so a rotating, scaling floor is ~120 calls each frame, with
+every per-pixel cost in the host's kernel. The same call drawn vertically
+textures a raycaster's floor and ceiling columns.
 
-0. **Whether the dispatch verbs are needed at all.** `spr_batch` was in core 0.1 and
-   was moved here, because on the reference console the argument for it turned out
-   not to hold: its Lua binding appends sprite quads into the native batch array
-   directly, breaking the run only on a state change, so an ordinary `spr` loop
-   already compiles to the one batched call `spr_batch` would have produced. It never
-   crosses the language boundary the verb exists to avoid. If that is true of any
-   competently-bridged host, the whole family is an optimisation the *engine* owes
-   the cart rather than a verb the cart owes the engine — and the same question
-   should be asked of `rect_batch` before it is promoted.
+**What the set covers, and what it deliberately does not.** The measured frame
+budgets (reference console, 2026-07/08; its slower board is the floor the spec
+budgets against):
 
-1. **Whether `col_batch` earns its place.** The ~4× cost is measured; whether
-   row-major iteration recovers it is not — and nothing has been built to find out,
-   which is why the verb has no implementation. If it doesn't recover, delete the
-   verb and accept the stride cost as a hardware fact.
-2. **Whether the split should exist at all.** One verb with a shape hint, or an engine
-   that infers shape from the spans, may beat two names.
-3. **`sspr` has no kernel.** Per-destination-pixel from a script is unusably slow, and
-   it is the verb PICO-8 raycasters lean on — it likely needs a native implementation
-   before it can be specced honestly.
-4. **Whether a higher-level verb is the right level entirely.** Playdate ships a C
-   rasterizer (Mini3D) rather than exposing primitives. A textured-column batch, or
-   even a `raycast()` over the tilemap, would be dramatically faster and dramatically
-   less general. That trade — speed against implementability by others — is the real
-   open question, and it is a spec question, not an optimisation one.
+| technique | shape | floor-board budget |
+|---|---|---|
+| Mode 7 plane | ~120 `tline` calls | ~5 ms *(derived from measured call and fill rates; `tline` itself is unbuilt)* |
+| raycaster | script DDA + `sspr`/`rect` columns | measured on glass: ~32 fps full-res, past 60 at half-res |
+| flat-shaded polygons | `tri` per face | dispatch + fill, small triangles near the call floor |
+| scaled sprites, billboards | `sspr` | sub-ms each |
+
+These are **call-bounded**: cost scales with verbs issued, and the host owns
+every pixel. What the set does not cover is **step-bounded** work whose output is
+data-dependent per sample — voxel-terrain rendering (Comanche), general textured
+3D, per-pixel effects. No verb fixes those: the cost is the cart's own
+interpreted loop. They belong to a vendor extension (§10) or to a compiled-cart
+binding (§15), and a cart author should know that *before* building — which is
+what this table is for.
+
+**Promotion gates.** A provisional verb becomes core when, and only when:
+
+1. **It has a native kernel in the reference console.** The floor board runs the
+   interpreted fallbacks at 7.5 ms per `tri` and 36 ms per small `sspr` — a verb
+   slower than the frame it draws into cannot honestly be specced. (`tri` and
+   `sspr` both have C kernels in `libmoy/`; the reference console still owes its
+   own. `tline` exists nowhere.)
+2. **The suite has golden frames for it** beyond the provisional scene, promoted
+   into the counted set.
+3. **It has a measured row in the reference bench on both reference boards**, so
+   the first cart author to lean on it reads a cost, not a hope.
+
+**The deleted verbs, and the measurements that deleted them.** Recorded so the
+next reader does not re-derive them:
+
+- **`spr_batch`** — on the reference console an ordinary `spr` loop already lands
+  in the native batch array, breaking the run only on a state change. The verb's
+  one job — avoiding the language boundary — was already done by the engine.
+- **`rect_batch` / `spans`** — same fate, measured later: once the reference
+  console gated its root canvas through C-side appends, a plain `rect` loop costs
+  ~26 µs/call on the floor board and the raycaster that motivated the batch ships
+  without it. **Batching is the host's duty.** A conforming host is expected to
+  make repeated verb calls cheap; a cart is never asked to pre-pack its geometry.
+- **`col_batch`** — built and A/B-measured against `rect_batch` on identical
+  spans: **0.6×** — 56 % *slower* — because its row-major membership scan cost
+  more than the cache locality it bought. Its motivating figure, previously cited
+  in this section ("narrow spans cost ~300 ns/px, ~4× wide fills"), was a
+  subtraction artifact: measured directly, narrow spans cost ~120 ns/px against
+  ~74, a ~1.6× penalty too small for any iteration order to pay for itself.
+- **`raycast()` and other engine verbs** — resolved out on principle: a verb that
+  takes a camera and returns a finished frame is an engine, and an engine behind
+  a verb is a vendor extension (§10) or a library inside a compiled cart (§15),
+  never core. Core verbs are the primitives every genre shares.
 
 ---
 
@@ -497,8 +549,7 @@ column-shaped. Hence `rect_batch` for wide/boxy spans, `col_batch` for tall thin
 | verb | effect |
 |---|---|
 | `spr(n, x, y, colorkey, scale, flip)` | draw sheet tile `n` at `x, y` |
-| `spr_batch(items, colorkey, scale)` | draw many 1 × 1 tiles in one call — ⚑ TBD, see §6.1 |
-| `sspr(sx, sy, sw, sh, dx, dy, dw, dh, colorkey, flip)` | stretch a sheet **pixel** region to `dw × dh` at `dx, dy` — ⚑ TBD, see §6.1 |
+| `sspr(sx, sy, sw, sh, dx, dy, dw, dh, colorkey, flip)` | stretch a sheet **pixel** region to `dw × dh` at `dx, dy` — provisional, see §6.1 |
 
 `n` is a sheet tile, **0–511**. `colorkey` is the transparent palette index, `-1` for
 opaque (default). `scale` is an integer enlargement, default 1. `flip`: `0` none, `1`
@@ -508,8 +559,9 @@ tiles — adjacent `spr` calls.
 `sspr` addresses the sheet in **pixels, not tiles**, and its scale is arbitrary rather
 than integer.
 
-**Drawing sprites needs only `spr`.** Many tiles is a plain loop over it; `spr_batch`
-is a dispatch shortcut for that loop and is provisional (§6.1), not core 0.1.
+**Drawing sprites needs only `spr`.** Many tiles is a plain loop over it — a
+conforming host makes that loop cheap (§6.1's batching note), and the batch verb
+this section once pointed at is deleted for exactly that reason.
 
 ### 7.2 Map
 
@@ -783,8 +835,9 @@ through any tooling it likes, but frames captured from a 64-bit-Lua build are no
 golden — float-heavy carts will drift from them in the last digits (§4.2).
 
 Conformance also tests the §4.1 sandbox ceiling: a cart that reaches `io` must fail on
-every conforming host. Audio is excluded (§8.3), and so is everything in §6.1 until it
-leaves TBD.
+every conforming host. Audio is excluded (§8.3), and so are the §6.1 verbs until each
+clears its promotion gates — the suite exercises them in a provisional scene that is
+reported but not counted.
 
 ---
 
@@ -844,7 +897,9 @@ writes to *that* framebuffer rather than *a* framebuffer, and hosts lose the fre
 render at a different depth, scale or byte order. This spec keeps the canvas opaque and
 covers the cases raw access was wanted for with shaped verbs instead (§6.1).
 **Cost:** effects whose *logic* is genuinely per-pixel — plasma, fire, tunnels — cannot
-be written as carts. That is the deliberate boundary.
+be written as Lua carts. That is the deliberate boundary, and it is a statement about
+*this* binding: a compiled-cart binding (§15) is where that boundary would move, with
+a framebuffer in the cart's own linear memory rather than raw access to the host's.
 
 ### 12.7 — Cover art is deferred, and the icon is a pointer.
 
@@ -903,14 +958,37 @@ implementation already does for its dual runtimes) can be added without a second
 document. What a host owes a binding it does not implement is settled in §3.1: a
 clean refusal, never an attempt to run the script anyway.
 
-WebAssembly is the obvious candidate and has been measured on reference hardware:
-**interpreted WASM runs at ~1.09× Lua** — not worth a runtime — while **AOT-compiled
-WASM is ~16×**. But AOT carries a constraint fatal to §3 as written: on that hardware
-AOT code must be mapped on the instruction bus from its own flash partition, so a
-cart's compiled code **cannot be read out of a cart folder**. Installing one means
-writing to a scratch partition, with flash wear, and per-architecture compilation
-besides — which also rules out editing a cart and pressing play.
+WebAssembly is the settled candidate, measured on reference hardware (a 6502
+interpreter core — branch-heavy dispatch, a VM's worst case — line-faithful in Lua
+and C, identical cycle counts out of every runtime): **interpreted WASM runs at
+~1.09× Lua**, which does not justify a runtime, while **AOT-compiled WASM is ~16×,
+and ~91× on straight-line arithmetic**. The doctrine that follows from those two
+numbers is recorded here so it is not re-litigated:
 
-So a WASM binding is a plausible *porting and distribution* tier for compiled games,
-and a poor fit for authored ones. Recorded here so it isn't rediscovered, not proposed
-for 0.1.
+- **Two tiers, two contracts.** Script carts draw through verbs and the host owns
+  every pixel — §6.1's set is sized for exactly that. Compiled carts bring their
+  own rasterizer and need one thing the verb table cannot give: a framebuffer in
+  the cart's linear memory that the host blits once per frame. Reaching pixels
+  through a per-pixel import pays a language-boundary trampoline 76,800 times a
+  frame and is dead at any VM speed — **fast 3D is gated on the framebuffer
+  contract, not on the runtime**. §12.6's no-framebuffer rule is a statement
+  about the Lua binding; this is where that boundary moves, without ever exposing
+  the *host's* framebuffer.
+- **The portable artifact is `main.wasm`, alone.** AOT is a host-side install
+  step, invisible to the cart: on reference hardware with no exec-capable heap,
+  AOT text must be XIP-mapped from its own flash partition, so installing a
+  compiled cart is a real install, with flash wear — and a browser host needs
+  none of it, JIT-ing the same `.wasm` it was handed. A cart shipping
+  per-architecture binaries is the model this binding exists to reject.
+- **Lua does not compile into the fast tier.** The 16× comes from static types,
+  not from WASM — the 1.09× interpreter *is* the control. The road from a Lua
+  cart to a fast one is a port: same verbs, same tick, same assets, and the
+  conformance suite can hold the twins pixel-identical. (A typed Lua dialect —
+  Pallene, Nelua — could plausibly ride the same pipeline; noted, not proposed.)
+- **Source beside the `.wasm` is welcome and never required.** A required-source
+  rule is unverifiable, and the tier exists for ports and commercial work; the
+  always-readable tier is the Lua cart, whose `main.lua` *is* the source.
+
+The full ABI draft — module shape, import table, the framebuffer contract,
+determinism profile, distribution, open items — is `proposals/wasm-runtime.md`.
+Not part of 0.1.

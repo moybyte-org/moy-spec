@@ -78,7 +78,7 @@ function circ(cx, cy, r, c) end
 ---@param c integer
 function circb(cx, cy, r, c) end
 
----Filled triangle. DRAFT 6.1.
+---Filled triangle. Provisional (SPEC.md 6.1).
 ---@param x1 integer
 ---@param y1 integer
 ---@param x2 integer
@@ -88,7 +88,7 @@ function circb(cx, cy, r, c) end
 ---@param c integer
 function tri(x1, y1, x2, y2, x3, y3, c) end
 
----Triangle outline. DRAFT 6.1.
+---Triangle outline. Provisional (SPEC.md 6.1).
 ---@param x1 integer
 ---@param y1 integer
 ---@param x2 integer
@@ -98,20 +98,22 @@ function tri(x1, y1, x2, y2, x3, y3, c) end
 ---@param c integer
 function trib(x1, y1, x2, y2, x3, y3, c) end
 
----Draw MANY filled rects in one call (the fast lane for software 3D /
----particle fields). `items` is FLAT: x, y, w, h, c repeated. DRAFT 6.1.
----@param items number[]|userdata flat quints, or a spans() buffer
----@param n? integer how many quints to read (-1 = all)
----@param ox? integer x offset applied to every rect
----@param oy? integer y offset applied to every rect
----@param c? integer colour override for every rect (-1 = per-rect)
-function rect_batch(items, n, ox, oy, c) end
-
----A reusable int16 buffer for rect_batch: n*5 slots (x,y,w,h,c per
----span). Allocate ONCE in _init, refill by index each frame. DRAFT 6.1.
----@param n integer span capacity
----@return userdata
-function spans(n) end
+---Textured line: draw exactly line()'s pixels, sampling the MAP as a
+---virtual texture. u,v,du,dv are 16.16 FIXED-POINT integers (float * 65536);
+---before each pixel the texel (u>>16, v>>16) is sampled, then u,v advance by
+---du,dv. Empty map cells draw nothing. The Mode 7 verb: one call per
+---scanline, perspective lives in how du,dv change BETWEEN scanlines.
+---Provisional (SPEC.md 6.1) -- specified, not yet implemented anywhere.
+---@param x0 integer
+---@param y0 integer
+---@param x1 integer
+---@param y1 integer
+---@param u integer 16.16 map-pixel x at the first pixel
+---@param v integer 16.16 map-pixel y at the first pixel
+---@param du integer 16.16 step per drawn pixel
+---@param dv integer 16.16 step per drawn pixel
+---@param colorkey? integer transparent colour (-1 = none)
+function tline(x0, y0, x1, y1, u, v, du, dv, colorkey) end
 
 -- --- sprites / map ----------------------------------------------------------
 
@@ -124,16 +126,9 @@ function spans(n) end
 ---@param flip? integer 0 none, 1 horizontal, 2 vertical, 3 both
 function spr(n, x, y, colorkey, scale, flip) end
 
----Draw MANY sheet tiles in one call: items = {{tile,x,y}, {tile,x,y,flip}, ...}.
----DRAFT 6.1. You almost certainly want a plain `for` loop of spr() instead --
----the console already batches those natively, so the loop costs the same.
----@param items table
----@param colorkey? integer
----@param scale? integer
-function spr_batch(items, colorkey, scale) end
-
 ---Stretch-blit a sheet PIXEL region (sx,sy,sw,sh) to a dw x dh screen rect --
----arbitrary (non-integer) scaling; the textured-slice verb. DRAFT 6.1.
+---arbitrary (non-integer) scaling; the textured-slice verb (a raycaster's
+---wall column is sspr with dw=1). Provisional (SPEC.md 6.1).
 ---@param sx integer sheet pixel x
 ---@param sy integer sheet pixel y
 ---@param sw integer
