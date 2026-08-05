@@ -13,8 +13,11 @@ per-device binary.
 - **[THIRD_PARTY.md](THIRD_PARTY.md)** — attribution that travels with the
   normative data files (the console font is MicroPython's, MIT)
 
-Status: **draft 0.1, unstable.** Names and values will move. §6.1 (batched fills and
-the 3D verbs) is explicitly unsettled and is not part of 0.1.
+Status: **draft 0.1, unstable.** Names and values will move. §6.1 (the 3D verbs:
+`tri`, `trib`, `sspr`, `tline`) is settled in membership and frozen in semantics, but
+provisional — each verb joins core when it clears the promotion gates stated there.
+The batch verbs that section once carried are deleted, with the measurements that
+deleted them on record.
 
 ## Write a game
 
@@ -135,15 +138,16 @@ own ground, the implementation is what changes — including the reference one.
 
 | | state |
 |---|---|
-| Spec text | draft, readable, §6.1 open |
+| Spec text | draft, readable; §6.1 settled-provisional, §15 + [proposals/wasm-runtime.md](proposals/wasm-runtime.md) sketch the compiled-cart binding (measured: interpreted WASM ~1.09× Lua, AOT ~16×) |
 | Reference implementation | [moybyte](https://github.com/moybyte-org/moybyte) — a PC simulator plus two ESP32 devices: an ESP32-S3 handheld at the native 320 × 240, and an ESP32-P4 board driving it windowed on a 1024 × 600 desktop |
 | Console as a library, Python | **works** — [moycore/](moycore/), MIT, stdlib-only: the raster, palette, font, sheet, map, cart format and verb table. Byte-identical to the reference console's rasterizer |
 | Console as a library, **C** | **works** — [libmoy/](libmoy/), MIT, C99, no dependencies and no allocation. Under 6 KB of raster, plus a Lua binding with §4.1's sandbox and a playable SDL2 desktop port in ~250 lines. Passes the suite through both recorded traces *and* real Lua carts |
 | PICO-8 converter | exists, converts art, map, sound and code under a compat shim |
 | Web player | **works** — [runner/](runner/), the reference console compiled to WASM; `moy.py` wraps it (scaffold, hot-reload run, export) |
-| Conformance suite | **runs** — [conformance/](conformance/), 9 scenes as real carts + golden frames + a runner that takes any player. Four implementations agree on every scene: moycore, the reference console's rasterizer, the web player's JS replayer, and an **ESP32-P4** over serial |
+| Conformance suite | **runs** — [conformance/](conformance/), 10 scenes as real carts + golden frames + a runner that takes any player. Five implementations agree on every scene — moycore, the reference console, the web player's JS replayer, libmoy, and an **ESP32-P4** over serial — including the provisional §6.1 verbs, native on the P4 at frame-loop prices (tri 125µs, sspr/tline 165µs per op on glass) |
 | Cart checker | **works** — `moy.py check`: manifest, sandbox ceiling, undeclared extensions, the §1.1 budget |
 | Single-file cart | proposed — [proposals/single-file-cart.md](proposals/single-file-cart.md), implemented as `moy.py pack` |
+| Audio authoring | the gap — sprites and maps round-trip through PNG and CSV (above), `sfx.moysfx` has only the reference console's on-device editors; a desktop converter (tracker import or similar) is not started |
 | TIC-80 converter | not started |
 
 The web player is what lets anyone try this without owning hardware: a cart opens as

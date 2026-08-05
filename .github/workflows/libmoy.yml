@@ -77,6 +77,59 @@ jobs:
           echo "all eight reaches refused"
         working-directory: libmoy
 
+  # A Windows player, because most game developers are on Windows and "download
+  # a zip, drag your cart onto the exe" is the difference between trying moy and
+  # not. Cross-compiled with mingw -- the same ~250-line SDL2 port the Makefile
+  # builds on Linux, nothing Windows-specific in the source. The zip is the
+  # whole install: moy-play.exe + SDL2.dll + a README.
+  windows-player:
+    name: moy-play.exe (mingw)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cross-compile
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq gcc-mingw-w64-x86-64
+          curl -sL -o sdl.tar.gz https://github.com/libsdl-org/SDL/releases/download/release-2.30.11/SDL2-devel-2.30.11-mingw.tar.gz
+          tar xf sdl.tar.gz
+          SDL=$PWD/SDL2-2.30.11/x86_64-w64-mingw32
+          mkdir -p dist-win
+          x86_64-w64-mingw32-gcc -std=c99 -O2 -DMOY_WITH_LUA -Iinclude -Ivendor/lua \
+            -I$SDL/include -I$SDL/include/SDL2 \
+            port/sdl2/main.c src/moy_canvas.c src/moy_sprite.c src/moy_data.c src/moy_lua.c \
+            vendor/lua/*.c \
+            -L$SDL/lib -lmingw32 -lSDL2main -lSDL2 -lm \
+            -o dist-win/moy-play.exe
+          cp $SDL/bin/SDL2.dll dist-win/
+          printf 'moy-play -- the moy console as a Windows program.\r\n\r\nRun a cart:  drag a .moy folder onto moy-play.exe,\r\nor from a terminal:  moy-play.exe path\\to\\game.moy\r\n\r\nArrows = d-pad, Z/X = A/B, Enter = run, Esc = quit.\r\nSpec and tools: https://github.com/moybyte-org/moy-spec\r\n' > dist-win/README.txt
+        working-directory: libmoy
+
+      # Linking is not running (the lesson this repo keeps re-learning). Wine
+      # executes the actual artifact against a self-quitting cart that touches
+      # the provisional verbs; rc=0 or the job is red. The env pins are test-rig
+      # honesty, not product configuration: the dummy drivers make it headless,
+      # the DLL overrides suppress Wine's first-run dialog (which reads as a
+      # silent hang), and SDL_RENDER_VSYNC=0 sidesteps simulated vsync against
+      # the dummy display, which stalls ~1s per frame and reads as 1 fps.
+      - name: It runs, not just links (Wine)
+        run: |
+          sudo apt-get install -y -qq wine64
+          mkdir -p smoke.moy
+          printf '{"format":"moy-1","title":"smoke","main":"main.lua"}' > smoke.moy/manifest.json
+          printf 'local n=0\nfunction _update(dt) n=n+1 if n>30 then quit() end end\nfunction _draw() cls(1) tri(100,20,160,30,130,80,8) tline(0,100,319,100,0,0,65536,0) end\n' > smoke.moy/main.lua
+          cd dist-win
+          WINEDLLOVERRIDES="mscoree,mshtml=d" WINEDEBUG=-all \
+            SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy SDL_RENDER_VSYNC=0 \
+            timeout 120 wine ./moy-play.exe ../smoke.moy
+          echo "the Windows player ran a cart and exited cleanly"
+        working-directory: libmoy
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: moy-play-windows-x64
+          path: libmoy/dist-win/
+
   # The ESP-IDF component, built for real silicon.
   #
   # Not a substitute for running it on a board -- nothing here proves a pixel

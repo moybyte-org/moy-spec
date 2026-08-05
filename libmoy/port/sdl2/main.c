@@ -267,7 +267,18 @@ int main(int argc, char **argv)
     win = SDL_CreateWindow(title, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                            MOY_W * scale, MOY_H * scale,
                            fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
-    ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+    {   /* vsync only when the display reports a real refresh rate. The loop
+         * paces itself with SDL_Delay regardless, so vsync is tear-avoidance,
+         * not timing -- and on a degenerate display mode (headless and dummy
+         * drivers report 0 Hz) SDL's SIMULATED vsync turns into a ~1s stall
+         * per frame. Found running the Windows build under Wine with
+         * SDL_VIDEODRIVER=dummy, where "hung" was really 1 fps. */
+        SDL_DisplayMode dm;
+        Uint32 rflags = SDL_RENDERER_ACCELERATED;
+        if (SDL_GetCurrentDisplayMode(0, &dm) == 0 && dm.refresh_rate >= 30)
+            rflags |= SDL_RENDERER_PRESENTVSYNC;
+        ren = SDL_CreateRenderer(win, -1, rflags);
+    }
     /* SPEC.md 1: a host whose glass is not 320x240 scales and/or letterboxes,
      * and integer scaling is recommended. SDL does both for us. */
     SDL_RenderSetLogicalSize(ren, MOY_W, MOY_H);
