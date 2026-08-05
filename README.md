@@ -1,215 +1,131 @@
 # moy
 
 **A small game console that exists as a spec. The same cart — pixels, buttons,
-sound, a little saved state — plays on an ESP32 handheld, a PC simulator or a
-browser tab, and the spec is exact enough for those to render it pixel-identically.**
+sound, a little saved state — plays on an ESP32 handheld, a PC or a browser
+tab, and the spec is exact enough for those to render it pixel-identically.**
 
-A moy cart is a folder: a manifest, a Lua script, an indexed sprite sheet, a tilemap,
-a sound bank. You hand it to a console and it plays. No install, no build step, no
-per-device binary.
+A cart is a folder: a manifest, a Lua script, a sprite sheet, a tilemap, a
+sound bank. You hand it to a console and it plays. No install, no build step,
+no per-device binary.
 
 - **[SPEC.md](SPEC.md)** — the console: raster, palette, verb table, cart format
 - **[RATIONALE.md](RATIONALE.md)** — why each number is what it is
-- **[THIRD_PARTY.md](THIRD_PARTY.md)** — attribution that travels with the
-  normative data files (the console font is MicroPython's, MIT)
 
-Status: **draft 0.1, unstable.** Names and values will move. §6.1 (the 3D verbs:
-`tri`, `trib`, `sspr`, `tline`) is settled in membership and frozen in semantics, but
-provisional — each verb joins core when it clears the promotion gates stated there.
-The batch verbs that section once carried are deleted, with the measurements that
-deleted them on record.
+Status: **draft 0.1, unstable.** Names and values will still move.
 
-## Download it
+## Get moy
 
-No Python, no install: [**the rolling release**](https://github.com/moybyte-org/moy-spec/releases/tag/player-latest)
-carries native builds, rebuilt by CI on every push.
+[**Download the rolling release**](https://github.com/moybyte-org/moy-spec/releases/tag/player-latest):
 
 - **Windows** — `moy-windows-x64.zip`: `moy.exe`, the whole toolchain in one
   executable, plus `moy-play.exe`, the native player — **drag a `.moy` cart
   folder onto it**. Arrows/WASD are the d-pad, Z/X (or J/K) are A/B, Enter is
-  run, Esc quits. The player is the C console ([libmoy/](libmoy/)) with its
-  ~250-line SDL2 port, executed under Wine against a real cart before it may
-  ship.
+  run, Esc quits.
 - **Linux / macOS** — `moy-linux-x64.tar.gz` / `moy-macos-arm64.tar.gz`: the
-  `moy` CLI as one binary (the macOS build is Apple Silicon and unsigned —
-  first run is right-click → Open).
+  `moy` CLI as one binary. (The macOS build is Apple Silicon and unsigned —
+  first run is right-click → Open.)
 
-`moy.exe`/`moy` is everything the next section does — `new`, `run`, `check`,
-`pack`, `gfx`, `map`, `conform`, `push` — with the browser player and the
-conformance suite bundled in. Each binary ran its full command set on its own
-OS in CI before it was allowed into the release, so the download is never
-newer than its last passing run.
+No Python, no install. From a checkout of this repository, every command below
+also runs as `python3 moy.py …` — Python 3.8+ and nothing else.
 
 ## Write a game
 
-Python 3.8+ and a browser. Nothing else — no packages, no build step. Any OS
-(on Windows, `python` instead of `python3`; the player runs in the browser, so
-the OS never touches the game). The downloaded binary above runs the same
-commands without Python: `moy new mygame`, `moy run mygame.moy`.
-
 ```
-python3 moy.py new mygame
-python3 moy.py run mygame.moy
+moy new mygame
+moy run mygame.moy
 ```
 
-The browser opens with the game running. Edit `mygame.moy/main.lua` in your own
-editor and save — the game restarts in under a second. The scaffold includes
-`moy-api.lua`, which Lua language servers (VS Code's Lua extension) read for
-autocomplete and hover docs on every verb.
+Your browser opens with the game running. Edit `mygame.moy/main.lua` in your
+own editor and save — the game restarts in under a second. The scaffold
+includes `moy-api.lua`, which Lua language servers (VS Code's Lua extension)
+read for autocomplete and hover docs on every verb.
 
-Before you ship, `python3 moy.py check mygame.moy` tells you what the *tightest*
-conforming host would say — a reach past the §4.1 sandbox, an extension you use but
-never declared, a map past the §1.1 budget, a cart that can't be played with buttons
-alone. Those are the failures that otherwise surface on somebody else's handheld,
-which is the worst possible place for them.
-
-Your own art tools work on the assets: `moy.py gfx mygame.moy` round-trips
-`sprites.moygfx` through an indexed PNG (Aseprite, GIMP, Piskel), and `moy.py map`
-does the same for `map.moymap` through CSV, which is what Tiled reads and writes.
+Your own art tools already work: `moy gfx mygame.moy` round-trips the sprite
+sheet through an indexed PNG (Aseprite, GIMP, Piskel), and `moy map` does the
+same for the tilemap through CSV (Tiled). Before you ship, `moy check
+mygame.moy` tells you what the *strictest* console would say — a sandbox
+reach, an undeclared extension, a blown budget — before it surfaces on
+somebody else's handheld.
 
 ```
-python3 moy.py export mygame.moy
+moy export mygame.moy
 ```
 
-produces a folder of static files that boots straight into your game. Host it
-anywhere; zipping the folder and uploading it to itch.io as an HTML5 game works
-as-is. The player is the reference console compiled to WebAssembly
-([runner/BUILD.md](runner/BUILD.md)); carts run at 60fps with sound in any
-modern browser, desktop or phone.
+turns the cart into a folder of static files that boots straight into your
+game. Host it anywhere — zipped and uploaded to itch.io as an HTML5 game, it
+works as-is.
 
-[examples/verbs.moy](examples/verbs.moy) walks every core verb, one screen per
-group — living documentation, a smoke test for any new implementation, and the
-seed of the conformance suite. Screens that go beyond core say so on-screen:
-the standard extensions (`layers`, declared in its manifest) and the §6.1
-provisional verbs are labeled, so what a minimal host must pass stays obvious.
-`python3 moy.py run examples/verbs.moy`.
+[examples/verbs.moy](examples/verbs.moy) walks every verb, one screen per
+group: `moy run examples/verbs.moy`.
 
-Coming from PICO-8: `moy.py port cart.p8` converts a cart — assets near-verbatim
-(the palette's first 16 colours are PICO-8's, the sheet format is `__gfx__`),
-code mechanically ported to Lua 5.4 under a p8 compat shim. And
+## Put it on a console
 
 ```
-python3 moy.py demo
+moy push mygame.moy
 ```
 
-fetches Celeste Classic, ports it, and runs it in your browser. (PICO-8 BBS
-carts default to CC BY-NC-SA 4.0 — ports are personal/dev material with
-attribution, not something to republish.)
+finds a connected console and copies the cart over;
+[proposals/sideload.md](proposals/sideload.md) is how a console makes itself
+findable. An SD card in a reader works today:
+`moy push mygame.moy --to /path/to/card`.
 
-A port runs 1:1 by default, because 128 × 128 has no integer scale that fits
-320 × 240 — 2× is 256 × 256, sixteen pixels too tall — so it sits in a
-letterbox. **`--zoom`** trades those rows for size: it crops four off the top
-and four off the bottom, and the port then *draws* at 2×, filling the height at
-256 × 240.
+## Coming from PICO-8
 
-```
-python3 moy.py port cart.p8 --zoom        # or: moy.py demo --zoom
-python3 moy.py port cart.p8 --zoom 0,8    # take all eight off the bottom
-```
-
-The scaling is done by the cart, inside its compat shim — it is not asked of
-the host — so a zoomed port looks the same on a handheld, a simulator and a
-browser tab, needing no extension and no hardware scaler. It costs four times
-the fill rate.
-
-Two things to know first. The crop is **lossy and per-cart**: a game drawing
-HUD at the very top or bottom loses it, which is what `T,B` is for — Celeste's
-summit timer sits at y=4, so it survives four rows off the top but not eight.
-And text does not scale, since §6 fixes `print` at 8px, so a zoomed port
-positions its text at scale while the glyphs stay 8 pixels.
+`moy port cart.p8` converts a cart — assets near-verbatim (the palette's
+first 16 colours are PICO-8's), code mechanically ported to Lua 5.4 under a
+compat shim — and `moy demo` fetches Celeste Classic, ports it and runs it.
+A port plays 1:1 in a letterbox, since 128 × 128 has no integer fit in
+320 × 240; `--zoom` crops eight edge rows and draws at 2× instead. The crop
+is lossy and per-cart (`--zoom 0,8` chooses which edge), and ports of BBS
+carts are personal/dev material — their default license is CC BY-NC-SA.
 
 ## Why this exists
 
-Several people are building small handheld consoles on ESP32-class hardware, each
-with its own way of packaging a game. None of those catalogues can move. A shared
-cart format means a game written once plays on all of them — and it means a
-converter written once (PICO-8, TIC-80) benefits everybody instead of one project.
+Several people are building small handheld consoles on ESP32-class hardware,
+each with its own way of packaging a game — and none of those catalogues can
+move. A shared cart format means a game written once plays on all of them,
+and a converter written once benefits everybody. The numbers are sized for
+that silicon: the whole console fits in about 400 KB of RAM (§1.1), and these
+carts run on two real ESP32 boards today.
 
-The numbers are sized for that silicon, and run on it today: the whole console
-fits in about 400 KB of RAM (§1.1), and the reference implementation plays these
-carts on two real ESP32 boards, not just in a simulator.
+The spec is deliberately narrow: it describes what a *game* touches, and says
+nothing about operating systems, shells or drivers — exactly where consoles
+differ and should keep differing. Everything past core is an **extension**: a
+cart that needs one declares it, a console that lacks it declines the cart
+cleanly, and an extension never redefines what core already covers
+(SPEC.md 10).
 
-The spec is deliberately narrow. It describes what a *game* touches: pixels, buttons,
-sound, a little saved state. It says nothing about operating systems, windows, drivers
-or app lifecycle, because those are exactly where these projects differ and should
-keep differing.
+## The pieces
 
-## core, and what sits above it
-
-**moy core** is the part every implementation provides, and therefore the part a cart
-can rely on anywhere. It is small on purpose.
-
-Consoles will do more than core, and should. A radio, a windowing shell, a second cart
-language, an authoring format — none of that is core, and none of it is discouraged.
-It is an **extension**: a cart that needs one says so, and a console that lacks it
-declines the cart cleanly. Standard extensions are specified so two consoles
-implementing the same one agree; anything vendor-specific is namespaced
-(`vendor.feature`) and cannot collide with a future standard.
-
-The line between the two: a capability a cart can *degrade around* belongs in core
-(local multiplayer asks how many pads there are and adapts). A capability whose
-absence a cart cannot paper over is an extension. A capability whose behaviour cannot
-be promised across transports — networking — is neither, and lives in vendor space
-until there is something real to generalise from.
-
-The rule that keeps this from fragmenting: **an extension must never redefine
-something core already covers.** Where an implementation and core disagree on core's
-own ground, the implementation is what changes — including the reference one.
-
-## Status of the pieces
-
-| | state |
+| | |
 |---|---|
-| Spec text | draft, readable; §6.1 settled-provisional, §15 + [proposals/wasm-runtime.md](proposals/wasm-runtime.md) sketch the compiled-cart binding (measured: interpreted WASM ~1.09× Lua, AOT ~16×) |
-| Reference implementation | [moybyte](https://github.com/moybyte-org/moybyte) — a PC simulator plus two ESP32 devices: an ESP32-S3 handheld at the native 320 × 240, and an ESP32-P4 board driving it windowed on a 1024 × 600 desktop |
-| Console as a library, Python | **works** — [moycore/](moycore/), MIT, stdlib-only: the raster, palette, font, sheet, map, cart format and verb table. Byte-identical to the reference console's rasterizer |
-| Console as a library, **C** | **works** — [libmoy/](libmoy/), MIT, C99, no dependencies and no allocation. Under 6 KB of raster, plus a Lua binding with §4.1's sandbox and a playable SDL2 desktop port in ~250 lines. Passes the suite through both recorded traces *and* real Lua carts |
-| PICO-8 converter | exists, converts art, map, sound and code under a compat shim |
-| Web player | **works** — [runner/](runner/), the reference console compiled to WASM; `moy.py` wraps it (scaffold, hot-reload run, export) |
-| Conformance suite | **runs** — [conformance/](conformance/), 10 scenes as real carts + golden frames + a runner that takes any player. Five implementations agree on every scene — moycore, the reference console, the web player's JS replayer, libmoy, and an **ESP32-P4** over serial — including the provisional §6.1 verbs, native on the P4 at frame-loop prices (tri 125µs, sspr/tline 165µs per op on glass) |
-| Cart checker | **works** — `moy.py check`: manifest, sandbox ceiling, undeclared extensions, the §1.1 budget |
-| Windows player | **ships** — [`moy-play-windows-x64.zip`](https://github.com/moybyte-org/moy-spec/releases/tag/player-latest), a rolling release rebuilt and run-tested (Wine, real cart, rc checked) by CI on every push to main |
-| Single-file cart | proposed — [proposals/single-file-cart.md](proposals/single-file-cart.md), implemented as `moy.py pack` |
-| Audio authoring | the gap — sprites and maps round-trip through PNG and CSV (above), `sfx.moysfx` has only the reference console's on-device editors; a desktop converter (tracker import or similar) is not started |
-| TIC-80 converter | not started |
+| [moycore/](moycore/) | the console as a Python library — stdlib-only: raster, palette, font, cart format, verb table |
+| [libmoy/](libmoy/) | the console as a C99 library — no dependencies, no allocation, §4.1-sandboxed Lua binding, an SDL2 desktop port and an ESP-IDF component |
+| [runner/](runner/) | the web player: the reference console compiled to WebAssembly |
+| [conformance/](conformance/) | the suite that keeps them honest — 10 scenes as real carts, golden frames, a runner that takes any player. Five implementations render every scene pixel-identically, an ESP32-P4 over serial among them; its README tells the story |
+| [moybyte](https://github.com/moybyte-org/moybyte) | the reference implementation: a PC simulator and two ESP32 handhelds |
+| [proposals/](proposals/) | drafts on top of core: single-file carts (`moy pack`), compiled carts (WASM), sideload |
+| [THIRD_PARTY.md](THIRD_PARTY.md) | attribution that travels with the normative data files |
 
-The web player is what lets anyone try this without owning hardware: a cart opens as
-a URL, and `moy.py export` turns any cart into one. It is *built from* the reference
-implementation, which makes it a faithful mirror of one console rather than an
-independent second implementation — telling the two apart is what the conformance
-suite is for, and it now exists.
-
-Five implementations now agree on every scene, and the ones that matter most are
-those sharing no code with each other. moycore was extracted from the
-reference console's rasterizer, so [parity.py](conformance/parity.py) proves the
-extraction faithful and could never catch a bug that was always in it. The web
-player's JavaScript replayer shares no code with either, and
-[player.mjs](conformance/player.mjs) runs the suite through it headlessly, in plain
-node, with no browser and no dependencies. Its first run found the console drawing
-its FPS chip into the cart's own framebuffer.
-
-Another is the hardware. The suite runs on an ESP32-P4 over serial, which is where
-the C rasterizer and §1.1's memory floor actually are; its first run reproduced two
-bugs the web player had already found, confirming they were never web-specific.
-
-And [libmoy/](libmoy/) is the C core a vendor would actually link — checked by the
-same goldens, from the same repository, on every push. That is the point of it
-being in-tree rather than off in its own project: a change to the spec turns the C
-implementation red immediately, with no version to bump.
+The known gaps: audio authoring (sprites and maps round-trip through PNG and
+CSV; `sfx.moysfx` has only the reference console's on-device editors) and a
+TIC-80 converter.
 
 ## Contributing
 
-This is early and the useful contributions are arguments, not patches.
+This is early, and the useful contributions are arguments, not patches.
 
-If you are building a console: the numbers most likely to be wrong for you are the
-**memory floor** (§1.1), the **button set** (§7.3) and the **raster** (§1). Those were
-chosen from a small sample of ESP32-class hardware. Say so in an issue if they do not
-fit yours — a spec that only one device can implement has failed.
+If you are building a console: the numbers most likely to be wrong for you
+are the **memory floor** (§1.1), the **button set** (§7.3) and the **raster**
+(§1). They were chosen from a small sample of ESP32-class hardware — say so
+in an issue if they do not fit yours; a spec only one device can implement
+has failed.
 
-If you have shipped games: everything in §6.1, and anything that made you think "that
-would be annoying to write against."
+If you have shipped games: everything in §6.1, and anything that made you
+think "that would be annoying to write against."
 
-Governance is informal while there is one implementation. Once a second console passes
-conformance, this moves somewhere neutral with its implementers as maintainers. Until
-then: a breaking change needs agreement from everyone who has shipped an
-implementation, and that rule binds the reference console too.
+Governance is informal while there is one implementation. Once a second
+console passes conformance, this moves somewhere neutral with its
+implementers as maintainers. Until then, a breaking change needs agreement
+from everyone who has shipped an implementation — the reference console
+included.
