@@ -82,6 +82,13 @@ def run(ref_path, verbose=False):
 
     failures = []
     for name, fn in scenes.SCENES:
+        if name in scenes.EXCLUDED:
+            # Provisional scenes (SPEC.md 6.1) exercise verbs moycore no
+            # longer carries; run.py excludes them from counting and parity
+            # cannot execute them at all.
+            if verbose:
+                print("  --    %s  (excluded)" % name)
+            continue
         # The reference sheet is built at the SPEC's dimensions (16x32 tiles,
         # SPEC.md 3.2) rather than its own 16x16 default, so tile ids past 255
         # exist on both sides and the comparison is about rasterization rather
