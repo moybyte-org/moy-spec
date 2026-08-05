@@ -6,13 +6,26 @@ replayer of the draw-command stream -- itself a complete implementation of
 the SPEC.md verb raster). Fully static; a cart bundle beside them is a
 playable game at a URL.
 
-Built from the reference implementation
-([moybyte-org/moybyte](https://github.com/moybyte-org/moybyte)) at its web-runner tree (see its git log),
-via `firmware/web_runner/build.sh --spec` -- see that directory for the
-recipe (emsdk + MicroPython v1.28 webassembly port + the moy_lua usermod).
-Regenerate by rebuilding there and copying index.html + micropython.mjs +
-micropython.wasm here. This will become a versioned release artifact once the
-player stabilises.
+These files are PINNED, not copied by hand. `runner/VERSION` records which
+build they are -- source commit, branch, and a sha256 per file -- and
+
+    python3 moy.py player            # what this is, and do the files still match
+    python3 moy.py player --update   # move the pin to the latest release
+
+is how it moves. So updating the player is an ordinary reviewable commit rather
+than an opaque blob swap, and "which player is this?" has an answer in the tree.
+
+The releases come from the reference implementation
+([moybyte-org/moybyte](https://github.com/moybyte-org/moybyte)), built by
+`firmware/web_runner/build.sh --spec` (emsdk + MicroPython v1.28 webassembly
+port + the moy_lua usermod) and published per branch by its `web-player`
+workflow: `player-latest` from master, `player-beta` from dev.
+
+**Each release is conformance-gated.** That workflow runs THIS repository's
+suite against the bundle it just built and refuses to publish one that fails --
+so `--update` cannot quietly hand you a player that disagrees with the goldens
+it is supposed to be the tiebreaker for. `--from <dir>` pins a local build
+instead, for anyone working on the player itself.
 
 ## Licensing of these artifacts
 

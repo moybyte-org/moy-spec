@@ -1,0 +1,29 @@
+{
+  "bundle": "moy-player",
+  "channel": "beta",
+  "files": {
+    "index.html": {
+      "bytes": 54426,
+      "sha256": "fe91083ea83f184297e2d46342886bafb24af7c3e3dcc454c047de6e75f481e2"
+    },
+    "micropython.mjs": {
+      "bytes": 108101,
+      "sha256": "11aa07cba462448da83f9c45889863e1be7efe23b2b273b8082c1a0b94289724"
+    },
+    "micropython.wasm": {
+      "bytes": 824856,
+      "sha256": "c38a98d72bd49d749958a25c761d1e264a31d7f0c4e15695848ccc7d37064f87"
+    },
+    "worker.js": {
+      "bytes": 14345,
+      "sha256": "32cd23035a9ba02b001905b00992f1ea9cac3814eb23f9c906b9e8b6e20e7562"
+    }
+  },
+  "source": {
+    "branch": "dev",
+    "commit": "ae201ccbcaaba0eea93d6eab02ea98bab0e6cd08",
+    "dirty": false,
+    "repo": "moybyte"
+  },
+  "spec_bundle": true
+}
