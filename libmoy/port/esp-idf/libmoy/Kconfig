@@ -9,6 +9,8 @@ config MOY_WITH_LUA
       drives the console from C, or if you are supplying your own lua_State --
       libmoy binds to whichever you hand it.
 
-      Costs roughly 200 KB of flash for the VM.
+      Costs about 140 KB of flash on esp32p4 and 122 KB on esp32s3 -- measured,
+      by building example/esp-idf both ways at -Og. Optimising for size moves
+      both down.
 
 endmenu

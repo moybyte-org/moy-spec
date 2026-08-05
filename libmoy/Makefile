@@ -62,6 +62,17 @@ $(RUNCART): test/run_cart.c src/moy_lua.o $(LUA_OBJ) $(LIB)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -DMOY_WITH_LUA -I$(LUA_DIR) $^ $(LDLIBS) -o $@
 
+# The desktop port: a playable console in ~250 lines of SDL2, and the worked
+# example of what a platform actually owes libmoy. Built only on request, so the
+# library itself keeps its no-dependencies claim -- SDL2 is never needed to build
+# libmoy.a, run conformance, or ship this repository's CI.
+#
+# Assigned HERE, above the rule, and not further down: make expands variables in
+# a target line as it READS the file, so a `$(PLAY):` rule above this assignment
+# expands to an empty target and is silently dropped. `make play` then fails with
+# "no rule to make target", which is how this was found.
+PLAY := build/moy-play
+
 $(PLAY): port/sdl2/main.c src/moy_lua.o $(LUA_OBJ) $(LIB)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -DMOY_WITH_LUA -I$(LUA_DIR) $^ \
@@ -89,10 +100,6 @@ conform-lua: $(RUNCART)
 	cd $(SPEC) && python3 conformance/run.py --player \
 	  "$(CURDIR)/build/run_cart {cart} {out}"
 
-# The desktop port: a playable console in ~250 lines of SDL2, and the worked
-# example of what a platform actually owes libmoy. Built only on request, so
-# the library itself keeps its no-dependencies claim.
-PLAY := build/moy-play
 play: $(PLAY)
 
 test: conform conform-lua

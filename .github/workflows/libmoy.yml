@@ -56,6 +56,12 @@ jobs:
         run: make conform-lua
         working-directory: libmoy
 
+      - name: The desktop port still builds
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq libsdl2-dev
+          make play
+        working-directory: libmoy
+
       - name: The SPEC.md 4.1 sandbox holds
         run: |
           mkdir -p /tmp/sbx.moy
@@ -70,3 +76,42 @@ jobs:
           done
           echo "all eight reaches refused"
         working-directory: libmoy
+
+  # The ESP-IDF component, built for real silicon.
+  #
+  # Not a substitute for running it on a board -- nothing here proves a pixel
+  # ever reaches a panel. What it does prove is everything that can be wrong
+  # before you get that far: the component registers under the name the README
+  # gives, its include paths resolve, both sides of CONFIG_MOY_WITH_LUA compile,
+  # and the C is clean on two different 32-bit ABIs under the IDF's own
+  # -Wall -Werror=all. Every one of those was a live guess until this job ran,
+  # and three of them were wrong the first time.
+  #
+  # esp32p4 is the reference console's part; esp32s3 is here because it is
+  # xtensa rather than RISC-V, and a library that claims to be portable C should
+  # be made to prove it somewhere other than the chip it was written on.
+  esp-idf:
+    name: ESP-IDF component
+    runs-on: ubuntu-latest
+    container: espressif/idf:v5.5.1
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {target: esp32p4, lua: y}
+          - {target: esp32p4, lua: n}   # the raster alone, no VM
+          - {target: esp32s3, lua: y}   # xtensa
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the example for ${{ matrix.target }} (Lua=${{ matrix.lua }})
+        shell: bash
+        run: |
+          . "$IDF_PATH/export.sh"
+          echo "CONFIG_MOY_WITH_LUA=${{ matrix.lua }}" > /tmp/sdkconfig.defaults
+          idf.py -B /tmp/build \
+                 -DSDKCONFIG=/tmp/sdkconfig \
+                 -DSDKCONFIG_DEFAULTS=/tmp/sdkconfig.defaults \
+                 -DIDF_TARGET=${{ matrix.target }} \
+                 build
+        working-directory: libmoy/example/esp-idf

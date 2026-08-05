@@ -1,22 +1,49 @@
 # libmoy on ESP-IDF
 
-**Status: the component builds as an IDF component; the shim below is written
-from the SDL2 port and the reference console's device layer, and has NOT been
-run on hardware from this repository.** That is the honest state — say so
-rather than discover it later. The parts that *have* been verified on an
-ESP32-P4 are the raster and the C kernel it mirrors, through moy-spec's
-conformance suite (see `conformance/`, and moybyte's `tools/p4_conformance.py`).
+## Status
+
+**Built, not run.** CI builds the component for esp32p4 and esp32s3, with the
+Lua binding on and off, on every push — so the component registers, its headers
+resolve, its Kconfig applies, and the C is clean on both a RISC-V and an Xtensa
+ABI under the IDF's own `-Wall -Werror=all`. A flashable image comes out the
+other end.
+
+**Nothing here has driven a panel.** No pixel has reached a display from this
+directory, no GPIO has been read, no NVS slot written on real hardware. The
+board-facing half of `example/esp-idf/main/main.c` — the parts marked *YOUR
+BOARD* — is written from the SDL2 port and the reference console's device layer
+and is the honest guesswork. Say so rather than discover it later.
+
+What *has* been verified on an ESP32-P4 is the raster and the C kernel it
+mirrors, through moy-spec's conformance suite (see `conformance/`, and moybyte's
+`tools/p4_conformance.py`).
 
 ## Using it
 
-Add to your project's `CMakeLists.txt`:
+One line in your project's `CMakeLists.txt`:
 
 ```cmake
 set(EXTRA_COMPONENT_DIRS "path/to/libmoy/port/esp-idf")
 ```
 
-then `#include "moy.h"`. `CONFIG_MOY_WITH_LUA` (on by default) brings the Lua
-binding and the vendored VM; turn it off if your host drives the console from C.
+then `REQUIRES libmoy` in your component and `#include "moy.h"`.
+`CONFIG_MOY_WITH_LUA` (on by default) brings the Lua binding and the vendored
+VM — about 140 KB of flash on esp32p4, 122 KB on esp32s3 — and you can turn it
+off if your host drives the console from C.
+
+`example/esp-idf/` is a working project that does exactly this. It is also the
+thing CI builds, so it cannot rot.
+
+Note that `port/esp-idf/` deliberately contains components and nothing else: IDF
+treats *every* subdirectory of an `EXTRA_COMPONENT_DIRS` entry that holds a
+`CMakeLists.txt` as a component, so the example project lives outside it. A
+project sitting next to the component gets scanned as one and fails deep inside
+CMake with an error that names neither.
+
+The component itself `REQUIRES` nothing. libmoy is freestanding C99 that never
+allocates, reads no clock and touches no peripheral — naming `driver` or
+`nvs_flash` there would force them on every consumer and quietly contradict
+that. Those belong to *your* component, the one that implements `moy_host`.
 
 ## What you actually implement
 
@@ -26,7 +53,7 @@ The same four things the SDL2 port implements, and nothing else:
 |---|---|
 | **pixels out** | `moy_palette_rgb565(&canvas, NULL, fb)` then your panel's flush — `esp_lcd_panel_draw_bitmap`, a DMA descriptor, whatever you have |
 | **buttons in** | GPIO or a touch region → the seven `moy_button` values |
-| **a clock** | `esp_timer_get_time() / 1000` |
+| **a clock** | `esp_timer_get_time() / 1000`, zeroed when the cart starts |
 | **persistence** | 256 signed 32-bit slots → NVS, a blob, or a file on SD |
 
 ```c
@@ -54,7 +81,11 @@ con.host.quit     = my_quit;
 ```
 
 Then per frame: `moy_reset_state(&canvas)`, run the cart's `_update`/`_draw`,
-resolve the framebuffer, flush.
+resolve the framebuffer, flush. `example/esp-idf/main/main.c` is that loop,
+with each of the four wired to a real IDF API.
+
+`sfx` and `music` may stay NULL. SPEC.md 8.3 makes silence a valid rendering, so
+a board with no audio is still conforming and the cart never finds out.
 
 ## Memory
 
