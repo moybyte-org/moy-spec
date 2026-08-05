@@ -722,11 +722,17 @@ playability.
 
 Waveforms are generated, not sampled, and mixed to signed 16-bit mono; voices
 sum with each note scaled by `vol / 7`. The eight shapes: square (50% duty),
-triangle, saw, LCG noise, pulse (⅓ duty), organ (triangle plus a quieter
-octave-up triangle), tilted saw (rise over ⅞ of the period, fall over ⅛), and
-phaser (two triangles, the second detuned to `freq × 127/128`, summed — a slow
-beat). These are engine-native shapes, deliberately *near* PICO-8's instruments
-rather than clones of them.
+triangle, saw, noise (an LCG random walk through a one-pole low-pass whose
+cutoff tracks the note, with a bass lift at low keys), pulse (⅓ duty), organ
+(a triangle with a quieter octave-up partner), tilted saw (rise over ⅞ of the
+period, fall over ⅛), and phaser (two triangles, the second detuned to
+`freq × 109/110`, summed — a slow beat). Instrument loudness is deliberately
+**unequal**, following PICO-8's own mix — the triangle family peaks at about
+twice the square family — because ported music is balanced against exactly
+that; render them equal and every square lead shouts down its accompaniment.
+These shapes follow PICO-8's synthesis (as reverse-engineered by zepto8 and
+fake-08) closely, but exact sample equality is still not asked of anyone
+(below).
 
 Audio is explicitly **not** covered by pixel conformance. Two hosts will not produce
 bit-identical samples and are not required to — but a host SHOULD implement the
@@ -767,6 +773,12 @@ cart's own tuning surface, not a system feature.
 Optional features. A cart requiring one lists it in the manifest's `"extensions"`
 array; a host that doesn't implement it refuses the cart cleanly rather than crashing
 partway in.
+
+Declaring is for *requiring*. A cart may instead use an extension
+opportunistically — check the verb exists before calling it (`if view ~= nil
+then view(...) end`) and declare nothing. Such a cart runs on every host,
+degraded where the extension is absent, lit up where it isn't; an extension's
+verbs simply do not exist as globals on a host without it.
 
 The two below are **standard extensions** — optional, but specified here so that two
 consoles implementing `layers` implement the same `layers`.

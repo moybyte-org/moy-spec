@@ -1,9 +1,8 @@
 -- EVERY core verb, thirty frames, quit. The ship gate for the desktop
 -- players: the conformance goldens judge correctness, this proves the
 -- PACKAGED binary reaches every verb path and exits cleanly on its own OS.
--- Every symbol the API declares is called, because a verb the binding forgot
--- to register is nil -- which is how a Celeste port crashed on its pause
--- menu (music_stop) while every golden stayed green.
+-- Every symbol the API declares is called: a verb the binding forgot to
+-- register is nil, and no golden catches that.
 local n = 0
 
 function _update(dt)

@@ -341,9 +341,8 @@ static int l_music(lua_State *L)
 
 /* The rest of SPEC.md 8.2 and 7.3's optional input. Every one of these must
  * EXIST in the cart's globals whether or not the host wired a hook: 8.2 says
- * a silent host "MUST NOT error", and the first Celeste port crashed on its
- * pause menu because music_stop was nil. Absence of hardware is expressed in
- * the RETURN VALUES the spec assigns to it, never as a missing symbol. */
+ * a silent host "MUST NOT error". Absence of hardware is expressed in the
+ * RETURN VALUES the spec assigns to it, never as a missing symbol. */
 
 static int l_beep(lua_State *L)
 {

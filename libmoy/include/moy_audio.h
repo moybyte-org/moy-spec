@@ -80,14 +80,16 @@ typedef struct {
     uint8_t  owner;             /* 0 free, 1 sfx verb, 2 music */
     const moy_sfx_def *s;
     int      step;
-    int      samp;              /* samples into the current step: integer, so
-                                 * a step boundary is exact -- accumulating
-                                 * float seconds lands a 1 s step ~0.3% late */
-    int      vsamp;             /* samples since the voice started (arpeggio) */
+    int      samp;              /* samples into the current step: integer so
+                                 * step boundaries stay exact at any length */
     float    phase, phase2;     /* phase2: the phaser's detuned partner */
-    float    nphase;            /* noise resample accumulator */
-    uint32_t rng;               /* LCG state (wave 3) */
-    float    prev_pitch;        /* slide origin: the previous step's values */
+    uint32_t rng;               /* noise LCG state (wave 3) */
+    float    nfrom, nto;        /* noise: low-pass state / shaped output */
+    float    amp;               /* de-click amplitude slew (current gain) */
+    float    prev_pitch;        /* slide origin: the channel's previous
+                                 * SOUNDING note. Survives retriggers on
+                                 * purpose -- 8.1 says a slide carries across
+                                 * a row boundary. -1 = no previous note yet */
     float    prev_vol;
 } moy_voice;
 

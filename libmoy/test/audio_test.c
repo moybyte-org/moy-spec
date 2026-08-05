@@ -126,6 +126,74 @@ int main(void)
     check(a.v[0].owner == 1, "a looping sfx still plays after 2s");
     moy_audio_sound_stop(&a, -1);
 
+    /* -- vibrato wobbles a quarter semitone, not three ---------------- */
+    check(moy_bank_parse(&bank,
+        "{\"sfx\":[{\"speed\":4,\"loop\":true,\"steps\":[[57,0,7,2]]}]}") == 0,
+        "vibrato bank");
+    moy_audio_init(&a, &bank, RATE);
+    moy_audio_sfx(&a, 0, 0);
+    moy_audio_render(&a, buf, RATE);
+    {
+        /* A4 with vibrato: mean frequency stays ~440, every excursion within
+         * +-0.25 semitone (~1.5%). Fractional-semitone math is only exercised
+         * HERE and in slides -- integer notes cannot catch it. */
+        int c = crossings(buf, RATE);
+        check(c > 850 && c < 910, "vibrato stays centred on the note");
+    }
+    moy_audio_sound_stop(&a, -1);
+
+    /* -- noise is pitched and smooth -------------------------------- */
+    check(moy_bank_parse(&bank,
+        "{\"sfx\":[{\"speed\":2,\"steps\":[[30,3,7]]},"
+        "         {\"speed\":2,\"steps\":[[78,3,7]]}]}") == 0, "noise bank");
+    moy_audio_init(&a, &bank, RATE);
+    moy_audio_sfx(&a, 0, 0);
+    moy_audio_render(&a, buf, RATE / 4);
+    {
+        int lo = crossings(buf, RATE / 4);
+        int i, peak = 0;
+        long dsum = 0;
+        for (i = 1; i < RATE / 4; i++) {
+            int d = buf[i] - buf[i - 1];
+            dsum += d < 0 ? -d : d;
+            if (buf[i] > peak) peak = buf[i];
+        }
+        moy_audio_sound_stop(&a, -1);
+        moy_audio_sfx(&a, 1, 0);
+        moy_audio_render(&a, buf, RATE / 4);
+        check(crossings(buf, RATE / 4) > 3 * lo,
+              "noise pitch scales its brightness");
+        check(peak > 4000 && dsum / (RATE / 4) < peak / 8,
+              "noise is interpolated, not white");
+    }
+
+    /* -- a slide's origin survives a retrigger (8.1: across rows) ---- */
+    check(moy_bank_parse(&bank,
+        "{\"sfx\":[{\"speed\":4,\"steps\":[[33,0,7]]},"
+        "         {\"speed\":2,\"steps\":[[69,0,7,1]]}]}") == 0, "slide bank");
+    moy_audio_init(&a, &bank, RATE);
+    moy_audio_sfx(&a, 0, 0);            /* A2, finishes... */
+    moy_audio_render(&a, buf, RATE / 4);
+    moy_audio_sfx(&a, 1, 0);            /* ...then A5 with eff=slide */
+    moy_audio_render(&a, buf, RATE / 2);
+    {
+        /* Gliding A2 -> A5 over 0.5 s: the first fifth is near 110 Hz, the
+         * last fifth near 880 Hz -- a factor ~8, no factor at all if the
+         * retrigger forgot the channel's previous note. */
+        int head = crossings(buf, RATE / 10);
+        int tail = crossings(buf + RATE / 2 - RATE / 10, RATE / 10);
+        check(tail > 4 * head, "slide glides from the pre-retrigger note");
+    }
+
+    /* -- a 4-wide track: sfx steals voice 0, never drops -------------- */
+    check(moy_bank_parse(&bank,
+        "{\"sfx\":[{\"loop\":true,\"steps\":[[40,0,6]]}],"
+        " \"music\":[{\"pattern\":[[0,0,0,0]]}]}") == 0, "full-claim bank");
+    moy_audio_init(&a, &bank, RATE);
+    moy_audio_music(&a, 0, 1);
+    moy_audio_sfx(&a, 0, -1);
+    check(a.v[0].owner == 1, "sfx on a full board steals voice 0");
+
     /* -- row_secs 0 holds the row ----------------------------------- */
     check(moy_bank_parse(&bank,
         "{\"sfx\":[{\"loop\":true,\"steps\":[[40,0,6]]}],"

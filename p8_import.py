@@ -169,9 +169,13 @@ def gfx_to_kgfx(gfx_lines):
 # moy SFX (SPEC.md 8.1): steps of [pitch, wave, vol(, eff)] at one
 # `speed` (steps/sec), where pitch is a semitone index 0..95 (A4=57), wave is
 # 0..7, vol 0..7, eff 0..7. The model covers PICO-8's 1:1:
-#   * PITCH: PICO-8 pitch 0 == C0. moy pitch is a raw semitone index where
-#     C0 == 0 too (name_to_pitch('C0') -> 0), so PICO-8 pitch maps 1:1 as a
-#     semitone index. A volume-0 note becomes a REST (-1), like PICO-8.
+#   * PITCH: PICO-8's tracker LABELS its pitch 0 as C0, but its synth tunes
+#     pitch 33 to 440 Hz -- key_to_freq(k) = 440 * 2^((k-33)/12), verbatim in
+#     zepto8 and fake-08 -- so PICO-8's octave labels sit two octaves below
+#     concert naming. moy pitch is a true semitone index (57 == A4 == 440 Hz),
+#     so the import TRANSPOSES: moy = p8 + 24. The 1:1 map this used to be
+#     played every ported cart two octaves deep. A volume-0 note becomes a
+#     REST (-1), like PICO-8.
 #   * WAVE: all 8 builtin instruments map 1:1 (table below -- the two consoles
 #     number them differently). The 8 CUSTOM instruments (waveform 8..15,
 #     defined in __sfx__ slots 0..7) are still not modelled; we fold them onto
@@ -183,7 +187,7 @@ def gfx_to_kgfx(gfx_lines):
 #     numbering (1 slide, 2 vibrato, 3 drop, 4/5 fades, 6/7 arpeggio).
 #   * Trailing all-rest notes are trimmed so a mostly-empty SFX stays short.
 
-PICO8_PITCH_C0 = 0  # PICO-8 pitch index 0 is the note C0
+PICO8_PITCH_C0 = 24  # PICO-8 pitch 0 sounds at moy semitone 24 (its A "2" is A4)
 REST = -1
 
 # 8 PICO-8 builtin instruments -> the same 8 moy waveforms, renumbered.
@@ -222,8 +226,11 @@ def _sfx_line_to_dict(line):
     s = line.strip().lower()
     if len(s) < 8:
         return None
-    duration = _hx(s, 2, 4)              # ticks-per-row
-    speed = max(1, round(120.0 / duration)) if duration else 1
+    # ticks-per-note at 120 ticks/sec -> steps/sec, kept exact: a D=32 sfx is
+    # 3.75 steps/s, and rounding that to 4 drifts it against the row clock.
+    # SPEC.md 8.1's speed is not integer-only.
+    duration = _hx(s, 2, 4)
+    speed = round(120.0 / duration, 4) if duration else 120.0
     loop_s = _hx(s, 4, 6)
     loop_e = _hx(s, 6, 8)
     notes = s[8:]                        # 32 notes x 5 nibbles
@@ -249,7 +256,7 @@ def _sfx_line_to_dict(line):
         steps = steps[:loop_e]
         if not any(st[0] != REST for st in steps):
             return None
-        d = {"speed": int(speed), "loop": True, "steps": steps}
+        d = {"speed": speed, "loop": True, "steps": steps}
         if loop_s:
             d["loop_start"] = int(loop_s)
         return d
@@ -261,7 +268,7 @@ def _sfx_line_to_dict(line):
         steps.pop()
     if not steps:
         return None
-    return {"speed": int(speed), "loop": False, "steps": steps}
+    return {"speed": speed, "loop": False, "steps": steps}
 
 
 def _music_line_channels(line):

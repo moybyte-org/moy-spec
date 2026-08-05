@@ -325,13 +325,14 @@ int moy_bank_parse(moy_bank *b, const char *json)
 
 /* ---------------------------------------------------------- the synth --- */
 
-/* 2^(1/12), precomputed: pitch -> Hz without a libm dependency. */
+/* Pitch -> Hz without a libm dependency: 440 * 2^((n-57)/12), split into
+ * octave doublings, a 12-entry semitone table, and a quadratic for the
+ * FRACTIONAL semitone (vibrato, slide) -- 2^(f/12), within a hundredth of a
+ * cent for f in [0,1). The exponent's /12 belongs to the fraction too: scale
+ * the fraction by 2^f instead and a quarter-semitone wobble comes out three
+ * semitones wide. */
 static float pitch_hz(float semitone)
 {
-    /* 440 * 2^((n-57)/12). Split n-57 into octave and fractional semitone;
-     * the fractional part (vibrato, slide) is at most +-1 and a quadratic
-     * fit of 2^x on [-1,1] is within 0.7 cents -- inaudible, and this file
-     * then needs no powf. */
     static const float SEMI[12] = {
         1.0f, 1.059463f, 1.122462f, 1.189207f, 1.259921f, 1.334840f,
         1.414214f, 1.498307f, 1.587401f, 1.681793f, 1.781797f, 1.887749f
@@ -343,7 +344,7 @@ static float pitch_hz(float semitone)
     while (n >= 12.0f) { n -= 12.0f; oct++; }
     idx = (int)n;
     frac = n - (float)idx;
-    base = SEMI[idx] * (1.0f + frac * (0.693147f + frac * 0.240227f));
+    base = SEMI[idx] * (1.0f + frac * (0.0577623f + frac * 0.0016682f));
     while (oct > 0) { base *= 2.0f; oct--; }
     while (oct < 0) { base *= 0.5f; oct++; }
     return 440.0f * base;
@@ -351,48 +352,66 @@ static float pitch_hz(float semitone)
 
 static float tri_wave(float p)
 {
-    return p < 0.5f ? 4.0f * p - 1.0f : 3.0f - 4.0f * p;
+    float d = p - 0.5f;
+    if (d < 0.0f) d = -d;
+    return 4.0f * d - 1.0f;
 }
 
-/* SPEC.md 8.3's eight shapes, phase in [0,1) -> [-1,1]. */
+static float fabs_f(float x)
+{
+    return x < 0.0f ? -x : x;
+}
+
+/* SPEC.md 8.3's eight shapes, phase in [0,1). This is PICO-8's synthesis
+ * arithmetic, taken from zepto8/fake-08's reverse engineering (their
+ * synth.cpp, non-"buzz" variants), because a ported cart's music is composed
+ * against exactly these -- including the deliberately UNEQUAL loudness per
+ * instrument (the square family peaks at 0.25, the triangle family at 0.5;
+ * play them equal and every square lead shouts down its own accompaniment).
+ * Noise is the one stateful shape and lives in voice_sample, where the
+ * note's frequency is known. */
 static float wave_sample(moy_voice *v, int wave, float p)
 {
     switch (wave) {
-    case 0: return p < 0.5f ? 1.0f : -1.0f;                  /* square */
-    case 1: return tri_wave(p);                              /* triangle */
-    case 2: return 2.0f * p - 1.0f;                          /* saw */
-    case 3:                                                  /* LCG noise */
-        return (float)(int32_t)(v->rng >> 16 & 0x7FFF) / 16384.0f - 1.0f;
-    case 4: return p < (1.0f / 3.0f) ? 1.0f : -1.0f;         /* pulse */
+    case 0: return p < 0.5f ? 0.25f : -0.25f;                /* square */
+    case 1: return (1.0f - fabs_f(4.0f * p - 2.0f)) * 0.5f;  /* triangle */
+    case 2: return 0.653f * (p < 0.5f ? p : p - 1.0f);       /* saw */
+    case 3: return v->nto;                                   /* noise (held) */
+    case 4: return p < (1.0f / 3.0f) ? 0.25f : -0.25f;       /* pulse */
     case 5:                                                  /* organ */
-        {
-            float q = 2.0f * p;
-            if (q >= 1.0f) q -= 1.0f;
-            return (tri_wave(p) + 0.35f * tri_wave(q)) / 1.35f;
-        }
+        return (p < 0.5f ? 3.0f - fabs_f(24.0f * p - 6.0f)
+                         : 1.0f - fabs_f(16.0f * p - 12.0f)) / 9.0f;
     case 6:                                                  /* tilted saw */
-        return p < 0.875f ? (p / 0.875f) * 2.0f - 1.0f
-                          : (1.0f - (p - 0.875f) / 0.125f) * 2.0f - 1.0f;
+        return (p < 0.875f ? 2.0f * p / 0.875f - 1.0f
+                           : 2.0f * (1.0f - p) / 0.125f - 1.0f) * 0.5f;
     default:                                                 /* phaser */
-        return 0.5f * (tri_wave(p) + tri_wave(v->phase2));
+        return (2.0f - fabs_f(8.0f * p - 4.0f)
+                + 1.0f - fabs_f(4.0f * v->phase2 - 2.0f)) / 6.0f;
     }
+}
+
+static float lcg_unit(uint32_t *rng)
+{
+    *rng = *rng * 1664525u + 1013904223u;
+    return (float)(*rng >> 16 & 0x7FFF) / 16384.0f - 1.0f;
 }
 
 static void voice_start(moy_voice *v, const moy_sfx_def *s, uint8_t owner)
 {
-    /* Slide's origin when there IS no previous note: the first step itself,
-     * so eff 1 on step 0 is simply the note (PICO-8 does the same). */
+    /* prev_pitch/prev_vol deliberately survive: SPEC.md 8.1 says a slide
+     * carries across a row boundary, so the glide's origin is whatever this
+     * CHANNEL last played, not the new sfx's first step. The amplitude slew
+     * restarts from 0 -- a retrigger resets the oscillator phase, and the
+     * short ramp is what keeps that from clicking. */
     v->owner = owner;
     v->s = s;
     v->step = 0;
     v->samp = 0;
-    v->vsamp = 0;
-    v->phase = v->phase2 = v->nphase = 0.0f;
+    v->phase = v->phase2 = 0.0f;
+    v->amp = 0.0f;
+    /* The noise filter state (nfrom/nto) deliberately survives, like the
+     * slide origin: PICO-8 keeps its per-channel noise walk running. */
     if (!v->rng) v->rng = 0x2F9E2B1u;
-    if (s && s->nsteps) {
-        v->prev_pitch = (float)(s->steps[0].pitch < 0 ? 0 : s->steps[0].pitch);
-        v->prev_vol = (float)s->steps[0].vol;
-    }
 }
 
 static void voice_stop(moy_voice *v)
@@ -404,42 +423,52 @@ static void voice_stop(moy_voice *v)
 /* The current step's frequency and amplitude at time t into the step --
  * i.e. SPEC.md 8.1's effects table, evaluated. Time is counted in integer
  * samples and converted by one multiply, so a step boundary lands within a
- * sample of where the speed says it should. */
+ * sample of where the speed says it should.
+ *
+ * The last stage is a ~1.5 ms amplitude slew toward the note's level. It is
+ * not in the spec and needs to not be: it is de-clicking, the same smoothing
+ * PICO-8 applies -- a retriggered oscillator restarts at phase 0, and
+ * without the ramp every fast sfx chain carries a click per step. */
 static float voice_sample(moy_voice *v, float dt, float rate)
 {
     const moy_sfx_def *s = v->s;
     const moy_note *n;
-    float step_dur, u, vt, pitch, vol, freq, out;
-    int idx = v->step;
+    float step_dur, t, u, pitch, vol, g, w, slew;
+    int idx = v->step, pitch_i;
 
     if (!s || !s->nsteps) return 0.0f;
     step_dur = 1.0f / s->speed;
-    vt = (float)v->vsamp * dt;
+    t = (float)v->samp * dt;
     n = &s->steps[idx];
-
-    /* Arpeggio replaces the note with its group-of-four neighbour. */
-    if (n->eff == 6 || n->eff == 7) {
-        float nps = n->eff == 6 ? 30.0f : 15.0f;
-        int g0 = idx & ~3;
-        int span = s->nsteps - g0;
-        if (span > 4) span = 4;
-        if (span > 0)
-            n = &s->steps[g0 + ((int)(vt * nps) % span)];
-    }
-
-    u = (float)v->samp * dt / step_dur; /* 0..1 through the step */
-    if (u > 1.0f) u = 1.0f;
-    pitch = (float)n->pitch;
+    pitch_i = n->pitch;
+    pitch = (float)pitch_i;
     vol = (float)n->vol;
 
+    /* Arpeggio cycles the step's group of four at 30/15 notes/s -- the PITCH
+     * only; volume and wave stay the step's own. */
+    if (n->eff == 6 || n->eff == 7) {
+        float nps = n->eff == 6 ? 30.0f : 15.0f;
+        int k = (idx / 4) * 4 + (int)(t * nps) % 4;
+        if (k < s->nsteps) {
+            pitch_i = s->steps[k].pitch;
+            pitch = (float)pitch_i;
+        }
+    }
+
+    u = t / step_dur;                   /* 0..1 through the step */
+    if (u > 1.0f) u = 1.0f;
+
     switch (n->eff) {
-    case 1:                             /* slide from the previous note */
-        pitch = v->prev_pitch + (pitch - v->prev_pitch) * u;
-        vol = v->prev_vol + (vol - v->prev_vol) * u;
+    case 1:                             /* slide from the channel's previous
+                                         * note; with none yet, from itself */
+        if (v->prev_pitch >= 0.0f) {
+            pitch = v->prev_pitch + (pitch - v->prev_pitch) * u;
+            vol = v->prev_vol + (vol - v->prev_vol) * u;
+        }
         break;
     case 2:                             /* vibrato: +-0.25 semitone, 7.5 Hz */
         {
-            float ph = vt * 7.5f;
+            float ph = t * 7.5f;
             ph -= (float)(int)ph;
             pitch += 0.25f * tri_wave(ph);
         }
@@ -449,52 +478,71 @@ static float voice_sample(moy_voice *v, float dt, float rate)
     default: break;
     }
 
-    if (n->pitch < 0 || vol <= 0.0f) {
-        out = 0.0f;
-    } else {
-        freq = pitch_hz(pitch);
+    g = (pitch_i < 0 || vol <= 0.0f) ? 0.0f : vol / 7.0f;
+    if (g > 0.0f) {
+        float freq = pitch_hz(pitch);
         if (n->eff == 3) freq *= 1.0f - u;      /* drop: falls linearly to 0 */
         v->phase += freq * dt;
         v->phase -= (float)(int)v->phase;
-        if (n->wave == 7) {                     /* the detuned partner */
-            v->phase2 += freq * (127.0f / 128.0f) * dt;
+        if (n->wave == 7) {                     /* the detuned partner: PICO-8
+                                                 * beats at ~109/110, not the
+                                                 * folkloric 127/128 */
+            v->phase2 += freq * (109.0f / 110.0f) * dt;
             v->phase2 -= (float)(int)v->phase2;
         }
-        if (n->wave == 3) {                     /* re-roll noise, pitched */
-            v->nphase += freq * 8.0f * dt;
-            while (v->nphase >= 1.0f) {
-                v->nphase -= 1.0f;
-                v->rng = v->rng * 1664525u + 1013904223u;
-            }
+        if (n->wave == 3) {
+            /* PICO-8's noise: an LCG random walk through a one-pole low-pass
+             * whose cutoff tracks the note (zepto8's constant), then a bass
+             * lift -- low keys up to 3x. nfrom is the filter state, nto the
+             * shaped output wave_sample holds between updates. */
+            float scale = freq * dt * 8.858923f;
+            float p8key = pitch - 24.0f;        /* moy 57=A4 <-> p8 33=A4 */
+            float factor;
+            if (p8key < 0.0f) p8key = 0.0f;
+            if (p8key > 63.0f) p8key = 63.0f;
+            factor = 1.0f - p8key / 63.0f;
+            v->nfrom = (v->nfrom + scale * lcg_unit(&v->rng)) / (1.0f + scale);
+            v->nto = v->nfrom * 1.5f * (1.0f + factor * factor);
         }
-        out = wave_sample(v, n->wave, v->phase) * (vol / 7.0f);
     }
+    /* On a rest the phase holds and the slew below rides the held level to
+     * zero -- that IS the release de-click. */
+    w = wave_sample(v, n->wave, v->phase);
 
-    /* advance the sequencer */
+    slew = dt / 0.0015f;
+    if (v->amp < g) { v->amp += slew; if (v->amp > g) v->amp = g; }
+    else            { v->amp -= slew; if (v->amp < g) v->amp = g; }
+
+    /* advance the sequencer; the finished step becomes the channel's
+     * previous SOUNDING note only if it actually sounded */
     v->samp++;
-    v->vsamp++;
     if ((float)v->samp >= step_dur * rate) {
+        const moy_note *fin = &s->steps[v->step];
+        if (fin->pitch >= 0 && fin->vol > 0) {
+            v->prev_pitch = (float)fin->pitch;
+            v->prev_vol = (float)fin->vol;
+        }
         v->samp = 0;
-        v->prev_pitch = (float)(s->steps[v->step].pitch < 0
-                                ? (int)v->prev_pitch : s->steps[v->step].pitch);
-        v->prev_vol = (float)s->steps[v->step].vol;
         v->step++;
         if (v->step >= s->nsteps) {
             if (s->loop) v->step = s->loop_start;
             else voice_stop(v);
         }
     }
-    return out;
+    return w * v->amp;
 }
 
 /* -------------------------------------------------------------- verbs --- */
 
 void moy_audio_init(moy_audio *a, const moy_bank *bank, int sample_rate)
 {
+    int i;
     memset(a, 0, sizeof *a);
     a->bank = bank;
     a->rate = sample_rate > 0 ? sample_rate : 44100;
     a->master = 7;
+    for (i = 0; i < MOY_A_CHANNELS; i++)
+        a->v[i].prev_pitch = -1.0f;     /* no previous note yet (slide) */
 }
 
 /* Row channel j plays on voice 3 - j (SPEC.md 8.1). */
@@ -522,21 +570,24 @@ void moy_audio_sfx(moy_audio *a, int n, int chan)
         return;
     }
     /* Round-robin what music leaves free: a playing track of width W owns
-     * voices 3 .. 4-W, so the pool is 0 .. 3-W. All claimed: the effect is
-     * dropped, never a stolen music channel (SPEC.md 8). */
+     * voices 3 .. 4-W, so the pool is 0 .. 3-W. When a 4-channel track owns
+     * every voice, steal voice 0 -- the track's last, typically least
+     * melodic, channel -- rather than dropping the effect (the reference
+     * console does the same). */
     free_top = MOY_A_CHANNELS - (a->track ? a->track->width : 0);
-    if (free_top <= 0) return;
-    /* Prefer an idle voice; otherwise steal the cursor's. */
+    if (free_top <= 0) {
+        voice_start(&a->v[0], &a->bank->sfx[n], 1);
+        return;
+    }
+    /* Prefer an idle voice, scanned in order; otherwise steal the cursor's. */
     for (i = 0; i < free_top; i++) {
-        int c = (a->rr + i) % free_top;
-        if (!a->v[c].owner) {
-            voice_start(&a->v[c], &a->bank->sfx[n], 1);
-            a->rr = (c + 1) % free_top;
+        if (!a->v[i].owner) {
+            voice_start(&a->v[i], &a->bank->sfx[n], 1);
             return;
         }
     }
     voice_start(&a->v[a->rr % free_top], &a->bank->sfx[n], 1);
-    a->rr = (a->rr + 1) % free_top;
+    a->rr = (a->rr % free_top + 1) % free_top;
 }
 
 void moy_audio_beep(moy_audio *a, float freq_hz, float dur_s)
@@ -631,15 +682,19 @@ void moy_audio_render(moy_audio *a, int16_t *out, int nframes)
                 mix += voice_sample(&a->v[i], dt, rate);
 
         if (a->bleft > 0.0f) {          /* beep: square at vol 6 (8.2) */
+            float bg = 6.0f / 7.0f;
+            if (a->bleft < 0.0015f)     /* ...with its own release de-click */
+                bg *= a->bleft / 0.0015f;
             a->bphase += a->bfreq * dt;
             a->bphase -= (float)(int)a->bphase;
-            mix += (a->bphase < 0.5f ? 1.0f : -1.0f) * (6.0f / 7.0f);
+            mix += (a->bphase < 0.5f ? 0.25f : -0.25f) * bg;
             a->bleft -= dt;
         }
 
-        /* Sum, scale, saturate. 0.25 is headroom for four full voices --
-         * the same choice every 4-channel chip made. */
-        s = (int)(mix * master * 0.25f * 32767.0f);
+        /* Sum, scale, saturate. The instruments themselves peak at 0.25-0.5
+         * (PICO-8's mix, above), so 0.5 here is the headroom for four
+         * simultaneous voices. */
+        s = (int)(mix * master * 0.5f * 32767.0f);
         if (s > 32767) s = 32767;
         if (s < -32768) s = -32768;
         out[f] = (int16_t)s;
