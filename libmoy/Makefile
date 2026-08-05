@@ -17,10 +17,11 @@ CFLAGS  ?= -std=c99 -O2 -Wall -Wextra -Wpedantic -Wshadow -Wconversion \
            -Wstrict-prototypes -Iinclude
 LDLIBS  ?= -lm
 
-SRC     := src/moy_canvas.c src/moy_sprite.c src/moy_data.c
+SRC     := src/moy_canvas.c src/moy_sprite.c src/moy_data.c src/moy_audio.c
 OBJ     := $(SRC:.c=.o)
 LIB     := libmoy.a
 REPLAY  := build/trace_replay
+AUDIOT  := build/audio_test
 
 # The Lua binding is optional and off by default: libmoy binds to whatever
 # lua_State you hand it, so the VM is a build-time choice, not a dependency.
@@ -34,7 +35,7 @@ LUA_OBJ  := $(LUA_SRC:.c=.o)
 LUA_CFLAGS := -std=c99 -O2 -w -I$(LUA_DIR)
 RUNCART  := build/run_cart
 
-.PHONY: all clean data conform conform-lua test lua play
+.PHONY: all clean data conform conform-lua test lua play audio-test
 
 all: $(LIB) $(REPLAY)
 
@@ -43,7 +44,7 @@ lua: $(RUNCART)
 $(LIB): $(OBJ)
 	$(AR) rcs $@ $^
 
-%.o: %.c include/moy.h
+%.o: %.c include/moy.h include/moy_audio.h
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(REPLAY): test/trace_replay.c $(LIB)
@@ -102,7 +103,17 @@ conform-lua: $(RUNCART)
 
 play: $(PLAY)
 
-test: conform conform-lua
+# SPEC.md 8's semantics, asserted numerically (8.3 exempts audio from pixel
+# conformance, so this is its whole test story: pitch by zero crossings,
+# envelopes by RMS, and the channel-claiming rules by inspection).
+$(AUDIOT): test/audio_test.c $(LIB)
+	@mkdir -p build
+	$(CC) $(CFLAGS) $< $(LIB) $(LDLIBS) -o $@
+
+audio-test: $(AUDIOT)
+	./$(AUDIOT)
+
+test: conform conform-lua audio-test
 
 clean:
 	rm -f $(OBJ) $(LUA_OBJ) src/moy_lua.o $(LIB)

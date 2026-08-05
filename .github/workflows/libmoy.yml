@@ -49,6 +49,12 @@ jobs:
         run: make conform
         working-directory: libmoy
 
+      # SPEC.md 8's semantics, numerically: 8.3 exempts audio from pixel
+      # conformance, so this is the synth's whole gate.
+      - name: Audio semantics
+        run: make audio-test
+        working-directory: libmoy
+
       # The same suite through a real .moy cart, parsed and run as Lua. Checks
       # the binding and the sandbox, which a trace cannot reach: a raster bug
       # fails both, a binding bug only this one.
@@ -97,7 +103,7 @@ jobs:
           mkdir -p dist-win
           x86_64-w64-mingw32-gcc -std=c99 -O2 -DMOY_WITH_LUA -Iinclude -Ivendor/lua \
             -I$SDL/include -I$SDL/include/SDL2 \
-            port/sdl2/main.c src/moy_canvas.c src/moy_sprite.c src/moy_data.c src/moy_lua.c \
+            port/sdl2/main.c src/moy_canvas.c src/moy_sprite.c src/moy_data.c src/moy_audio.c src/moy_lua.c \
             vendor/lua/*.c \
             -L$SDL/lib -lmingw32 -lSDL2main -lSDL2 -lm \
             -o dist-win/moy-play.exe
@@ -194,7 +200,7 @@ jobs:
           SDLC=SDL2-2.30.11/prefix/bin/sdl2-config
           cc -std=c99 -O2 -DMOY_WITH_LUA -Iinclude -Ivendor/lua \
             -ISDL2-2.30.11/prefix/include $($SDLC --cflags) \
-            port/sdl2/main.c src/moy_canvas.c src/moy_sprite.c src/moy_data.c src/moy_lua.c \
+            port/sdl2/main.c src/moy_canvas.c src/moy_sprite.c src/moy_data.c src/moy_audio.c src/moy_lua.c \
             vendor/lua/*.c $($SDLC --static-libs) \
             -o ../dist/moy-play
 
@@ -230,6 +236,15 @@ jobs:
           echo '{"moy_console":"0.1","name":"ci","cart_root":"carts"}' > vol/moy-console.json
           "$M" push t.moy --to vol
           test -f vol/carts/t.moy/main.lua
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            # No moy-play.exe in dist here (the mingw job builds it): the
+            # subcommand must fail with its where-to-get-it message, not a
+            # traceback.
+            if "$M" play t.moy; then echo "play found a player that is not there"; exit 1; fi
+          else
+            SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy SDL_RENDER_VSYNC=0 \
+              "$M" play ../libmoy/test/smoke.moy
+          fi
           echo "every command ran from the frozen binary"
 
       - uses: actions/upload-artifact@v4

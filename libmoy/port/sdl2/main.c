@@ -17,9 +17,12 @@
  *   a clock       milliseconds, for time() and for the tick
  *   persistence   256 signed 32-bit slots, if you have anywhere to put them
  *
- * That is it. Audio is optional (SPEC.md 8.3: silence is a valid rendering).
- * Everything else -- the raster, the palette, the font, the sheet, the map, the
- * verb table, the sandbox -- is libmoy's.
+ * That is it. Audio is optional (SPEC.md 8.3: silence is a valid rendering) --
+ * but this port has it, and the whole of it is the ~50 lines below marked
+ * "audio out": libmoy's moy_audio module is the synthesizer, the port only
+ * opens a device and pumps the render call. A host that skips those lines is
+ * still conforming, just mute. Everything else -- the raster, the palette, the
+ * font, the sheet, the map, the verb table, the sandbox -- is libmoy's.
  */
 
 #include <stdio.h>
@@ -33,6 +36,7 @@
 #include "lauxlib.h"
 
 #include "moy.h"
+#include "moy_audio.h"
 
 static uint8_t  frame[MOY_W * MOY_H];
 static uint8_t  sheet_pix[MOY_SHEET_W * MOY_SHEET_H];
@@ -101,6 +105,71 @@ static void h_pmem_set(void *u, int s, int32_t v)
 }
 
 static void h_quit(void *u) { ((host_state *)u)->running = 0; }
+
+/* -- audio out (SPEC.md 8) ------------------------------------------------
+ *
+ * The synth is libmoy's (moy_audio); this is the plumbing: SDL pulls samples
+ * on its own thread, so every verb that mutates synth state locks the device
+ * around the call. That lock IS the thread-safety story -- moy_audio itself
+ * is single-threaded on purpose. */
+
+static moy_bank  bank;
+static moy_audio audio;
+static SDL_AudioDeviceID adev;
+
+static void audio_cb(void *ud, Uint8 *stream, int len)
+{
+    (void)ud;
+    moy_audio_render(&audio, (int16_t *)(void *)stream, len / 2);
+}
+
+static void h_sfx(void *u, int n, int chan)
+{
+    (void)u;
+    SDL_LockAudioDevice(adev);
+    moy_audio_sfx(&audio, n, chan);
+    SDL_UnlockAudioDevice(adev);
+}
+
+static void h_beep(void *u, float freq, float dur)
+{
+    (void)u;
+    SDL_LockAudioDevice(adev);
+    moy_audio_beep(&audio, freq, dur);
+    SDL_UnlockAudioDevice(adev);
+}
+
+static void h_music(void *u, int track, int loop)
+{
+    (void)u;
+    SDL_LockAudioDevice(adev);
+    moy_audio_music(&audio, track, loop);
+    SDL_UnlockAudioDevice(adev);
+}
+
+static void h_music_stop(void *u)
+{
+    (void)u;
+    SDL_LockAudioDevice(adev);
+    moy_audio_music_stop(&audio);
+    SDL_UnlockAudioDevice(adev);
+}
+
+static void h_sound_stop(void *u, int chan)
+{
+    (void)u;
+    SDL_LockAudioDevice(adev);
+    moy_audio_sound_stop(&audio, chan);
+    SDL_UnlockAudioDevice(adev);
+}
+
+static void h_volume(void *u, int level)
+{
+    (void)u;
+    SDL_LockAudioDevice(adev);
+    moy_audio_volume(&audio, level);
+    SDL_UnlockAudioDevice(adev);
+}
 
 /* -- cart loading -------------------------------------------------------- */
 
@@ -231,6 +300,17 @@ int main(int argc, char **argv)
     load_sheet(cart);
     load_map(cart, &map);
 
+    {   /* the sound bank. A missing sounds.json is a silent cart; a MALFORMED
+         * one is worth a line on stderr, because "my music does not play" is
+         * otherwise undebuggable -- but it still only means silence. */
+        char *sounds;
+        snprintf(path, sizeof path, "%s/sounds.json", cart);
+        sounds = slurp(path, NULL);
+        if (moy_bank_parse(&bank, sounds))
+            fprintf(stderr, "moy-play: %s is malformed; playing silent\n", path);
+        free(sounds);
+    }
+
     snprintf(pmem_path, sizeof pmem_path, "%s/.pmem", cart);
     { FILE *f = fopen(pmem_path, "rb");
       if (f) { if (fread(pmem_slots, sizeof pmem_slots, 1, f) != 1) memset(pmem_slots, 0, sizeof pmem_slots); fclose(f); } }
@@ -264,6 +344,34 @@ int main(int argc, char **argv)
     free(source);
 
     if (SDL_Init(SDL_INIT_VIDEO) != 0) { fprintf(stderr, "SDL: %s\n", SDL_GetError()); return 2; }
+
+    /* Audio is its own subsystem and its own failure domain: a machine with
+     * no output device still plays the game, silently, which is exactly what
+     * SPEC.md 8.3 says a host without audio hardware is. The hooks are wired
+     * only when a device actually opened -- unwired hooks are NULL and the
+     * verbs no-op. */
+    if (SDL_InitSubSystem(SDL_INIT_AUDIO) == 0) {
+        SDL_AudioSpec want, have;
+        memset(&want, 0, sizeof want);
+        want.freq = 44100;
+        want.format = AUDIO_S16SYS;
+        want.channels = 1;
+        want.samples = 512;
+        want.callback = audio_cb;
+        adev = SDL_OpenAudioDevice(NULL, 0, &want, &have,
+                                   SDL_AUDIO_ALLOW_FREQUENCY_CHANGE);
+        if (adev) {
+            moy_audio_init(&audio, &bank, have.freq);
+            con.host.sfx        = h_sfx;
+            con.host.beep       = h_beep;
+            con.host.music      = h_music;
+            con.host.music_stop = h_music_stop;
+            con.host.sound_stop = h_sound_stop;
+            con.host.volume     = h_volume;
+            SDL_PauseAudioDevice(adev, 0);
+        }
+    }
+
     win = SDL_CreateWindow(title, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                            MOY_W * scale, MOY_H * scale,
                            fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
@@ -342,6 +450,7 @@ int main(int argc, char **argv)
     }
 
     lua_close(L);
+    if (adev) SDL_CloseAudioDevice(adev);
     SDL_DestroyTexture(tex);
     SDL_DestroyRenderer(ren);
     SDL_DestroyWindow(win);

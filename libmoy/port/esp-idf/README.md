@@ -95,8 +95,13 @@ Then per frame: `moy_reset_state(&canvas)`, run the cart's `_update`/`_draw`,
 resolve the framebuffer, flush. `example/esp-idf/main/main.c` is that loop,
 with each of the four wired to a real IDF API.
 
-`sfx` and `music` may stay NULL. SPEC.md 8.3 makes silence a valid rendering, so
-a board with no audio is still conforming and the cart never finds out.
+The audio hooks may all stay NULL. SPEC.md 8.3 makes silence a valid
+rendering, so a board with no audio is still conforming and the cart never
+finds out. A board WITH a speaker gets the full SPEC.md 8 synthesizer from
+the library itself: `moy_audio` (see `include/moy_audio.h`) renders signed
+16-bit mono into any buffer, so the port is `moy_audio_render` into an I2S
+DMA buffer plus six one-line hooks — the SDL2 port's "audio out" section is
+the worked example.
 
 ## Getting carts onto a device
 

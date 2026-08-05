@@ -1,0 +1,160 @@
+/* audio_test -- the SPEC.md 8 semantics, asserted without a speaker.
+ *
+ * 8.3 exempts audio from bit-identical conformance, so there are no PCM
+ * goldens to replay. What CAN be pinned is everything musical the section
+ * promises: a pitch is its frequency (counted as zero crossings), a fade
+ * ends silent, music claims channels from the top, effects round-robin what
+ * music leaves free, and every stop verb actually stops. Those are the
+ * semantics imported carts depend on, and each one here failed at least
+ * once while this file was being written. */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "moy_audio.h"
+
+#define RATE 44100
+
+static int failures;
+
+static void check(int cond, const char *what)
+{
+    if (!cond) {
+        fprintf(stderr, "FAIL: %s\n", what);
+        failures++;
+    }
+}
+
+static int crossings(const int16_t *buf, int n)
+{
+    int i, c = 0;
+    for (i = 1; i < n; i++)
+        if ((buf[i - 1] < 0) != (buf[i] < 0)) c++;
+    return c;
+}
+
+static float rms(const int16_t *buf, int n)
+{
+    double acc = 0;
+    int i;
+    for (i = 0; i < n; i++) acc += (double)buf[i] * buf[i];
+    return (float)(acc / n);
+}
+
+static int16_t buf[RATE * 2];
+
+int main(void)
+{
+    moy_bank bank;
+    moy_audio a;
+
+    /* -- parsing ---------------------------------------------------- */
+    check(moy_bank_parse(&bank, NULL) == 0, "NULL sounds.json is a silent cart");
+    check(moy_bank_parse(&bank, "  ") == 0, "empty text is a silent cart");
+    check(moy_bank_parse(&bank, "{\"sfx\":[{\"steps\":[[57,0") != 0,
+          "truncated JSON is refused");
+    check(moy_bank_parse(&bank, "not json") != 0, "junk is refused");
+
+    check(moy_bank_parse(&bank,
+        "{\"sfx\":[{\"speed\":1,\"steps\":[[57,0,7]]},"
+        "         {\"speed\":8,\"loop\":true,\"steps\":[[30,1,6],[32,1,6]]}],"
+        " \"music\":[{\"speed\":4,\"pattern\":[[0,1]]},"
+        "            {\"pattern\":[0],\"row_secs\":[0]}],"
+        " \"future_field\":{\"ignored\":[1,2,{\"deep\":true}]}}") == 0,
+        "the reference bank parses");
+    check(bank.nsfx == 2 && bank.nmusic == 2, "counts");
+    check(bank.sfx[0].nsteps == 1 && bank.sfx[0].speed == 1.0f, "sfx 0 shape");
+    check(bank.sfx[1].loop == 1, "sfx 1 loops");
+    check(bank.music[0].width == 2, "track 0 claims two channels");
+    check(bank.music[1].has_row_secs && bank.music[1].row_secs[0] == 0.0f,
+          "row_secs parsed");
+
+    /* -- pitch: A4 is 440 Hz --------------------------------------- */
+    moy_audio_init(&a, &bank, RATE);
+    moy_audio_sfx(&a, 0, -1);           /* [57,0,7]: A4, square, 1 second */
+    moy_audio_render(&a, buf, RATE);
+    {
+        /* A 440 Hz square crosses zero 880 times a second. */
+        int c = crossings(buf, RATE);
+        check(c > 860 && c < 900, "A4 square crosses ~880 times/s");
+    }
+    check(a.v[0].owner == 0, "a non-looping sfx ends");
+
+    /* -- fade out ends silent (eff 5) ------------------------------- */
+    check(moy_bank_parse(&bank,
+        "{\"sfx\":[{\"speed\":2,\"steps\":[[57,0,7,5]]}]}") == 0, "fade bank");
+    moy_audio_init(&a, &bank, RATE);
+    moy_audio_sfx(&a, 0, -1);
+    moy_audio_render(&a, buf, RATE / 2);
+    check(rms(buf, RATE / 20) > 16.0f * rms(buf + RATE / 2 - RATE / 20, RATE / 20),
+          "fade-out: the last 10%% is far quieter than the first");
+
+    /* -- music claims from the top; sfx round-robins the rest ------- */
+    check(moy_bank_parse(&bank,
+        "{\"sfx\":[{\"loop\":true,\"steps\":[[40,0,6]]},"
+        "         {\"loop\":true,\"steps\":[[45,1,6]]}],"
+        " \"music\":[{\"speed\":4,\"pattern\":[[0,1]]}]}") == 0, "claim bank");
+    moy_audio_init(&a, &bank, RATE);
+    moy_audio_music(&a, 0, 1);
+    check(a.v[3].owner == 2 && a.v[3].s == &bank.sfx[0],
+          "row channel 0 plays on voice 3");
+    check(a.v[2].owner == 2 && a.v[2].s == &bank.sfx[1],
+          "row channel 1 plays on voice 2");
+    moy_audio_sfx(&a, 0, -1);
+    moy_audio_sfx(&a, 1, -1);
+    check(a.v[0].owner == 1 && a.v[1].owner == 1,
+          "sfx round-robin fills what music leaves free");
+    check(a.v[2].owner == 2 && a.v[3].owner == 2,
+          "sfx never steals a music channel");
+
+    moy_audio_music_stop(&a);
+    check(!a.v[2].owner && !a.v[3].owner && a.v[0].owner == 1,
+          "music_stop releases only music voices");
+    moy_audio_sound_stop(&a, -1);
+    check(!a.v[0].owner && !a.v[1].owner, "sound_stop() stops everything");
+
+    /* -- explicit channel, and stopping just it ---------------------- */
+    moy_audio_sfx(&a, 0, 2);
+    check(a.v[2].owner == 1, "sfx(n, 2) takes voice 2");
+    moy_audio_sound_stop(&a, 2);
+    check(!a.v[2].owner, "sound_stop(2) stops voice 2");
+
+    /* -- a looping sfx does not end --------------------------------- */
+    moy_audio_sfx(&a, 0, 0);
+    moy_audio_render(&a, buf, RATE * 2);
+    check(a.v[0].owner == 1, "a looping sfx still plays after 2s");
+    moy_audio_sound_stop(&a, -1);
+
+    /* -- row_secs 0 holds the row ----------------------------------- */
+    check(moy_bank_parse(&bank,
+        "{\"sfx\":[{\"loop\":true,\"steps\":[[40,0,6]]}],"
+        " \"music\":[{\"pattern\":[0],\"row_secs\":[0]}]}") == 0, "hold bank");
+    moy_audio_init(&a, &bank, RATE);
+    moy_audio_music(&a, 0, 0);          /* loop false: would end if it advanced */
+    moy_audio_render(&a, buf, RATE * 2);
+    check(a.track != NULL && a.v[3].owner == 2,
+          "row_secs 0 holds the row forever");
+
+    /* -- beep, and its end ------------------------------------------ */
+    moy_audio_init(&a, &bank, RATE);
+    moy_audio_beep(&a, 440.0f, 0.1f);
+    moy_audio_render(&a, buf, RATE / 2);
+    check(rms(buf, RATE / 10) > 0.0f, "beep makes sound");
+    check(rms(buf + RATE / 4, RATE / 10) == 0.0f, "beep ends after dur");
+
+    /* -- no bank: everything no-ops, render is silence --------------- */
+    moy_audio_init(&a, NULL, RATE);
+    moy_audio_sfx(&a, 0, -1);
+    moy_audio_music(&a, 0, 1);
+    moy_audio_beep(&a, -1.0f, 0.0f);
+    moy_audio_render(&a, buf, RATE / 10);
+    check(rms(buf, RATE / 10) == 0.0f, "no bank renders silence");
+
+    if (failures) {
+        fprintf(stderr, "%d audio checks failed\n", failures);
+        return 1;
+    }
+    printf("audio: all checks passed\n");
+    return 0;
+}

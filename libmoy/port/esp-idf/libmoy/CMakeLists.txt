@@ -18,7 +18,8 @@ set(MOY_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../..")
 set(MOY_SRCS
     "${MOY_ROOT}/src/moy_canvas.c"
     "${MOY_ROOT}/src/moy_sprite.c"
-    "${MOY_ROOT}/src/moy_data.c")
+    "${MOY_ROOT}/src/moy_data.c"
+    "${MOY_ROOT}/src/moy_audio.c")
 
 set(MOY_INCS "${MOY_ROOT}/include")
 
