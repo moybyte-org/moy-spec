@@ -119,8 +119,32 @@ four coordinated fixes (the Lua bridge handing back a byte string, a wire form
 that can carry it, a replayer that reads it, and both fonts walking bytes).
 `text_bytes` is a core scene as a result.
 
-**All nine scenes now pass on the player**, `provisional` included — so the
-§6.1 verbs agree too, even though §11 does not count them yet.
+**All nine scenes pass on the player**, `provisional` included — so the §6.1
+verbs agree too, even though §11 does not count them yet.
+
+## And on real silicon
+
+The suite runs on an ESP32-P4 through moybyte's `tools/p4_conformance.py`, which
+speaks the same player protocol — it uploads a cart over serial, runs it through
+the launcher, and reads the RGB565 framebuffer back off the board:
+
+```
+python3 conformance/run.py --player \
+  "python3 /path/to/moybyte/tools/p4_conformance.py {cart} {out}"
+```
+
+**All nine scenes match there too.** That is the tier where the C `moy_gfx`
+kernel, the RGB565 framebuffer and §1.1's memory floor actually live, and it had
+never been checked against the spec before.
+
+Its first run — against firmware flashed a few days earlier — failed exactly two
+scenes: `text_bytes` and `provisional`. Those are the two bugs the web player had
+turned up, both in shared code, so the prediction had been that both were on the
+boards too. The board run turned that prediction into a measurement, and
+reflashing closed both.
+
+So four things now agree on every scene: moycore, the reference console's own
+rasterizer, the web player's JavaScript replayer, and an ESP32-P4.
 
 ## Determinism, and one hole in it
 

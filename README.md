@@ -140,7 +140,7 @@ own ground, the implementation is what changes — including the reference one.
 | Console as a library | **works** — [moycore/](moycore/), MIT, stdlib-only Python: the raster, palette, font, sheet, map, cart format and verb table. Byte-identical to the reference console's rasterizer |
 | PICO-8 converter | exists, converts art, map, sound and code under a compat shim |
 | Web player | **works** — [runner/](runner/), the reference console compiled to WASM; `moy.py` wraps it (scaffold, hot-reload run, export) |
-| Conformance suite | **runs** — [conformance/](conformance/), 9 scenes as real carts + golden frames + a runner that takes any player. The §11 tiebreaker (the WASM player) agrees on all 7 core scenes, pixel for pixel |
+| Conformance suite | **runs** — [conformance/](conformance/), 9 scenes as real carts + golden frames + a runner that takes any player. Four implementations agree on every scene: moycore, the reference console's rasterizer, the web player's JS replayer, and an **ESP32-P4** over serial |
 | Cart checker | **works** — `moy.py check`: manifest, sandbox ceiling, undeclared extensions, the §1.1 budget |
 | Single-file cart | proposed — [proposals/single-file-cart.md](proposals/single-file-cart.md), implemented as `moy.py pack` |
 | TIC-80 converter | not started |
@@ -151,14 +151,18 @@ implementation, which makes it a faithful mirror of one console rather than an
 independent second implementation — telling the two apart is what the conformance
 suite is for, and it now exists.
 
-Three implementations now agree on every core scene, and only one of them is
-independent — which is the part that matters. moycore was extracted from the
+Four implementations now agree on every scene, and the two that matter most are
+the ones nothing shares code with. moycore was extracted from the
 reference console's rasterizer, so [parity.py](conformance/parity.py) proves the
 extraction faithful and could never catch a bug that was always in it. The web
 player's JavaScript replayer shares no code with either, and
 [player.mjs](conformance/player.mjs) runs the suite through it headlessly, in plain
 node, with no browser and no dependencies. Its first run found the console drawing
 its FPS chip into the cart's own framebuffer.
+
+The other is the hardware. The suite runs on an ESP32-P4 over serial, which is where
+the C rasterizer and §1.1's memory floor actually are; its first run reproduced two
+bugs the web player had already found, confirming they were never web-specific.
 
 ## Contributing
 
