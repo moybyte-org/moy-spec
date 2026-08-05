@@ -22,8 +22,8 @@ Status: **draft 0.1, unstable.** Names and values will still move.
   folder onto it**. Arrows/WASD are the d-pad, Z/X (or J/K) are A/B, Enter is
   run, Esc quits.
 - **Linux / macOS** — `moy-linux-x64.tar.gz` / `moy-macos-arm64.tar.gz`: the
-  `moy` CLI as one binary. (The macOS build is Apple Silicon and unsigned —
-  first run is right-click → Open.)
+  same pair, `moy` and `moy-play` (`./moy-play mygame.moy`). The macOS build
+  is Apple Silicon and unsigned — first run is right-click → Open.
 
 No Python, no install. From a checkout of this repository, every command below
 also runs as `python3 moy.py …` — Python 3.8+ and nothing else.

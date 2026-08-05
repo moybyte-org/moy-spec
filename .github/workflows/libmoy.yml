@@ -170,6 +170,60 @@ jobs:
           pip install pyinstaller pyserial
           pyinstaller moy.spec
 
+      # The native player for the non-Windows legs, so every OS bundle is CLI
+      # + player (Windows gets its player from the mingw job). Both links are
+      # static on purpose: the Linux binary carries SDL2 built from source in
+      # this same glibc-2.31 container -- SDL dlopens X11/Wayland/ALSA/Pulse
+      # at runtime, so static SDL2 still finds whatever the user's desktop
+      # actually runs -- and the macOS binary carries Homebrew's libSDL2.a so
+      # the download does not require Homebrew.
+      - name: Build moy-play (Linux, static SDL2)
+        if: runner.os == 'Linux'
+        working-directory: libmoy
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq libx11-dev libxext-dev libxrandr-dev libxi-dev \
+            libxcursor-dev libxfixes-dev libxss-dev libgl1-mesa-dev \
+            libasound2-dev libpulse-dev libwayland-dev wayland-protocols libxkbcommon-dev
+          curl -sL -o sdl.tar.gz https://github.com/libsdl-org/SDL/releases/download/release-2.30.11/SDL2-2.30.11.tar.gz
+          tar xf sdl.tar.gz
+          (cd SDL2-2.30.11 && ./configure --disable-shared --enable-static \
+             --prefix=$PWD/prefix >/dev/null && make -j"$(nproc)" >/dev/null && make install >/dev/null)
+          SDLC=SDL2-2.30.11/prefix/bin/sdl2-config
+          cc -std=c99 -O2 -DMOY_WITH_LUA -Iinclude -Ivendor/lua \
+            -ISDL2-2.30.11/prefix/include $($SDLC --cflags) \
+            port/sdl2/main.c src/moy_canvas.c src/moy_sprite.c src/moy_data.c src/moy_lua.c \
+            vendor/lua/*.c $($SDLC --static-libs) \
+            -o ../dist/moy-play
+
+      - name: Build moy-play (macOS, static SDL2)
+        if: runner.os == 'macOS'
+        working-directory: libmoy
+        run: |
+          brew install -q sdl2
+          SDL="$(brew --prefix sdl2)"
+          test -f "$SDL/lib/libSDL2.a"
+          LIBS=$("$SDL/bin/sdl2-config" --static-libs | sed "s|-lSDL2|$SDL/lib/libSDL2.a|")
+          cc -std=c99 -O2 -DMOY_WITH_LUA -Iinclude -Ivendor/lua \
+            -I"$SDL/include" -I"$SDL/include/SDL2" \
+            port/sdl2/main.c src/moy_canvas.c src/moy_sprite.c src/moy_data.c src/moy_lua.c \
+            vendor/lua/*.c $LIBS \
+            -o ../dist/moy-play
+
+      # Same bar as the Windows player's Wine gate: the binary that ships must
+      # RUN a cart that touches the provisional verbs and exit cleanly, not
+      # just link. Headless via SDL's dummy drivers.
+      - name: The player runs a cart
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          mkdir -p psmoke.moy
+          printf '{"format":"moy-1","title":"smoke","main":"main.lua"}' > psmoke.moy/manifest.json
+          printf 'local n=0\nfunction _update(dt) n=n+1 if n>30 then quit() end end\nfunction _draw() cls(1) tri(100,20,160,30,130,80,8) tline(0,100,319,100,0,0,65536,0) end\n' > psmoke.moy/main.lua
+          SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy SDL_RENDER_VSYNC=0 \
+            ./dist/moy-play psmoke.moy
+          echo "the native player ran a cart and exited cleanly"
+
       - name: Smoke every command
         shell: bash
         run: |
@@ -223,11 +277,13 @@ jobs:
           cp art/moy-cli-windows-latest/moy.exe win/
           printf 'moy -- the toy console, bundled for Windows.\r\n\r\nmoy-play.exe   the native player: drag a .moy cart folder onto it.\r\n               Arrows/WASD = d-pad, Z/X (or J/K) = A/B, Enter = run, Esc = quit.\r\nmoy.exe        the whole toolchain, no Python needed: `moy new mygame`,\r\n               `moy run mygame.moy` (browser, hot reload), check, pack,\r\n               gfx/map PNG+CSV round-trips, conform, push. Run `moy` with\r\n               no arguments for the full list.\r\n\r\nSpec and source: https://github.com/moybyte-org/moy-spec\r\n' > win/README.txt
           (cd win && zip -q ../moy-windows-x64.zip *)
-          printf 'moy -- the cart developer CLI, one binary, no Python needed.\n\n  ./moy new mygame          scaffold a cart\n  ./moy run mygame.moy      play in your browser, hot reload on save\n  ./moy                     the full command list\n\nmacOS note: the binary is unsigned -- first run is right-click -> Open,\nor `xattr -d com.apple.quarantine moy`.\n\nSpec and source: https://github.com/moybyte-org/moy-spec\n' > README.txt
+          printf 'moy -- the toy console: the CLI and the native player.\n\n  ./moy-play mygame.moy     play a cart. Arrows/WASD = d-pad,\n                            Z/X (or J/K) = A/B, Enter = run, Esc = quit\n  ./moy new mygame          scaffold a cart\n  ./moy run mygame.moy      play in your browser, hot reload on save\n  ./moy                     the full command list\n\nmacOS note: the binaries are unsigned -- first run is right-click -> Open,\nor `xattr -d com.apple.quarantine moy moy-play`.\n\nSpec and source: https://github.com/moybyte-org/moy-spec\n' > README.txt
           install -m 755 art/moy-cli-ubuntu-latest/moy lin/moy && cp README.txt lin/
+          install -m 755 art/moy-cli-ubuntu-latest/moy-play lin/moy-play
           install -m 755 art/moy-cli-macos-latest/moy mac/moy && cp README.txt mac/
-          tar -C lin -czf moy-linux-x64.tar.gz moy README.txt
-          tar -C mac -czf moy-macos-arm64.tar.gz moy README.txt
+          install -m 755 art/moy-cli-macos-latest/moy-play mac/moy-play
+          tar -C lin -czf moy-linux-x64.tar.gz moy moy-play README.txt
+          tar -C mac -czf moy-macos-arm64.tar.gz moy moy-play README.txt
 
       - name: Refresh the release
         env:
@@ -235,8 +291,8 @@ jobs:
         run: |
           gh release view player-latest >/dev/null 2>&1 || \
             gh release create player-latest --title "moy (rolling)" --notes "placeholder" --latest=false
-          gh release edit player-latest --title "moy (rolling): the CLI + Windows player" \
-            --notes "The moy toolchain as native executables, rebuilt and smoke-tested by CI on every push to main. moy-windows-x64.zip holds moy.exe (the whole CLI: scaffold, browser run with hot reload, check, pack, asset round-trips, the conformance suite, push-to-console) plus moy-play.exe, the native player you drag a .moy cart onto. The Linux and macOS tars hold the CLI; macOS is Apple Silicon and unsigned (first run: right-click, Open). Every asset ran its full command set on its own OS before it was allowed here."
+          gh release edit player-latest --title "moy (rolling): the CLI + native player, three OSes" \
+            --notes "The moy toolchain as native executables, rebuilt and smoke-tested by CI on every push to main. Each download holds moy (the whole CLI: scaffold, browser run with hot reload, check, pack, asset round-trips, the conformance suite, push-to-console) plus moy-play, the native player -- on Windows, drag a .moy cart folder onto it. macOS is Apple Silicon and unsigned (first run: right-click, Open)."
           gh release upload player-latest moy-windows-x64.zip moy-linux-x64.tar.gz moy-macos-arm64.tar.gz --clobber
           gh release delete-asset player-latest moy-play-windows-x64.zip --yes 2>/dev/null || true
 
