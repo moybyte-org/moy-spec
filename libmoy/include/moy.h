@@ -15,8 +15,8 @@
  *   - No allocation. You own every buffer; the library never calls malloc.
  *     A moy_canvas is a struct you can place in static storage or PSRAM.
  *   - No I/O, no time, no threads. Nothing here reads a file or a clock.
- *   - C99, freestanding-friendly: string.h and math.h are the only headers,
- *     and math.h only for sqrt in circ().
+ *   - C99, freestanding-friendly: string.h is the only header the library
+ *     needs, and no libm -- the raster is integer arithmetic throughout.
  *   - Every drawing verb honours camera, clip, pal and palt (SPEC.md 6),
  *     because they all funnel through moy_put or moy_rect.
  *
@@ -65,18 +65,63 @@ extern "C" {
 #define MOY_FLIP_Y    2
 #define MOY_FLIP_XY   3
 
-/* The framebuffer is palette INDICES, one byte per pixel (SPEC.md 1). Your
- * display almost certainly wants something else; resolve at flush time with
- * moy_palette_rgb565 / moy_palette_rgb888, which is the only place the console
- * cares what a colour looks like. */
+/* -- what a pixel is ----------------------------------------------------- *
+ *
+ * By default the framebuffer is palette INDICES, one byte per pixel
+ * (SPEC.md 1). Your display almost certainly wants something else; resolve at
+ * flush time with moy_palette_rgb565 / moy_palette_rgb888, which is then the
+ * only place the console cares what a colour looks like.
+ *
+ * Define MOY_PIXEL_RGB565 to build the direct-colour variant instead: the same
+ * kernels, resolving colour at DRAW time into a 16-bit buffer, so the flush is
+ * a copy rather than a lookup. SPEC.md 1.1 already allows this -- "A host
+ * rendering direct to RGB565 pays 150 KB instead, its choice, not the cart's"
+ * -- and it is observationally identical rather than merely close, because
+ * SPEC.md 12.1 gives the console no display-time palette. Nothing can re-mean a
+ * pixel after it is written, so resolving early is not an approximation of
+ * resolving late; it is the same answer computed sooner. A cart cannot tell.
+ *
+ * WHICH ONE IS A PROPERTY OF YOUR HARDWARE, NOT YOUR TASTE. Measured on the
+ * reference consoles with one rasterizer built both ways:
+ *   - INDICES win where memory bandwidth is the constraint. On an ESP32-S3
+ *     (no L2, octal PSRAM) the index build draws 1.1-3.3x faster, its flush is
+ *     CHEAPER than the copy the 565 build needs, and the 150 KB buffer does not
+ *     fit in internal SRAM at all where the 75 KB one does.
+ *   - RGB565 wins where a 2D accelerator or panel consumes 565 directly and an
+ *     index buffer would force a per-frame resolve onto the CPU. On an ESP32-P4
+ *     the index build still draws 4-24% faster, but its blitter cannot read
+ *     indices, so the resolve costs more than the drawing saves.
+ *
+ * Both builds are checked against the same SPEC.md 11 goldens: the index build
+ * hashes its framebuffer, the 565 build hashes the frame it resolves to. They
+ * must agree, and the suite is what says so.
+ */
+#ifdef MOY_PIXEL_RGB565
+typedef uint16_t moy_pixel;
+#define MOY_PIXEL_BYTES 2
+#else
+typedef uint8_t  moy_pixel;
+#define MOY_PIXEL_BYTES 1
+#endif
+
 typedef struct {
-    uint8_t *pix;                /* w*h indices -- YOURS, never allocated here */
+    moy_pixel *pix;              /* w*h pixels -- YOURS, never allocated here */
     int      w, h;
     int      cam_x, cam_y;       /* SPEC.md 6 camera */
     int      clip_x0, clip_y0;   /* SPEC.md 6 clip, screen space (post-camera) */
     int      clip_x1, clip_y1;
     uint8_t  pal[MOY_PALETTE];   /* draw-time index remap */
     uint8_t  palt[MOY_PALETTE];  /* per-index sprite transparency */
+    /* What a colour index becomes in the buffer, with pal already folded in.
+     * The ONE thing the two builds disagree about on the hot path, and it is
+     * precomputed: every verb writes store[index], so the per-pixel cost is a
+     * lookup and a store either way, and the geometry above it is byte-for-byte
+     * the same source. Maintained by moy_pal / moy_pal_reset / moy_reset_state
+     * -- never assign c->pal directly. */
+    moy_pixel store[MOY_PALETTE];
+#ifdef MOY_PIXEL_RGB565
+    uint16_t wire[MOY_PALETTE];  /* index -> panel word; see moy_canvas_wire */
+#endif
 } moy_canvas;
 
 /* SPEC.md 3.2: sprite pixels are indices 0-15, one nibble each on disk. */
@@ -93,8 +138,24 @@ typedef struct {
 /* -- lifecycle ---------------------------------------------------------- */
 
 /* Point a canvas at your buffer and reset its draw state. `pix` must hold
- * w*h bytes. Sizes other than 320x240 exist for the `layers` extension. */
-void moy_canvas_init(moy_canvas *c, uint8_t *pix, int w, int h);
+ * w*h pixels -- w*h*MOY_PIXEL_BYTES bytes. Sizes other than 320x240 exist for
+ * the `layers` extension. */
+void moy_canvas_init(moy_canvas *c, moy_pixel *pix, int w, int h);
+
+#ifdef MOY_PIXEL_RGB565
+/* Tell a direct-colour canvas what each of the 64 palette indices looks like as
+ * a 16-bit word, and rebuild the draw-time table.
+ *
+ * THE BYTE ORDER IS YOURS. Hand it byte-swapped words if that is what your
+ * panel clocks out and nothing in the library notices -- the words are opaque
+ * here, which is what keeps a device's wire format out of the cart contract.
+ * The same freedom is why the index build exists at all.
+ *
+ * Optional: until it is called a canvas uses the SPEC.md 2.2 palette in
+ * canonical RGB565, so a host that forgets gets correct colours rather than a
+ * black screen. Call it again after changing a cart's 2.2 palette. */
+void moy_canvas_wire(moy_canvas *c, const uint16_t tab[MOY_PALETTE]);
+#endif
 
 /* Camera to 0,0; clip to full screen; pal to identity; palt all opaque.
  * A host calls this before each cart frame: draw state is per-frame and must

@@ -9,19 +9,11 @@
 #include <string.h>
 
 #include "moy.h"
+#include "moy_pixel.h"
 
-/* moy_put is file-local in moy_canvas.c on purpose -- the framebuffer should
- * have exactly one writer. These verbs need it too, so it is re-stated here
- * rather than exported: keeping it internal to the library is what stops a
- * host reaching past camera/clip/pal by accident. */
-static void moy_put(moy_canvas *c, int x, int y, int ci)
-{
-    x -= c->cam_x;
-    y -= c->cam_y;
-    if (x < c->clip_x0 || x >= c->clip_x1 || y < c->clip_y0 || y >= c->clip_y1)
-        return;
-    c->pix[y * c->w + x] = c->pal[ci & 63];
-}
+/* moy_put comes from moy_pixel.h -- internal to the library, so a host still
+ * cannot reach past camera/clip/pal, and there is now one copy rather than the
+ * two this file used to keep in step by hand. */
 
 /* ---------------------------------------------------------------- text -- */
 
@@ -32,16 +24,28 @@ void moy_print(moy_canvas *c, const uint8_t *s, size_t len, int x, int y, int co
      * with no glyph, which is what keeps two implementations agreeing about
      * where the text AFTER a stray byte lands. */
     size_t k;
-    int cx = x, ci = col & 63;
+    int cx = x;
+    /* Hoisted for the same reason as line(): a glyph is up to 64 moy_put calls
+     * and every one of them would re-read camera, clip and the palette entry
+     * through the canvas pointer. */
+    moy_pixel v = c->store[col & 63];
+    int cam_x = c->cam_x, cam_y = c->cam_y, cw = c->w;
+    int cx0 = c->clip_x0, cy0 = c->clip_y0, cx1 = c->clip_x1, cy1 = c->clip_y1;
+    moy_pixel *pix = c->pix;
     for (k = 0; k < len; k++) {
         int code = s[k];
         if (code >= 0x20 && code <= 0x7F) {
             const uint8_t *g = moy_font_data + (code - 0x20) * 8;
             int j;
             for (j = 0; j < 8; j++) {
-                int bits = g[j], py = y;
+                int bits = g[j], py = y, gx = cx + j - cam_x;
+                if (gx < cx0 || gx >= cx1) continue;   /* whole column off-clip */
                 while (bits) {
-                    if (bits & 1) moy_put(c, cx + j, py, ci);
+                    if (bits & 1) {
+                        int gy = py - cam_y;
+                        if (gy >= cy0 && gy < cy1)
+                            pix[(size_t)gy * (size_t)cw + (size_t)gx] = v;
+                    }
                     bits >>= 1;
                     py++;
                 }
@@ -73,6 +77,46 @@ void moy_spr(moy_canvas *c, const moy_sheet *s, int n, int x, int y,
     fx = flip & MOY_FLIP_X;
     fy = (flip >> 1) & 1;
     if (scale < 1) scale = 1;
+    if (scale == 1) {
+        /* The hot path, and the reason it is written out rather than left to
+         * moy_put: at scale 1 the camera offset and the clip rect are the same
+         * for all 64 pixels, so resolving them ONCE into loop bounds removes
+         * two subtractions and four comparisons per pixel. Measured on an
+         * ESP32-P4 -- where a 256 KB L2 makes instruction count the limit
+         * rather than memory bandwidth -- the per-pixel form cost 1.8x on spr
+         * and 2.1x on map (which is spr in a loop) against a kernel that
+         * hoisted them. A bandwidth-bound board hides that entirely, which is
+         * why it went unnoticed: the ESP32-S3 measured 1.06x for the same code.
+         *
+         * The pixels are identical by construction: same source order, same
+         * store, and the same transparency answer -- the general path's third
+         * test, `p < 0`, cannot fire on either, because a sheet pixel is a
+         * uint8_t. The conformance goldens are what say so rather than this
+         * comment. */
+        int px0 = x - c->cam_x, py0 = y - c->cam_y;
+        int gx0 = px0 > c->clip_x0 ? px0 : c->clip_x0;
+        int gy0 = py0 > c->clip_y0 ? py0 : c->clip_y0;
+        int gx1 = px0 + MOY_TILE < c->clip_x1 ? px0 + MOY_TILE : c->clip_x1;
+        int gy1 = py0 + MOY_TILE < c->clip_y1 ? py0 + MOY_TILE : c->clip_y1;
+        const uint8_t *spix = s->pix;
+        const uint8_t *palt = c->palt;
+        const moy_pixel *store = c->store;
+        int cw = c->w, py, px;
+        if (gx0 >= gx1 || gy0 >= gy1) return;
+        for (py = gy0; py < gy1; py++) {
+            int ty = py - py0;
+            const uint8_t *srow = spix + (size_t)(oy + (fy ? MOY_TILE - 1 - ty : ty))
+                                       * MOY_SHEET_W + ox;
+            moy_pixel *drow = c->pix + (size_t)py * (size_t)cw;
+            for (px = gx0; px < gx1; px++) {
+                int tx = px - px0;
+                int p = srow[fx ? MOY_TILE - 1 - tx : tx];
+                if (p == colorkey || palt[p & 63]) continue;
+                drow[px] = store[p & 63];
+            }
+        }
+        return;
+    }
     for (sy = 0; sy < MOY_TILE; sy++) {
         int ssy = fy ? (MOY_TILE - 1 - sy) : sy;
         for (sx = 0; sx < MOY_TILE; sx++) {
@@ -82,10 +126,7 @@ void moy_spr(moy_canvas *c, const moy_sheet *s, int n, int x, int y,
              * arrive from three different places: the call's colorkey, a
              * negative sentinel, and the cart's global palt. */
             if (p == colorkey || p < 0 || c->palt[p & 63]) continue;
-            if (scale == 1)
-                moy_put(c, x + sx, y + sy, p);
-            else
-                moy_rect(c, x + sx * scale, y + sy * scale, scale, scale, p);
+            moy_rect(c, x + sx * scale, y + sy * scale, scale, scale, p);
         }
     }
 }
@@ -96,7 +137,19 @@ void moy_sspr(moy_canvas *c, const moy_sheet *s, int sx, int sy, int sw, int sh,
     /* Addresses the sheet in PIXELS and scales arbitrarily -- that is the whole
      * difference from spr. Nearest-neighbour. PROVISIONAL (SPEC.md 6.1). */
     int i, j, fx = flip & 1, fy = (flip >> 1) & 1;
+    moy_ds d;
+    const uint8_t *palt;
+    const moy_pixel *store;
     if (sw <= 0 || sh <= 0 || dw <= 0 || dh <= 0) return;
+    d = moy_ds_of(c);
+    palt = c->palt;
+    store = c->store;
+    /* The source step stays a DIVISION rather than an incremental error term.
+     * Stepping looks like the obvious win and measured a LOSS: the common
+     * shape here is a 1-pixel-wide column (a raycaster wall slice), where
+     * dw == 1 makes the division trivial and the carry loop pure overhead --
+     * 6477 -> 6796 us on an ESP32-P4. Hoisting the draw state out of the
+     * per-pixel path is where the real gain was. */
     for (j = 0; j < dh; j++) {
         int v = (j * sh) / dh;
         int ty = dy + j;
@@ -105,8 +158,8 @@ void moy_sspr(moy_canvas *c, const moy_sheet *s, int sx, int sy, int sw, int sh,
             int u = (i * sw) / dw, p;
             if (fx) u = sw - 1 - u;
             p = moy_sheet_pget(s, sx + u, sy + v);
-            if (p == colorkey || c->palt[p & 63]) continue;
-            moy_put(c, dx + i, ty, p);
+            if (p != colorkey && !palt[p & 63])
+                moy_ds_put(&d, dx + i, ty, store[p & 63]);
         }
     }
 }
@@ -142,9 +195,14 @@ void moy_tline(moy_canvas *c, const moy_sheet *s, const moy_map *m,
     int err = dx + dy;
     int tw = m->w * MOY_TILE, th = m->h * MOY_TILE;
     int32_t tu, tv, uu, vv, dur, dvr;
-    const uint8_t *cells, *spix;
+    const uint8_t *cells, *spix, *palt;
+    const moy_pixel *store;
+    moy_ds d;
     int mw;
     if (tw <= 0 || th <= 0) return;
+    d = moy_ds_of(c);
+    palt = c->palt;
+    store = c->store;
     tu = (int32_t)tw << 16;
     tv = (int32_t)th << 16;
     uu = u % tu;   if (uu < 0) uu += tu;
@@ -161,8 +219,8 @@ void moy_tline(moy_canvas *c, const moy_sheet *s, const moy_map *m,
             int tid = cell - 1;
             int p = spix[((tid >> 4) * MOY_TILE + (py & 7)) * MOY_SHEET_W
                          + (tid & 15) * MOY_TILE + (px & 7)];
-            if (p != colorkey && !c->palt[p & 63])
-                moy_put(c, x0, y0, p);
+            if (p != colorkey && !palt[p & 63])
+                moy_ds_put(&d, x0, y0, store[p & 63]);
         }
         uu += dur; if (uu >= tu) uu -= tu; else if (uu < 0) uu += tu;
         vv += dvr; if (vv >= tv) vv -= tv; else if (vv < 0) vv += tv;

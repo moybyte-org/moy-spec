@@ -49,6 +49,13 @@ jobs:
         run: make conform
         working-directory: libmoy
 
+      # The same goldens against the direct-colour build. SPEC.md 1.1 lets a
+      # host keep RGB565 pixels instead of indices; that is only true while
+      # both builds draw the same frames, and only this job can say so.
+      - name: Conformance (the RGB565 build -- SPEC.md 1.1)
+        run: make conform-565 CFLAGS="-std=c99 -O2 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wstrict-prototypes -Werror -Iinclude"
+        working-directory: libmoy
+
       # SPEC.md 8's semantics, numerically: 8.3 exempts audio from pixel
       # conformance, so this is the synth's whole gate.
       - name: Audio semantics

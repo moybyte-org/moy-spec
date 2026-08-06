@@ -216,7 +216,7 @@ done:
 
 /* ----------------------------------------------------------- replay ----- */
 
-static uint8_t frame[MOY_W * MOY_H];
+static moy_pixel frame[MOY_W * MOY_H];
 
 int main(int argc, char **argv)
 {
@@ -309,7 +309,30 @@ int main(int argc, char **argv)
 
     f = fopen(out_path, "wb");
     if (!f) { perror(out_path); return 2; }
+#ifdef MOY_PIXEL_RGB565
+    /* SPEC.md 11 goldens are INDEX frames, and that is the point of writing one
+     * here: the direct-colour build must resolve back to exactly the frame the
+     * index build produces, or its early colour resolution lost something. A
+     * word with no palette entry is a hard failure, not a rounding matter. */
+    {
+        uint8_t idx[MOY_W * MOY_H];
+        size_t k;
+        for (k = 0; k < (size_t)(MOY_W * MOY_H); k++) {
+            int pi, hit = -1;
+            for (pi = 0; pi < MOY_PALETTE; pi++)
+                if (c.wire[pi] == frame[k]) { hit = pi; break; }
+            if (hit < 0) {
+                fprintf(stderr, "trace_replay: pixel %u = 0x%04X is not a "
+                        "palette colour\n", (unsigned)k, (unsigned)frame[k]);
+                return 3;
+            }
+            idx[k] = (uint8_t)hit;
+        }
+        fwrite(idx, 1, sizeof idx, f);
+    }
+#else
     fwrite(frame, 1, sizeof frame, f);
+#endif
     fclose(f);
     free(blob);
     return 0;

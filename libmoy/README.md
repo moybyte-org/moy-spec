@@ -69,7 +69,34 @@ waist, and the Lua binding is the evidence: `src/moy_lua.c` is ~400 lines, which
 is what a WASM import table or a native binding would also cost. If binding a
 language took a thousand lines the "narrow waist" claim would be false.
 
-`moy_canvas` is a plain struct you place yourself. Nothing here calls `malloc`.
+`moy_canvas` is a plain struct you place yourself. Nothing here calls `malloc`,
+and since the raster is integer-only it does not need libm either.
+
+## Two pixel formats, one raster
+
+SPEC.md §1.1 lets a host keep the canvas as RGB565 rather than palette indices:
+*"a host rendering direct to RGB565 pays 150 KB instead — its choice, not the
+cart's."* That choice is a compile flag here, not a fork:
+
+```
+cc -DMOY_PIXEL_RGB565 ...        /* moy_pixel is uint16_t; 153,600 B */
+cc ...                           /* moy_pixel is uint8_t;   76,800 B */
+```
+
+On the 565 build you hand the canvas your panel's word for each of the 64
+colours once (`moy_canvas_wire`, which is also where a byte-swapped panel is
+accommodated), every verb writes those words directly, and the flush is a
+`memcpy` instead of a palette pass. Everything else is the same source: the
+format-aware code is `src/moy_pixel.h`, about sixty lines, and no verb knows
+which build it is in. `make conform-565` runs the whole suite against it — the
+replayer resolves back to indices first, so **both builds are judged by the same
+golden frames**, which is what makes this a host's choice rather than a second
+raster to keep in step.
+
+Which is faster depends on the board, and the difference is smaller than the
+argument about it. Indices win where a verb is write-bandwidth-bound (fills)
+and cost a palette pass at flush; 565 wins that pass back and suits a display
+pipeline — or a 2D accelerator — that cannot consume indices.
 
 ## The palette and the font are generated
 

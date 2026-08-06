@@ -94,6 +94,20 @@ conform: all
 	cd $(SPEC) && python3 conformance/run.py --player \
 	  "$(CURDIR)/test/replay_cart.sh {cart} {out}"
 
+# The SAME suite against the direct-colour build (MOY_PIXEL_RGB565): identical
+# geometry, colour resolved at draw time into a 16-bit buffer instead of at
+# flush. The replayer resolves back to indices before writing, so both builds
+# are judged by the same goldens -- which is the only thing that makes the
+# pixel format a host's choice (SPEC.md 1.1) rather than a fork of the raster.
+BUILD565 := build/565
+conform-565:
+	@mkdir -p $(BUILD565)
+	$(CC) $(CFLAGS) -DMOY_PIXEL_RGB565 -o $(BUILD565)/trace_replay \
+	  test/trace_replay.c $(SRC) $(LDLIBS)
+	cd $(SPEC) && MOY_REPLAY="$(CURDIR)/$(BUILD565)/trace_replay" \
+	  python3 conformance/run.py --player \
+	  "$(CURDIR)/test/replay_cart.sh {cart} {out}"
+
 # The same suite through the REAL path: an actual .moy cart, parsed and run as
 # Lua, rather than a recorded trace. This is what a finished host does, so it
 # checks the binding and the sandbox as well as the raster.
