@@ -80,11 +80,12 @@ with a ~50-line `moy_cart.h` of import declarations
 this repository once the ABI freezes. `zig build-exe -target wasm32-freestanding`
 and Rust's `wasm32-unknown-unknown` produce the same module with zero setup.
 
-## The framebuffer contract — the one new verb
+## The framebuffer contract — the new verbs
 
 The measured blocker is not speed but the boundary: a compiled cart reaching
 pixels through the `pix` import pays a trampoline per pixel — 76,800 crossings
-per frame, dead at any VM speed. The fix is one import:
+per frame, dead at any VM speed. The fix is an import that hands over a whole
+frame at once:
 
 ```c
 void blit(i32 ptr, i32 pal_ptr);   /* ptr: 76,800 bytes in linear memory, one
@@ -109,9 +110,9 @@ and flashes, palette cycling (plasma, waterfalls), and — the case that surface
 it — emulation. An emulated console's palette RAM changes at runtime; with a
 per-frame palette, any game holding ≤ 64 simultaneous colors maps exactly,
 fades included. (The NES needs none of this: its 54-entry master palette is
-fixed hardware and fits §2.2 as-is. The GB's 4 shades likewise. GBA/SNES
-titles at full palette load stay out — > 64 simultaneous is the line, and
-per-scanline palettes are a bridge deliberately not crossed.)
+fixed hardware and fits §2.2 as-is. The GB's 4 shades likewise. Per-scanline
+palettes remain a bridge deliberately not crossed; above 64 simultaneous, see
+`blit565` below.)
 
 Measured budget: ~4.6 M pixel-writes/s from AOT code into linear memory against
 476 M ops/s of arithmetic — a full-screen software raster lands ~17 ms on the
@@ -122,6 +123,103 @@ stays opaque, and hosts keep every freedom of depth, scale and byte order.
 Assets stay host-side (`spr`, `map`, `sspr` render as ever). A later revision may
 add read-only asset access into linear memory (`sheet_read(ptr)`-shaped) if a
 ported engine demonstrates the need; it is deliberately absent until one does.
+
+### Full colour — `blit565`, and why it is not the default
+
+64 colors is a palette ceiling, not a hardware one, and it is the wrong ceiling
+for a tier whose reason to exist is ports and commercial work. Content that was
+never palettized — gradients, shaded 3D, photographic art — cannot be submitted
+through `blit` without the cart quantizing or dithering it first. So a second
+submission format, alongside the first, never replacing it:
+
+```c
+void blit565(i32 ptr);   /* ptr: 153,600 bytes in linear memory, RGB565
+                            LITTLE-ENDIAN, row-major 320 × 240 */
+```
+
+Same rules as `blit`: at most once per `_draw`, host validates the range, the
+result is treated exactly as a §6-drawn frame, freely mixed with ordinary verbs
+in call order.
+
+**The byte order is fixed by this document, and is not "whatever the panel
+wants."** That is the whole difference between a portable contract and a device
+one — the moment the submitted layout tracks the display, a cart writes to
+*that* framebuffer rather than *a* framebuffer and §12.6 is quietly reopened. A
+host with a byte-swapped 16-bit panel swaps; a browser expands to RGBA8888; a
+desktop player expands to RGB888. Those conversions are dependency-free
+streaming loops and run at roughly copy speed, which is what makes fixing the
+order affordable rather than pious. Pinning it also keeps this tier
+golden-checkable: a `blit565` frame hashes as deterministically as an indexed
+one, so §11 conformance reaches compiled carts without a second mechanism.
+
+**Do not reach for it expecting speed. It is slower on both sides of the
+boundary.** Measured on an ESP32-P4 (360 MHz, PSRAM 200 MHz, 256 KB L2, `-O2`),
+one rasterizer compiled twice from a single source, differing only in stored
+pixel type:
+
+| the cart's own raster | 8-bit indices | RGB565 |
+|---|---|---|
+| filled rects | 988 µs | 1292 µs (**+31%**) |
+| textured scanlines | 6780 µs | 7455 µs (+10%) |
+| scaled sprite columns | 7921 µs | 8518 µs (+7.5%) |
+| triangles | 4789 µs | 5004 µs (+4.5%) |
+
+Two bytes per pixel is twice the store traffic, and a software rasterizer is
+store-bound. Against the ~17 ms full-screen budget above, choosing `blit565`
+costs the cart **+0.8 to +5.3 ms** — and it saves the host only ~0.8 ms, the
+difference between resolving a palette (1148 µs with a pixel-pair LUT; 2026 µs
+with the per-pixel loop both current implementations still use) and copying
+153,600 bytes (344 µs). Best case a wash, worst case six times worse. The
+palette resolve does not close that gap with more optimization either: every
+lookup's address depends on the byte just loaded, so it plateaus around 3× a
+copy where a copy has no dependency chain at all.
+
+**On the floor board it is not close.** Same bench, ESP32-S3 at 240 MHz with
+octal PSRAM and no L2 — the board a cart is most likely to be too slow on, and
+therefore the one that decides:
+
+| the cart's own raster | 8-bit indices | RGB565 |
+|---|---|---|
+| filled rects | 3226 µs | 10615 µs (**3.3×**) |
+| triangles | 9410 µs | 21853 µs (**2.3×**) |
+| scaled sprite columns | 18466 µs | 25163 µs (1.4×) |
+| textured scanlines | 18275 µs | 20823 µs (1.1×) |
+
+A 32-bit fill store covers four indexed pixels and only two RGB565 ones, and
+with no cache to absorb it the wider format is paid in full. The host side
+inverts too: with the source half the size, the palette resolve is **cheaper
+than the copy it would replace** — 1681 µs against 2483 µs into the panel's
+bounce buffer. So on this board `blit565` costs the cart up to 3.3× and saves
+the host nothing at all.
+
+The rule that follows: **a cart that could have been indexed should stay
+indexed.** `blit565` is for carts whose pixels are inherently direct-color,
+where the indexed route would cost a quantization pass rather than save a store.
+On the faster board that rule is advice; on the floor board it is close to a
+requirement, and a cart that ignores it will be judged on the floor board.
+
+(Floor-board figures are at 80 MHz PSRAM, not the 120 MHz the reference console
+ships: that board's flash is not verified for the high-performance mode
+`SPIRAM_SPEED_120M` requires, and a 120 MHz build aborts in MSPI timing init.
+80 MHz makes external memory dearer than it really is, so the margins above are
+generous — but the 3.3× is far outside what a bus-speed correction reaches, and
+the internal-SRAM rows do not depend on it at all.)
+
+**Memory.** 153,600 bytes against §1.1's 192 KB cart heap leaves ~40 KB for the
+game, which is not a budget. On the floor board it is worse than a budget
+problem: with the console's own 76,800-byte canvas resident, a second
+153,600-byte buffer **could not be allocated contiguously in internal SRAM at
+all** — on an otherwise empty heap, before MicroPython, the Lua allocator's
+48 KB floor or the DMA buffers exist. A `blit565` cart there is committed to
+external memory for its framebuffer, which is exactly where the 3.3× above
+comes from. §1.1's ≈400 KB is a **tier-1 floor**: it exists so
+the script tier stays implementable on modest hardware, and it is stated in
+terms of a host that owns every pixel. This tier owns none of that — a host
+implementing it already carries a WASM runtime, an AOT toolchain, and on the
+reference RISC-V board a dedicated XIP flash partition. Nothing that can do
+those things is short of RAM. **The compiled tier therefore declares its own
+floor** rather than bending tier 1's, and `blit565`'s framebuffer is the reason
+the number has to move. Sizing it is open item 8.
 
 ## PCM audio — the hardware tier's second gap
 
@@ -202,7 +300,8 @@ from this spec.
    `--target=xtensa`. Decides whether the slower board is in scope and whether it
    skips the XIP install entirely.
 2. **Build `blit`** and measure the real full-frame cost through the console's
-   frame loop, not a bare harness.
+   frame loop, not a bare harness. `blit565` rides the same item — the two
+   differ only in whether the host resolves a palette or copies.
 3. **One integrated cart** — the flat-shaded raycaster in C is the natural twin,
    since its Lua sibling is already measured on glass.
 4. **A wasm twin of one conformance scene** passing the existing goldens — the
@@ -211,3 +310,17 @@ from this spec.
 6. **User-file access** (moybyte#108) is orthogonal but blocks the e-reader class
    of ports either way; the WASI-subset question belongs to that issue, not this
    one.
+7. ~~**The `blit565` penalty on the floor board.**~~ **Measured 2026-08-06**, and
+   the prediction held with room to spare: the cart-side cost widened from
+   +4.5–31 % to **1.1–3.3×**, and the host-side saving did not merely narrow, it
+   went negative — the palette resolve is *cheaper* than the copy `blit565`
+   would substitute for. Both boards' figures are in the section above. What
+   remains open is only the bus speed: the floor-board run is at 80 MHz PSRAM
+   because that board's flash is not verified for the high-performance mode
+   `SPIRAM_SPEED_120M` needs. A 120 MHz rerun on verified flash would shrink the
+   PSRAM-resident margins; it cannot reach the internal-SRAM rows or the
+   allocation result.
+8. **Size the compiled tier's memory floor.** §1.1's ≈400 KB is tier 1's and
+   stays there. This tier needs its own number, and `blit565`'s 153,600-byte
+   framebuffer is most of the reason. Wants one integrated cart (item 3) to
+   measure against rather than a derivation.
