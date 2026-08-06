@@ -20,8 +20,10 @@ verified is just a record of what the code did that day:
      own carts do not pass the loader, the suite is not testing what it claims.
 
 PROVENANCE: these goldens are rendered by moycore, and the WebAssembly player
-SPEC.md 11 names as the tiebreaker agrees with them on all 7 core scenes, pixel
-for pixel -- see conformance/player.mjs and the README.
+SPEC.md 11 names as the tiebreaker agrees with them on every scene -- along with
+libmoy, the reference console, and an ESP32-P4. See the README, which is also
+where the LIMITS of that agreement are recorded: all but the board share one
+lineage.
 """
 
 import hashlib
@@ -183,10 +185,11 @@ def main():
         "generated_by": "moycore %s" % moycore.__version__,
         "provenance": (
             "Rendered by moycore. Confirmed pixel-identical on all core scenes "
-            "by two other implementations: the reference console's own "
-            "rasterizer (conformance/parity.py) and the shipped WebAssembly "
-            "player's JavaScript replayer (conformance/player.mjs), the "
-            "tiebreaker SPEC.md 11 names."),
+            "by the reference console's own rasterizer (conformance/parity.py), "
+            "by libmoy and the WebAssembly player built from it (the tiebreaker "
+            "SPEC.md 11 names), and by an ESP32-P4 over serial. Note that all "
+            "but the board share moycore's lineage -- see conformance/README.md, "
+            "'The independent check, and its loss'."),
         "scenes": manifest_scenes,
     }, indent=2) + "\n")
     print("\n%d scenes built (%d in core conformance)."

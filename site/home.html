@@ -24,9 +24,9 @@
 <section id="play" class="play">
   <div class="play-in">
     <h2>Play one, right here</h2>
-    <p class="note">Running in the reference player &mdash; the console compiled to
-      WebAssembly, served from this page and nowhere else. The same cart draws the
-      same pixels on an ESP32 handheld.</p>
+    <p class="note">Running in this repository's own player &mdash; the C console
+      compiled to WebAssembly, served from this page and nowhere else. The same
+      code, compiled for ESP32 instead, draws the same pixels on a handheld.</p>
     <div class="demotabs">
 {{DEMOTABS}}
     </div>
@@ -37,7 +37,7 @@
       <iframe src="play/" id="demo" title="The moy web player" loading="lazy"
               allow="autoplay"></iframe>
     </div>
-    <p class="hint">≈1 MB of player and cart per demo.
+    <p class="hint">≈300 KB of player and cart per demo.
       <a id="demofull" href="play/">Open it full screen ↗</a> — and
       <code>python3 moy.py export</code> turns any cart into exactly this.</p>
   </div>

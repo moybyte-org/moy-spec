@@ -49,7 +49,7 @@ jobs:
                    style.css palette.json font.bin \
                    play/index.html play/carts.json \
                    verbs/index.html verbs/carts.json \
-                   play/micropython.mjs play/micropython.wasm; do
+                   play/moy.mjs play/moy.wasm play/player.js; do
             test -s "_site/$f" || { echo "missing or empty: $f"; exit 1; }
           done
           grep -q 'iframe src="play/"' _site/index.html

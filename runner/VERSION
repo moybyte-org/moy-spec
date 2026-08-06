@@ -1,29 +1,27 @@
 {
-  "bundle": "moy-player",
-  "channel": "beta",
+  "bundle": "moy web player (libmoy/port/wasm)",
   "files": {
     "index.html": {
-      "bytes": 54426,
-      "sha256": "fe91083ea83f184297e2d46342886bafb24af7c3e3dcc454c047de6e75f481e2"
+      "bytes": 2416,
+      "sha256": "92551e7d0f9328ff5bd9a63ec834d4529304b8017f09e2d735833ef396b14e73"
     },
-    "micropython.mjs": {
-      "bytes": 108101,
-      "sha256": "11aa07cba462448da83f9c45889863e1be7efe23b2b273b8082c1a0b94289724"
+    "moy.mjs": {
+      "bytes": 15407,
+      "sha256": "92635862df05dc0f46aca3a932cab4c2a532c108b440a80e1feb943b90109233"
     },
-    "micropython.wasm": {
-      "bytes": 824856,
-      "sha256": "c38a98d72bd49d749958a25c761d1e264a31d7f0c4e15695848ccc7d37064f87"
+    "moy.wasm": {
+      "bytes": 265079,
+      "sha256": "485349e23eeafeb054ae665ed5b7472db3bd1e091b430aa62d01edfc9827ea04"
     },
-    "worker.js": {
-      "bytes": 14345,
-      "sha256": "32cd23035a9ba02b001905b00992f1ea9cac3814eb23f9c906b9e8b6e20e7562"
+    "player.js": {
+      "bytes": 14917,
+      "sha256": "5f7b86d36850e180ab6ffb1b2f2082a0cb27916999a3c14f87d3a8490faf8d6a"
     }
   },
   "source": {
-    "branch": "dev",
-    "commit": "ae201ccbcaaba0eea93d6eab02ea98bab0e6cd08",
-    "dirty": false,
-    "repo": "moybyte"
+    "branch": "main",
+    "commit": "5c15524d51f507cc7a368ee0b8c72622f3f8e553",
+    "dirty": true
   },
-  "spec_bundle": true
+  "toolchain": "emscripten 6.0.4"
 }

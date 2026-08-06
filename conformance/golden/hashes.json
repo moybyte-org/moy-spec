@@ -6,7 +6,7 @@
     "h": 240
   },
   "generated_by": "moycore 0.1.0",
-  "provenance": "Rendered by moycore. Confirmed pixel-identical on all core scenes by two other implementations: the reference console's own rasterizer (conformance/parity.py) and the shipped WebAssembly player's JavaScript replayer (conformance/player.mjs), the tiebreaker SPEC.md 11 names.",
+  "provenance": "Rendered by moycore. Confirmed pixel-identical on all core scenes by the reference console's own rasterizer (conformance/parity.py), by libmoy and the WebAssembly player built from it (the tiebreaker SPEC.md 11 names), and by an ESP32-P4 over serial. Note that all but the board share moycore's lineage -- see conformance/README.md, 'The independent check, and its loss'.",
   "scenes": [
     {
       "name": "primitives",

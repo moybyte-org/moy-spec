@@ -10,7 +10,7 @@ art tools already work; this CLI supplies the loop around them.
     moy.py run <cart.moy>        play the cart in your browser with HOT
                                  RELOAD: save a file, the game restarts in
                                  under a second
-    moy.py export <cart.moy>     the publishable web bundle: ~1.1MB of static
+    moy.py export <cart.moy>     the publishable web bundle: ~300KB of static
                                  files that boot straight into the game --
                                  host anywhere (itch.io HTML5 uploads work)
     moy.py port <cart.p8|url>    convert a PICO-8 cart: assets via p8_import,
@@ -36,9 +36,9 @@ Before you ship, and to work with the art tools you already own:
           [--import file.csv]
     moy.py conform [--player C]  run the conformance suite (SPEC.md 11)
     moy.py player                which player build runner/ holds, and whether
-          [--update]             its files still match; --update pins the
-          [--channel beta]       latest CONFORMANCE-GATED release, or a local
-          [--from dist-spec/]    build if you are working on the player
+          [--build]              its files still match; --build recompiles it
+                                 from libmoy (needs emscripten -- nothing else
+                                 here does)
     moy.py play <cart.moy>       run the cart in the NATIVE desktop player
                                  (moy-play, the C console -- ships beside moy
                                  in the release download). `run` is the dev
@@ -50,9 +50,9 @@ Before you ship, and to work with the art tools you already own:
                                  found, --to skips probing (a directory, a
                                  port, or a URL)
 
-Pure Python stdlib, no dependencies. The player it wraps is runner/ (see
-runner/BUILD.md); the spec it implements is SPEC.md; the console as a library
-is moycore/.
+Pure Python stdlib, no dependencies. The player it wraps is runner/ -- libmoy
+compiled to WebAssembly (see runner/BUILD.md); the spec it implements is
+SPEC.md; the console as a library is moycore/.
 """
 
 import http.server
@@ -72,9 +72,10 @@ PROG = "moy" if FROZEN else "moy.py"
 
 
 def _user_runner():
-    """Where `player --update` may write when frozen: a per-user data dir.
-    The bundled runner/ updates with every moy release; this dir exists only
-    if the user explicitly pinned a different player, and then wins."""
+    """A per-user override for the player, when frozen: a data dir the user can
+    drop their own build into. The bundled runner/ ships with every moy release
+    and is what almost everyone gets; this dir exists only if someone building
+    the player themselves wants their build used, and then wins."""
     if sys.platform == "win32":
         base = os.environ.get("LOCALAPPDATA",
                               os.path.expanduser("~\\AppData\\Local"))
@@ -97,22 +98,21 @@ def _pick_runner():
 
 
 RUNNER = _pick_runner()
-# Which files the player bundle contains is the PLAYER's business, not this
-# CLI's -- it grew a worker.js when the console moved off the main thread. So
-# the pin (runner/VERSION) is authoritative, and an unpinned runner/ is read
-# from disk rather than guessed at. These are the files in runner/ that belong
-# to THIS repository rather than to the player, and are never exported.
+# Which files the player bundle contains is the BUILD's business, not this
+# CLI's -- it grew a worker.js once, and lost it again when the console stopped
+# being an interpreter. So the stamp (runner/VERSION) is authoritative, and an
+# unstamped runner/ is read from disk rather than guessed at. These are the
+# files in runner/ that belong to THIS repository rather than to the player,
+# and are never exported.
 VERSION_FILE = "VERSION"
 RUNNER_NOT_PLAYER = frozenset((VERSION_FILE, "BUILD.md", "THIRD_PARTY.md"))
 
-# Where `moy.py player --update` fetches from. The reference implementation
-# publishes a rolling release per branch, and each one is CONFORMANCE-GATED:
-# its CI runs this repository's suite against the bundle and refuses to publish
-# a player that fails. So "update" cannot quietly hand you a broken tiebreaker.
-PLAYER_REPO = "moybyte-org/moybyte"
-PLAYER_CHANNELS = {"stable": "player-latest", "beta": "player-beta"}
-PLAYER_ASSET = "moy-player.tar.gz"
-PLAYER_MANIFEST = "MANIFEST.json"
+# The player is built HERE, from libmoy: `libmoy/port/wasm/build.sh` compiles
+# the same C console an ESP32 links, through emscripten, into runner/. It used
+# to be vendored from the reference implementation's MicroPython build and
+# pinned by hash, which made the spec's own player a downstream artifact of one
+# implementation -- and shipped an 825 KB interpreter to run a Lua cart.
+PLAYER_BUILD = os.path.join("libmoy", "port", "wasm", "build.sh")
 DEFAULT_PORT = 8323
 
 # The spec manifest (SPEC.md 3.1) -- brand-neutral, fields the spec defines.
@@ -605,18 +605,18 @@ def runner_files():
         missing = [n for n in want if not os.path.isfile(os.path.join(RUNNER, n))]
         if missing:
             die("runner/ is missing %s -- the pin (runner/%s) lists it. "
-                "Re-run `moy.py player --update`."
+                "Rebuild it with `%s player --build`." % PROG
                 % (", ".join(missing), VERSION_FILE))
         return tuple(want)
     # Unpinned: the player is whatever is there, minus this repository's own
     # documentation of it.
     if not os.path.isdir(RUNNER):
-        die("no runner/ -- run `moy.py player --update` to fetch the player")
+        die("no runner/ -- build the player with `%s player --build`" % PROG)
     found = tuple(sorted(
         f for f in os.listdir(RUNNER)
         if os.path.isfile(os.path.join(RUNNER, f)) and f not in RUNNER_NOT_PLAYER))
     if not found:
-        die("runner/ has no player files -- run `moy.py player --update`")
+        die("runner/ has no player files -- build it with `%s player --build`" % PROG)
     return found
 
 
@@ -646,133 +646,54 @@ def _verify(pin, root, label="runner/"):
 
 
 def cmd_player(args):
-    """Show or update the pinned web player.
+    """Show, verify, or rebuild the web player.
 
-    The player is a BUILD, not source -- emsdk plus a MicroPython checkout,
-    which is not something this repository asks anyone to reproduce. So it is
-    vendored, and this pins WHICH build so the answer to "which player is this"
-    is in the tree rather than in someone's memory. `--update` is then an
-    ordinary reviewable commit: the pin moves, the hashes move with it.
+    runner/ is a BUILD -- libmoy plus Lua plus port/wasm/main.c through
+    emscripten -- and it is checked in so that `run` needs nothing but Python
+    and a browser, which is what the README promises. VERSION records which
+    build it is (the commit, and a sha256 per file), so "which player is this?"
+    has an answer in the tree and a rebuild is an ordinary reviewable diff.
 
-    Vendored rather than fetched on demand, deliberately: the README promises
-    Python and a browser and nothing else, and a `moy.py run` that needs the
-    network on first use would not be that.
+    --build re-runs the build script. That is the only thing here that needs
+    emscripten; playing carts never does.
     """
-    global RUNNER
-    channel = "stable"
-    if "--channel" in args:
-        channel = args[args.index("--channel") + 1]
-    if channel not in PLAYER_CHANNELS:
-        die("unknown channel %r (want: %s)" % (channel, ", ".join(sorted(PLAYER_CHANNELS))))
-
-    if "--update" not in args:
+    if "--build" in args:
         if FROZEN:
-            print("player files: %s%s" % (
-                RUNNER, "" if RUNNER == _user_runner()
-                else "  (bundled with this build)"))
-        pin = _pin()
-        if pin is None:
-            print("runner/: not pinned (no %s)" % VERSION_FILE)
-            print("  this bundle was copied by hand; `moy.py player --update` pins it")
-            return
-        src = pin.get("source", {})
-        print("runner/: %s @ %s" % (pin.get("bundle", "?"), (src.get("commit") or "?")[:12]))
-        print("  channel  %s" % pin.get("channel", "?"))
-        print("  branch   %s%s" % (src.get("branch", "?"),
-                                   "  (BUILT FROM A DIRTY TREE)" if src.get("dirty") else ""))
-        bad = _verify(pin, RUNNER)
-        for b in bad:
-            print("  MISMATCH %s" % b)
-        print("  %d files, %s" % (len(pin.get("files", {})),
-                                  "all match the pin" if not bad else "SEE ABOVE"))
-        if bad:
-            sys.exit(1)
+            die("this is a release binary -- build the player from a checkout")
+        script = os.path.join(HERE, PLAYER_BUILD)
+        if not os.path.isfile(script):
+            die("no %s in this checkout" % PLAYER_BUILD)
+        import subprocess
+        rc = subprocess.call([script, RUNNER])
+        if rc != 0:
+            sys.exit(rc)
+        print("")
+        print("runner/ rebuilt; commit the diff -- that is the review")
         return
 
-    import tarfile
-    import tempfile
-    import urllib.request
-
-    # Frozen, the bundle is read-only (and gone on exit) -- an explicit pin
-    # lives in the per-user dir, which _pick_runner prefers from then on.
     if FROZEN:
-        RUNNER = _user_runner()
-        os.makedirs(RUNNER, exist_ok=True)
-
-    # --from <dir>: pin a bundle built locally (firmware/web_runner/dist-spec)
-    # instead of a release. For anyone working ON the player -- otherwise
-    # testing a change to it means pushing, waiting for CI, and pulling back
-    # the thing you already have on disk.
-    local = args[args.index("--from") + 1] if "--from" in args else None
-    tmp = tempfile.mkdtemp(prefix="moy-player-")
-    try:
-        if local:
-            if not os.path.isfile(os.path.join(local, PLAYER_MANIFEST)):
-                die("%s has no %s -- is it a built bundle?" % (local, PLAYER_MANIFEST))
-            print("pinning the local bundle at %s" % local)
-            stage = local
-            with open(os.path.join(local, PLAYER_MANIFEST), encoding="utf-8") as f:
-                pin = json.load(f)
-            channel = "local"
-        else:
-            tag = PLAYER_CHANNELS[channel]
-            base = "https://github.com/%s/releases/download/%s/" % (PLAYER_REPO, tag)
-            print("fetching %s (%s)" % (tag, channel))
-            man_path = os.path.join(tmp, PLAYER_MANIFEST)
-            urllib.request.urlretrieve(base + PLAYER_MANIFEST, man_path)
-            with open(man_path, encoding="utf-8") as f:
-                pin = json.load(f)
-        src = pin.get("source", {})
-        print("  %s @ %s (%s)" % (pin.get("bundle", "?"), (src.get("commit") or "?")[:12],
-                                  src.get("branch", "?")))
-        if src.get("dirty"):
-            # The artifact corresponds to no commit, so the sha above cannot be
-            # used to reproduce it or to review what went into it.
-            die("that build came from a dirty tree; refusing to pin it")
-
-        if not local:
-            tgz = os.path.join(tmp, PLAYER_ASSET)
-            urllib.request.urlretrieve(base + PLAYER_ASSET, tgz)
-            stage = os.path.join(tmp, "stage")
-            os.makedirs(stage)
-            with tarfile.open(tgz) as tf:
-                for m in tf.getmembers():
-                    # A release asset is remote input: refuse paths, links and
-                    # anything that is not a plain file before it touches disk.
-                    if not m.isfile() or "/" in m.name.lstrip("./") or m.name.startswith("/"):
-                        if m.name not in (".", "./"):
-                            die("unexpected entry in the release archive: %r" % m.name)
-                        continue
-                    tf.extract(m, stage)
-
-        bad = _verify(pin, stage, label="")
-        if bad:
-            for b in bad:
-                print("  %s" % b)
-            die("the downloaded bundle does not match its own manifest")
-        print("  %d files, all hashes verified" % len(pin.get("files", {})))
-
-        old = _pin()
-        for name in sorted(pin["files"]):
-            shutil.copy(os.path.join(stage, name), os.path.join(RUNNER, name))
-        # Drop files the previous pin had and this one does not, so the bundle
-        # is what the manifest says rather than a union of every version ever.
-        if old:
-            for name in old.get("files", {}):
-                if name not in pin["files"]:
-                    stale = os.path.join(RUNNER, name)
-                    if os.path.isfile(stale):
-                        os.remove(stale)
-                        print("  removed %s (not in this bundle)" % name)
-        pin["channel"] = channel
-        with open(os.path.join(RUNNER, VERSION_FILE), "w",
-                  encoding="utf-8", newline="\n") as f:
-            json.dump(pin, f, indent=2, sort_keys=True)
-            f.write("\n")
-        print("runner/ updated; %s written" % VERSION_FILE)
-        print("  commit the diff -- that is the review")
-    finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        print("player files: %s%s" % (
+            RUNNER, "" if RUNNER == _user_runner() else "  (bundled with this build)"))
+    pin = _pin()
+    if pin is None:
+        print("runner/: not stamped (no %s)" % VERSION_FILE)
+        print("  `%s player --build` rebuilds it and writes one" % PROG)
+        return
+    src = pin.get("source", {})
+    print("runner/: %s" % pin.get("bundle", "?"))
+    print("  built from  %s%s" % ((src.get("commit") or "?")[:12],
+                                  "  (A DIRTY TREE)" if src.get("dirty") else ""))
+    if src.get("branch"):
+        print("  branch      %s" % src["branch"])
+    if pin.get("toolchain"):
+        print("  toolchain   %s" % pin["toolchain"])
+    bad = _verify(pin, RUNNER)
+    for b in bad:
+        print("  MISMATCH %s" % b)
+    print("  %d files, %s" % (len(pin.get("files", {})),
+                              "all match the stamp" if not bad else "SEE ABOVE"))
+    if bad:
+        sys.exit(1)
 
 
 def cmd_conform(args):

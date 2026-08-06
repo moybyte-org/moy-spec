@@ -55,7 +55,6 @@ scenes.py            the scenes, as Python calls against a Canvas
 trace.py             recorder, replayer, and the Lua cart emitter
 build.py             regenerates traces, carts and goldens (with self-checks)
 run.py               the runner and the player protocol
-player.mjs           runs a cart through the shipped WebAssembly player, headless
 parity.py            moycore vs the reference implementation, byte for byte
 carts/<name>.moy/    a real cart per scene -- what your host runs
 traces/<name>.json   the portable verb trace -- what a port replays
@@ -78,33 +77,55 @@ golden/hashes.json   sha256 per frame, plus the suite manifest
 ## Provenance
 
 The goldens are rendered by **moycore**, and the WebAssembly player SPEC.md 11
-names as the tiebreaker **agrees with them on all 7 core scenes, pixel for
-pixel**:
+names as the tiebreaker agrees with them on every scene:
 
 ```
-python3 conformance/run.py --player "node conformance/player.mjs {cart} {out}"
+python3 conformance/run.py --player "node libmoy/port/wasm/conform.mjs {cart} {out}"
 ```
 
-`player.mjs` boots the shipped player headlessly in plain node — no browser, no
-npm — and rasterizes its command stream through the page's own JavaScript
-replayer, which it extracts from `runner/index.html` at run time rather than
-vendoring (so there is no copy to drift).
+That runs the shipped `runner/moy.wasm` — libmoy compiled by emscripten — under
+plain node, no browser and no npm, and dumps its index framebuffer.
 
-That agreement is worth more than a provenance note, because the JS replayer is
-the only **independent** implementation in the project. moycore was extracted
-from the reference console's rasterizer, so `parity.py` proves the extraction
-faithful but cannot catch a bug that was always in it. The page's replayer is
-hand-written JavaScript sharing no code with either — so where it agrees, the
-agreement means something.
+### The independent check, and its loss
 
-### What running it found
+**This used to be worth more than a provenance note, and now it is worth less.**
+Until 2026-08, the web player was a MicroPython build of the reference console
+that rasterized nothing itself: it emitted draw commands and the *page*
+rasterized them in hand-written JavaScript. `conformance/player.mjs` extracted
+that replayer out of `runner/index.html` at run time and rendered the scenes
+through it.
+
+That made it the project's only **independent** implementation. moycore was
+extracted from the reference console's rasterizer and libmoy is a transcription
+of moycore, so all three share one lineage: `parity.py` proves the extraction
+faithful and the goldens prove the transcription faithful, but neither can catch
+a bug that was in the original. The JS replayer shared no code with any of them,
+so where it agreed, the agreement meant something.
+
+Rebuilding the player from libmoy deleted it. The page no longer rasterizes —
+that is the point, and the reason the bundle went from 1 MB to 296 KB — so there
+is no second raster in it to disagree with the first. What is left is one
+lineage checked against itself, plus real silicon (below) running the C kernel
+for real.
+
+**Getting it back is a small, well-shaped job**: an independent replayer of
+`traces/<name>.json`, written from SPEC.md rather than from moycore, in any
+language. The traces are published for exactly this, and the suite already
+claims a trace replayer is about forty lines. It has not been written, and
+until it is, this section is the honest accounting rather than a boast.
+
+### What the replayer found while it lasted
+
+Its whole value is in this list, which is why the history stays here.
 
 Exactly 200 pixels differed on every scene: a 20×10 box at (299, 229). That is
 `runtime/perf_hud.py`'s FPS chip, drawn by the console into the cart's *own*
 raster. A golden frame must not contain an FPS counter, and neither should
 somebody's published web export. Fixed upstream — the player now takes
 `hud=False` and spec bundles pass it; `MOY_HUD=1` forces the chip back on and
-reproduces the 200 pixels exactly.
+reproduces the 200 pixels exactly. (Moot for the current player, which has no
+console around the cart to draw a chip -- but it was a real bug in a real
+export, and it took a second implementation to see it.)
 
 It also found `sspr` rejecting the 10-argument form SPEC.md 7.1 gives it — a
 cap of 8 in the Lua binding, so the full form had never worked on *any* host,
@@ -119,8 +140,9 @@ four coordinated fixes (the Lua bridge handing back a byte string, a wire form
 that can carry it, a replayer that reads it, and both fonts walking bytes).
 `text_bytes` is a core scene as a result.
 
-**All nine scenes pass on the player**, `provisional` included — so the §6.1
-verbs agree too, even though §11 does not count them yet.
+All ten scenes passed, `provisional` included — so the §6.1 verbs agreed too,
+even though §11 does not count them yet. The player built from libmoy passes
+them all as well; it just is not an independent witness to it.
 
 ## And on real silicon
 
@@ -143,8 +165,10 @@ turned up, both in shared code, so the prediction had been that both were on the
 boards too. The board run turned that prediction into a measurement, and
 reflashing closed both.
 
-So four things now agree on every scene: moycore, the reference console's own
-rasterizer, the web player's JavaScript replayer, and an ESP32-P4.
+So three things agree on every scene: moycore, the reference console's own
+rasterizer, and an ESP32-P4 — and the board is the one that counts for most,
+because it is the only one of the three running a raster the others cannot have
+copied a bug into. libmoy and the web player make five, on the same lineage.
 
 ## Determinism, and one hole in it
 

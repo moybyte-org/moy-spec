@@ -137,6 +137,12 @@ else is libmoy's.
 `port/esp-idf/` is the same shim as an IDF component. Its README is explicit
 about what has and has not been run on hardware.
 
+`port/wasm/` is the third one, and it is the spec's own web player: libmoy plus
+Lua through emscripten, ~296 KB total, built into `runner/` and served by
+`moy.py run`. It replaced a MicroPython-WASM build of the reference console that
+was three times the size and had to carry a second raster in JavaScript, because
+a Python VM cannot fill 76,800 pixels a frame and this can.
+
 ## The sandbox is real, not documentation
 
 SPEC.md 4.1's ceiling is enforced by `io`, `os`, `debug`, `package` and

@@ -1,0 +1,396 @@
+/* The page half of the moy web player.
+ *
+ * Everything below is platform glue -- a canvas, a keyboard, an AudioContext,
+ * localStorage. It draws nothing: the console rasterizes in WebAssembly and
+ * hands over finished RGBA, so this file has no idea what a sprite is. That is
+ * the point of the C port, and the reason this file is ~300 lines rather than
+ * the ~1500 a draw-command replayer costs.
+ */
+
+import createMoy from "./moy.mjs";
+
+const cv = document.getElementById("screen");
+const ctx = cv.getContext("2d", { alpha: false });
+const statusEl = document.getElementById("status");
+const titleEl = document.getElementById("title");
+const padEl = document.getElementById("pad");
+const kbin = document.getElementById("kbin");
+
+let M = null;                 // the wasm module
+let W = 320, H = 240, fps = 30;
+let img = null, running = false, rafId = 0, frames = 0;
+let last = 0, t0 = 0, acc = 0;
+let cartName = "";
+
+function say(text, bad) {
+  statusEl.textContent = text || "";
+  statusEl.className = bad ? "bad" : "";
+}
+
+/* -- cart loading --------------------------------------------------------- */
+/* carts.json is {"<cart>/<relpath>": text} -- the shape `moy run` serves live
+ * and `moy export` writes beside these files. The cart name prefix is stripped
+ * here so the C side sees plain names. */
+
+async function fetchCart() {
+  const r = await fetch("carts.json", { cache: "no-store" });
+  if (!r.ok) throw new Error("no carts.json (" + r.status + ")");
+  return r.json();
+}
+
+function feed(bundle) {
+  const enc = new TextEncoder();
+  for (const key of Object.keys(bundle)) {
+    const slash = key.indexOf("/");
+    const name = slash < 0 ? key : key.slice(slash + 1);
+    if (slash > 0) cartName = key.slice(0, slash);
+    if (name.indexOf("/") >= 0) continue;      // subfolders are not cart files
+    const bytes = enc.encode(bundle[key]);
+    const p = M._malloc(bytes.length + 1);
+    M.HEAPU8.set(bytes, p);
+    M.HEAPU8[p + bytes.length] = 0;
+    const np = M._malloc(name.length * 4 + 1);
+    M.stringToUTF8(name, np, name.length * 4 + 1);
+    M._moy_web_file(np, p, bytes.length);
+    M._free(np);
+    M._free(p);
+  }
+}
+
+/* -- persistence (SPEC.md 9) ---------------------------------------------- */
+/* 256 signed 32-bit slots per cart, keyed by cart name so two games on the same
+ * origin do not share a save. */
+
+function pmemKey() { return "moy.pmem." + (cartName || "cart"); }
+
+function pmemLoad() {
+  const p = M._moy_web_pmem() >> 2;
+  const raw = localStorage.getItem(pmemKey());
+  const v = raw ? JSON.parse(raw) : [];
+  for (let i = 0; i < 256; i++) M.HEAP32[p + i] = v[i] | 0;
+  M._moy_web_pmem_clean();
+}
+
+function pmemSave() {
+  if (!M._moy_web_pmem_moved()) return;
+  const p = M._moy_web_pmem() >> 2;
+  const v = new Array(256);
+  for (let i = 0; i < 256; i++) v[i] = M.HEAP32[p + i];
+  try { localStorage.setItem(pmemKey(), JSON.stringify(v)); } catch (e) { /* full or blocked */ }
+  M._moy_web_pmem_clean();
+}
+
+/* -- audio (SPEC.md 8) -----------------------------------------------------
+ *
+ * The synth is libmoy's, in wasm. This is one AudioWorklet holding a sample
+ * ring with continuous linear resampling: the console renders at its own rate
+ * and the worklet reads at the context's, with no per-chunk boundary to click
+ * at. Starvation DECAYS the last sample toward zero rather than hard-cutting,
+ * which is the difference between a stutter and a pop.
+ *
+ * The loop tops the ring up to CUSHION seconds each frame rather than pushing
+ * a fixed amount, so a slow frame borrows from the buffer instead of dropping
+ * audio. */
+
+const CUSHION = 0.12;
+const WORKLET = `
+class MoyPCM extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.b = new Float32Array(1 << 16); this.r = 0; this.w = 0; this.n = 0;
+    this.pos = 0; this.rate = 44100; this.last = 0; this.k = 0;
+    this.port.onmessage = (e) => {
+      const d = e.data;
+      if (d.rate) { this.rate = d.rate; return; }
+      const a = d.p;
+      for (let i = 0; i < a.length; i++) {
+        if (this.n >= this.b.length) break;
+        this.b[this.w] = a[i]; this.w = (this.w + 1) % this.b.length; this.n++;
+      }
+    };
+  }
+  process(ins, outs) {
+    const o = outs[0][0], st = this.rate / sampleRate;
+    for (let i = 0; i < o.length; i++) {
+      if (this.n > 1) {
+        const v0 = this.b[this.r], v1 = this.b[(this.r + 1) % this.b.length];
+        o[i] = v0 + (v1 - v0) * this.pos; this.last = o[i]; this.pos += st;
+        while (this.pos >= 1 && this.n > 1) {
+          this.pos -= 1; this.r = (this.r + 1) % this.b.length; this.n--;
+        }
+      } else { this.last *= 0.995; o[i] = this.last; }
+    }
+    if (++this.k >= 8) { this.k = 0; this.port.postMessage(this.n); }
+    return true;
+  }
+}
+registerProcessor("moy-pcm", MoyPCM);
+`;
+
+let actx = null, awNode = null, awDepth = 0, audioRate = 44100, audioBlocked = false;
+
+function audioInit() {
+  if (actx) return;
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
+  try { actx = new AC(); } catch (e) { actx = null; return; }
+  if (!actx.audioWorklet) return;
+  const url = URL.createObjectURL(new Blob([WORKLET], { type: "application/javascript" }));
+  actx.audioWorklet.addModule(url).then(() => {
+    awNode = new AudioWorkletNode(actx, "moy-pcm", { numberOfInputs: 0, outputChannelCount: [1] });
+    awNode.port.onmessage = (e) => { awDepth = e.data; };
+    awNode.port.postMessage({ rate: audioRate });
+    awNode.connect(actx.destination);
+  }).catch(() => { awNode = null; });
+}
+
+/* Browsers refuse to start audio without a gesture. Say so in the status line
+ * instead of playing silently -- "no sound on my phone" is otherwise
+ * undiagnosable -- and self-heal on the first tap or key. */
+function audioResume() {
+  if (!actx) audioInit();
+  if (actx && actx.state === "suspended") actx.resume();
+  if (audioBlocked && actx && actx.state === "running") { audioBlocked = false; say(""); }
+}
+
+function audioPump() {
+  /* Only once the CART has asked for a sound. A browser suspends a fresh
+   * AudioContext until a gesture, and saying so is right for a game with music
+   * -- but telling someone to tap for audio a silent cart never wanted is
+   * noise, and it would be on screen for the whole session. */
+  if (!M._moy_web_audio_wanted()) return;
+  if (!awNode || !actx) return;
+  if (actx.state !== "running") {
+    if (!audioBlocked) { audioBlocked = true; say("tap to enable sound"); }
+    return;
+  }
+  const want = Math.ceil((CUSHION - awDepth / audioRate) * audioRate);
+  if (want <= 0) return;
+  const ptr = M._moy_web_audio(want);
+  if (!ptr) return;
+  const f = new Float32Array(M.HEAPF32.buffer, ptr, want).slice();
+  awDepth += want;                             // the worklet corrects this
+  awNode.port.postMessage({ p: f }, [f.buffer]);
+}
+
+/* -- input (SPEC.md 7.3) --------------------------------------------------- */
+/* One physical key per logical button, plus the arrows. That a keyboard, a
+ * touchscreen and a handheld's d-pad all work unchanged is what "logical"
+ * means. */
+
+const BTN = { LEFT: 0, RIGHT: 1, UP: 2, DOWN: 3, A: 4, B: 5, RUN: 6 };
+const KEYMAP = {
+  ArrowLeft: BTN.LEFT, KeyA: BTN.LEFT,
+  ArrowRight: BTN.RIGHT, KeyD: BTN.RIGHT,
+  ArrowUp: BTN.UP, KeyW: BTN.UP,
+  ArrowDown: BTN.DOWN, KeyS: BTN.DOWN,
+  KeyZ: BTN.A, KeyJ: BTN.A,
+  KeyX: BTN.B, KeyK: BTN.B,
+  Enter: BTN.RUN, Space: BTN.RUN,
+};
+
+function asciiOf(e) {
+  if (e.key.length === 1) return e.key.charCodeAt(0);
+  if (e.key === "Backspace") return 8;
+  if (e.key === "Enter") return 13;
+  if (e.key === "Tab") return 9;
+  return 0;
+}
+
+function bindInput() {
+  addEventListener("keydown", (e) => {
+    audioResume();
+    const b = KEYMAP[e.code];
+    /* While a cart is in textmode its keyboard is a TYPING keyboard: the letter
+     * keys are letters, not a d-pad. The arrows still work as buttons, which is
+     * what makes a text cart navigable. */
+    if (b !== undefined && !(M._moy_web_textmode() && e.code.startsWith("Key"))) {
+      M._moy_web_button(b, 1);
+      if (e.code === "Space" || e.code.startsWith("Arrow")) e.preventDefault();
+    }
+    const a = asciiOf(e);
+    if (a) M._moy_web_key(a, 1);
+  });
+  addEventListener("keyup", (e) => {
+    const b = KEYMAP[e.code];
+    if (b !== undefined) M._moy_web_button(b, 0);
+    const a = asciiOf(e);
+    if (a) M._moy_web_key(a, 0);
+  });
+  /* A tab that loses focus must not leave a key stuck down -- a held direction
+   * survives an alt-tab otherwise and the cart walks into a wall forever. */
+  addEventListener("blur", () => {
+    for (let b = 0; b < 7; b++) M._moy_web_button(b, 0);
+    M._moy_web_touch(0, 0, 0);
+  });
+
+  /* Pointer -> touch(), in CART coordinates: the canvas is scaled by CSS, so
+   * every position goes through the element's real rect. */
+  const at = (e) => {
+    const r = cv.getBoundingClientRect();
+    const x = Math.floor((e.clientX - r.left) / r.width * W);
+    const y = Math.floor((e.clientY - r.top) / r.height * H);
+    return [Math.max(0, Math.min(W - 1, x)), Math.max(0, Math.min(H - 1, y))];
+  };
+  cv.addEventListener("pointerdown", (e) => {
+    audioResume();
+    cv.setPointerCapture(e.pointerId);
+    const [x, y] = at(e); M._moy_web_touch(x, y, 1);
+    e.preventDefault();
+  });
+  cv.addEventListener("pointermove", (e) => {
+    const [x, y] = at(e); M._moy_web_touch(x, y, e.buttons || e.pointerType === "touch" ? 1 : 0);
+  });
+  cv.addEventListener("pointerup", (e) => {
+    const [x, y] = at(e); M._moy_web_touch(x, y, 0);
+  });
+  cv.addEventListener("pointercancel", () => M._moy_web_touch(0, 0, 0));
+  cv.addEventListener("contextmenu", (e) => e.preventDefault());
+
+  /* The on-screen pad: one element per button, held while a finger is on it. */
+  for (const el of padEl.querySelectorAll("[data-btn]")) {
+    const b = BTN[el.dataset.btn];
+    const set = (v) => (e) => { audioResume(); M._moy_web_button(b, v); e.preventDefault(); };
+    el.addEventListener("pointerdown", set(1));
+    el.addEventListener("pointerup", set(0));
+    el.addEventListener("pointerleave", set(0));
+    el.addEventListener("pointercancel", set(0));
+  }
+
+  /* textmode wants a real soft keyboard on a phone, and only a focused input
+   * summons one. It is off-screen and its value is never read -- the keydown
+   * handler above is still what feeds key(). */
+  kbin.addEventListener("input", () => { kbin.value = ""; });
+}
+
+/* -- the loop -------------------------------------------------------------- */
+
+function fit() {
+  const pad = 24;
+  const availW = Math.max(64, innerWidth - pad);
+  const availH = Math.max(64, innerHeight - (titleEl.offsetHeight + padEl.offsetHeight + pad + 24));
+  const s = Math.min(availW / W, availH / H);
+  cv.style.width = Math.round(W * s) + "px";
+  cv.style.height = Math.round(H * s) + "px";
+}
+addEventListener("resize", fit);
+
+function tick(now) {
+  rafId = requestAnimationFrame(tick);
+  if (!running) return;
+  /* SPEC.md 5: hold the cart's declared rate. rAF runs at the display's, which
+   * is 60 or 120 or 144 -- a 30fps cart must not tick twice as fast on a 60Hz
+   * panel just because the browser offered the frame. */
+  const dt = (now - last) / 1000;
+  last = now;
+  acc += dt;
+  const step = 1 / fps;
+  if (acc < step) return;
+  const use = Math.min(acc, 0.25);
+  acc = 0;
+
+  frames++;
+  const r = M._moy_web_frame(use, now - t0);
+  if (r === 1) { stop(M.UTF8ToString(M._moy_web_error()), true); return; }
+  if (r === 2) { stop("cart exited"); return; }
+
+  const ptr = M._moy_web_pixels();
+  img.data.set(new Uint8ClampedArray(M.HEAPU8.buffer, ptr, W * H * 4));
+  ctx.putImageData(img, 0, 0);
+  audioPump();
+  pmemSave();
+}
+
+function stop(msg, bad) {
+  running = false;
+  pmemSave();
+  say(msg, bad);
+}
+
+async function boot() {
+  const bundle = await fetchCart();
+  M._moy_web_reset();
+  feed(bundle);
+  /* SPEC.md 9 defines rnd()'s range but not its sequence, so the seed is
+   * genuinely arbitrary -- and must not be constant, or every session of a
+   * cart that shuffles plays the same. */
+  if (M._moy_web_boot(Date.now() & 0x7fffffff) !== 0) {
+    say(M.UTF8ToString(M._moy_web_error()), true);
+    return;
+  }
+  const err = M.UTF8ToString(M._moy_web_error());
+  if (err) say(err, true);                     // non-fatal (a bad sound bank)
+
+  W = M._moy_web_width(); H = M._moy_web_height(); fps = M._moy_web_fps();
+  audioRate = M._moy_web_audio_rate();
+  cv.width = W; cv.height = H;
+  ctx.imageSmoothingEnabled = false;
+  img = ctx.createImageData(W, H);
+  document.title = M.UTF8ToString(M._moy_web_title());
+  titleEl.textContent = document.title;
+  fit();
+  pmemLoad();
+
+  /* The manifest's `input` list (SPEC.md 7.3) decides whether soft controls are
+   * worth the screen: a touch-only cart gets none, a button cart on a phone
+   * gets a pad. */
+  const mf = bundle[Object.keys(bundle).find((k) => k.endsWith("/manifest.json"))];
+  let hint = null;
+  try { hint = JSON.parse(mf).input; } catch (e) { /* no manifest, or no hint */ }
+  const wantsPad = !hint || hint.indexOf("buttons") >= 0;
+  padEl.style.display = wantsPad && matchMedia("(pointer: coarse)").matches ? "" : "none";
+
+  /* Build the AudioContext now rather than on the first gesture. It starts
+   * suspended either way, but addModule is asynchronous -- doing it at boot
+   * means the worklet is ready when a gesture arrives, instead of the first
+   * sound of the game being the one that gets dropped. */
+  audioInit();
+
+  last = performance.now(); t0 = last; acc = 0;
+  running = true;
+  if (!rafId) rafId = requestAnimationFrame(tick);
+}
+
+/* -- dev reload ------------------------------------------------------------ */
+/* `moy run` serves /stamp -- the newest mtime under the cart folder. Polling it
+ * restarts the cart in place, which is faster than a page reload and keeps the
+ * AudioContext (and therefore the gesture unlock) alive. */
+
+function devWatch() {
+  let seen = null;
+  setInterval(async () => {
+    try {
+      const s = await (await fetch("stamp", { cache: "no-store" })).text();
+      if (seen === null) { seen = s; return; }
+      if (s !== seen) { seen = s; say("reloading…"); await boot(); }
+    } catch (e) { /* the dev server went away; keep playing */ }
+  }, 700);
+}
+
+/* A diagnostic handle, because this file is a module and its state is otherwise
+ * unreachable from a console or a test harness. shot.mjs reads it; so can you.
+ * Nothing in the player depends on it. */
+window.moy = {
+  get state() {
+    return {
+      cart: cartName, running, frames, w: W, h: H, fps,
+      audio: actx ? actx.state : "none",
+      worklet: !!awNode,
+      wants: M ? !!M._moy_web_audio_wanted() : false,
+      queued: awNode ? awDepth / audioRate : 0,
+      status: statusEl.textContent,
+    };
+  },
+};
+
+createMoy().then(async (mod) => {
+  M = mod;
+  bindInput();
+  try {
+    await boot();
+  } catch (e) {
+    say(String(e && e.message || e), true);
+    return;
+  }
+  if (new URLSearchParams(location.search).get("dev") === "1") devWatch();
+});

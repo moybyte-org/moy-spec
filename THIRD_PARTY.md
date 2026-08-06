@@ -27,9 +27,9 @@ data, not an independent design choice.
 
 ## The compiled web player
 
-`runner/micropython.wasm` and `runner/micropython.mjs` bundle several
-MIT-licensed projects (MicroPython, micropython-lib, Lua 5.4, Emscripten
-runtime support). Their notices are in
+`runner/moy.wasm` and `runner/moy.mjs` are this repository's own libmoy
+compiled to WebAssembly, and they bundle two MIT-licensed projects with it
+(Lua 5.4 and Emscripten's runtime support). Their notices are in
 [runner/THIRD_PARTY.md](runner/THIRD_PARTY.md).
 
 ## Ported carts

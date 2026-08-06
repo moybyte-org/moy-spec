@@ -75,6 +75,49 @@ jobs:
           make play
         working-directory: libmoy
 
+      # runner/ is a build artifact that is CHECKED IN, so `moy.py run` needs
+      # only Python and a browser. A checked-in artifact drifts from its source
+      # silently -- someone edits player.js inside runner/ to try something, it
+      # works, it ships, and the next rebuild reverts it without a word. These
+      # three steps are what make that impossible.
+
+      # 1. The committed bundle matches its own committed stamp.
+      - name: The committed player matches its stamp
+        run: python3 moy.py player
+
+      # 2. The shipped player passes the same goldens as every other
+      # implementation -- through its own wasm and its own cart loader, not
+      # through a native build that resembles it.
+      - name: Conformance (the web player)
+        run: python3 conformance/run.py --player "node libmoy/port/wasm/conform.mjs {cart} {out}"
+
+      # 3. And that bundle is what this source builds. emcc is not
+      # byte-reproducible across versions, so the wasm is not compared -- step 2
+      # judged the committed one directly. The page and the shim are pure
+      # copies, so any difference there is a hand edit or a forgotten rebuild.
+      - name: Cache emsdk
+        id: emsdk-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/emsdk
+          key: emsdk-latest-${{ runner.os }}
+
+      - name: Install emsdk
+        if: steps.emsdk-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 https://github.com/emscripten-core/emsdk.git ~/emsdk
+          ~/emsdk/emsdk install latest
+          ~/emsdk/emsdk activate latest
+
+      - name: runner/ is what libmoy/port/wasm builds
+        run: |
+          cp runner/index.html /tmp/was-index.html
+          cp runner/player.js  /tmp/was-player.js
+          EMSDK=~/emsdk libmoy/port/wasm/build.sh
+          diff /tmp/was-index.html runner/index.html
+          diff /tmp/was-player.js  runner/player.js
+          echo "the committed page is the built page"
+
       - name: The SPEC.md 4.1 sandbox holds
         run: |
           mkdir -p /tmp/sbx.moy

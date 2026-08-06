@@ -412,7 +412,17 @@ def build(out, demo=True):
         f.write("")
 
     if demo:
-        need = ["index.html", "carts.json", "micropython.mjs", "micropython.wasm"]
+        # What a complete bundle is, taken from the player's own stamp rather
+        # than named here: this list was two MicroPython filenames until the
+        # player was rebuilt from libmoy, and a constant of stale names checks
+        # nothing while looking like it checks everything.
+        need = ["index.html", "carts.json"]
+        try:
+            with open(os.path.join(ROOT, "runner", "VERSION"), encoding="utf-8") as f:
+                need += sorted(json.load(f)["files"])
+        except (OSError, ValueError, KeyError):
+            raise SystemExit("runner/VERSION is missing or unreadable -- "
+                             "run `moy.py player --build`")
         for slug, cart, _label, _sub in DEMOS:
             dst = os.path.join(out, slug)
             subprocess.run([sys.executable, os.path.join(ROOT, "moy.py"), "export",

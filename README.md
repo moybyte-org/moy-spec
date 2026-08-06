@@ -104,8 +104,8 @@ cleanly, and an extension never redefines what core already covers
 | | |
 |---|---|
 | [moycore/](moycore/) | the console as a Python library — stdlib-only: raster, palette, font, cart format, verb table |
-| [libmoy/](libmoy/) | the console as a C99 library — no dependencies, no allocation, §4.1-sandboxed Lua binding, an SDL2 desktop port and an ESP-IDF component |
-| [runner/](runner/) | the web player: the reference console compiled to WebAssembly |
+| [libmoy/](libmoy/) | the console as a C99 library — no dependencies, no allocation, §4.1-sandboxed Lua binding, and three ports: SDL2 desktop, ESP-IDF component, WebAssembly |
+| [runner/](runner/) | the web player: libmoy compiled to WebAssembly, ~296 KB, built by `libmoy/port/wasm` |
 | [conformance/](conformance/) | the suite that keeps them honest — 10 scenes as real carts, golden frames, a runner that takes any player. Five implementations render every scene pixel-identically, an ESP32-P4 over serial among them; its README tells the story |
 | [moybyte](https://github.com/moybyte-org/moybyte) | the reference implementation: a PC simulator and two ESP32 handhelds |
 | [proposals/](proposals/) | drafts on top of core: single-file carts (`moy pack`), compiled carts (WASM), sideload |
