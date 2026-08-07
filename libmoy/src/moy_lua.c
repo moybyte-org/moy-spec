@@ -294,8 +294,22 @@ static int l_cfg(lua_State *L)
     moy_console *con = con_of(L);
     const char *key = lua_tostring(L, 1);
     const char *v = (key && con->host.cfg) ? con->host.cfg(con->host.user, key) : NULL;
-    if (v) lua_pushstring(L, v);
-    else lua_pushvalue(L, 2);               /* the caller's default, or nil */
+    if (v) {
+        /* config.json is JSON, so a number in it must reach the cart AS a
+         * number. The host seam passes `const char *` -- it cannot express
+         * type -- so the conversion belongs here, and moycore (which parses
+         * the JSON directly) is what this has to agree with.
+         *
+         * Pushing everything as a string was a real bug with a real victim:
+         * `cfg("autoplay", 0)` returned "0", and in Lua `"0" ~= 0` is TRUE, so
+         * a cart guarding its attract mode with `if auto ~= 0` played itself
+         * forever on any libmoy host while behaving correctly on the reference.
+         * lua_stringtonumber converts only when the WHOLE string is a number,
+         * so a genuine string value stays a string. */
+        if (lua_stringtonumber(L, v) == 0) lua_pushstring(L, v);
+    } else {
+        lua_pushvalue(L, 2);                /* the caller's default, or nil */
+    }
     return 1;
 }
 

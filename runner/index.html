@@ -16,34 +16,68 @@
      browser's default image scaling turn a 320x240 canvas into a blur. */
   #screen { image-rendering: pixelated; image-rendering: crisp-edges; background: #000; display: block; }
   #status { min-height: 1.4em; color: #8a8a99; }
+  /* CLICK TO START. Not decoration: a browser will not start an AudioContext
+     without a user gesture, so a page that boots straight into the cart has no
+     moment at which sound can legally begin -- it just plays silently forever.
+     This is the p8-web-player pattern, and it is here for that reason. */
+  #start { position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 10px; cursor: pointer;
+    background: rgba(16,16,20,.72); color: #d8d8e0; user-select: none; }
+  #start .tri { width: 0; height: 0; border-left: 34px solid currentColor;
+    border-top: 22px solid transparent; border-bottom: 22px solid transparent;
+    margin-left: 8px; opacity: .9; }
+  #start small { letter-spacing: .12em; color: #8a8a99; }
+  #wrap { position: relative; display: inline-block; line-height: 0; }
   #status.bad { color: #ff6b6b; white-space: pre-wrap; max-width: 90vw; text-align: center; }
   /* Off-screen, focusable: the only way to summon a phone's soft keyboard for a
      textmode() cart. Its value is never read -- keydown feeds key(). */
   #kbin { position: fixed; left: -1000px; top: 0; opacity: 0; }
-  #pad { display: none; width: 100%; max-width: 420px; justify-content: space-between; align-items: center; gap: 12px; user-select: none; }
-  #dpad { display: grid; grid-template-columns: repeat(3, 44px); grid-template-rows: repeat(3, 44px); }
-  #pad b {
+  /* CONTROLS. A JOYSTICK, not a d-pad: on a phone a thumb lands somewhere near
+     the middle and slides, it does not hit 44px squares, and moybyte's page
+     learned that the hard way. Sized in vw/vh so it scales with the screen
+     instead of being tiny on a tablet. */
+  #pad { display: none; width: min(96vw, 112vh); max-width: 100%;
+    justify-content: space-between; align-items: center; gap: min(8px, 1vw);
+    padding: 10px 4px; box-sizing: border-box; touch-action: none;
+    user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+    --bb: min(68px, 15vw); --joy: min(116px, 26vw); }
+  #joy { flex: 0 0 auto; position: relative; width: var(--joy); height: var(--joy);
+    border-radius: 50%; background: #22222c; border: 2px solid #33333f; }
+  #th { position: absolute; top: 50%; left: 50%;
+    width: calc(var(--joy) * .43); height: calc(var(--joy) * .43);
+    margin: calc(var(--joy) * -.215) 0 0 calc(var(--joy) * -.215);
+    border-radius: 50%; background: #5f6f9f; border: 2px solid #c2c3c7;
+    pointer-events: none; }
+  #pad .b { flex: 0 0 auto; width: var(--bb); height: var(--bb); border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
-    background: #22222c; border: 1px solid #33333f; border-radius: 8px;
-    color: #9a9aa8; font-weight: 400; font-size: 15px;
-  }
-  #pad b:active { background: #34344a; }
-  #ab { display: flex; gap: 12px; }
-  #ab b { width: 54px; height: 54px; border-radius: 50%; }
+    font: 700 min(24px, 5.5vw) ui-monospace, monospace; color: #d8d8e0;
+    background: #22222c; border: 1px solid #33333f; }
+  #pad .b:active { background: #34344a; }
+  #mid { display: flex; align-items: center; gap: min(9px, 1.5vw); }
+  #mid .b { width: min(40px, 9vw); height: min(40px, 9vw); font-size: min(18px, 4vw); }
+  #ab { flex: 0 0 auto; display: flex; align-items: center; gap: min(10px, 2vw); }
+  #keys { color: #6a6a78; font-size: 11px; letter-spacing: .04em; text-align: center; }
+  /* The real focusable input, pinned 1x1 at the viewport ORIGIN rather than
+     parked off-screen: an off-screen focused input makes iOS scroll the page to
+     chase it. font-size 16px because anything smaller makes iOS zoom in on
+     focus and never zoom back out. */
+  #kbin { position: fixed; left: 0; top: 0; width: 1px; height: 1px;
+    opacity: 0; border: 0; padding: 0; font-size: 16px; }
 </style>
 
 <h1 id="title">moy</h1>
-<canvas id="screen" width="320" height="240"></canvas>
+<div id="wrap">
+  <canvas id="screen" width="320" height="240"></canvas>
+  <div id="start"><div class="tri"></div><small>CLICK TO PLAY</small></div>
+</div>
 <div id="status"></div>
+<div id="keys">arrows / WASD &nbsp;·&nbsp; Z or J = A &nbsp;·&nbsp; X or K = B &nbsp;·&nbsp; Enter = start</div>
 <input id="kbin" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false">
 
 <div id="pad">
-  <div id="dpad">
-    <span></span><b data-btn="UP">▲</b><span></span>
-    <b data-btn="LEFT">◀</b><span></span><b data-btn="RIGHT">▶</b>
-    <span></span><b data-btn="DOWN">▼</b><span></span>
-  </div>
-  <div id="ab"><b data-btn="B">B</b><b data-btn="A">A</b></div>
+  <div id="joy"><div id="th"></div></div>
+  <div id="mid"><b class="b" id="kb" title="keyboard">&#9000;</b></div>
+  <div id="ab"><b class="b" data-btn="B">B</b><b class="b" data-btn="A">A</b></div>
 </div>
 
 <script type="module" src="player.js"></script>

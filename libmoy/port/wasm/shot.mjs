@@ -16,17 +16,38 @@ import { readFileSync, writeFileSync, readdirSync, statSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
 import { dirname, join, relative, sep, resolve } from "node:path";
+import { networkInterfaces } from "node:os";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const RUNNER = resolve(process.env.MOY_RUNNER || join(HERE, "..", "..", "..", "runner"));
 const CHROME = process.env.MOY_CHROME || "google-chrome";
 
+/* THE HOST MATTERS, and this is the whole reason the default is not localhost.
+ *
+ * A browser gives localhost a SECURE CONTEXT and any other http origin an
+ * insecure one, and AudioWorklet only exists in the former. So a player tested
+ * only at 127.0.0.1 has an audio path that no LAN visitor, phone or VPN user
+ * ever runs -- which is exactly how this player shipped silent to everyone but
+ * the machine serving it. Default to the LAN address so the harness sees what
+ * a second device sees; MOY_HOST=127.0.0.1 opts back in to the easy case. */
+function lanAddress() {
+    for (const list of Object.values(networkInterfaces())) {
+        for (const ni of list || []) {
+            if (ni.family === "IPv4" && !ni.internal) return ni.address;
+        }
+    }
+    return "127.0.0.1";
+}
+
 const argv = process.argv.slice(2);
-let cart = null, out = "shot.png", frames = 60, keys = [];
+let cart = null, out = "shot.png", frames = 60, keys = [], phone = false;
+let host = process.env.MOY_HOST || lanAddress();
 for (let i = 0; i < argv.length; i++) {
   if (argv[i] === "--frames") frames = parseInt(argv[++i], 10);
   else if (argv[i] === "--keys") keys = argv[++i].split(",").filter(Boolean);
+  else if (argv[i] === "--host") host = argv[++i];
+  else if (argv[i] === "--phone") phone = true;
   else if (!cart) cart = argv[i];
   else out = argv[i];
 }
@@ -66,14 +87,21 @@ const server = createServer((req, res) => {
     res.end(body);
   } catch (e) { res.writeHead(404); res.end("nope"); }
 });
-await new Promise((ok) => server.listen(0, "127.0.0.1", ok));
+// Bound to every interface, not just loopback: the point of the LAN default is
+// that the browser reaches this over a NON-localhost origin, and a
+// loopback-only server cannot be reached that way.
+await new Promise((ok) => server.listen(0, "0.0.0.0", ok));
 const PORT = server.address().port;
 
 const profile = join(process.env.TMPDIR || "/tmp", "moy-shot-" + PORT);
 const chrome = spawn(CHROME, [
   "--headless=new", "--remote-debugging-port=0", "--user-data-dir=" + profile,
   "--no-first-run", "--no-default-browser-check", "--disable-gpu",
-  "--window-size=900,760", "--hide-scrollbars", "--autoplay-policy=no-user-gesture-required",
+  "--window-size=900,760", "--hide-scrollbars",
+  // NO --autoplay-policy override. It was here, and it made every audio test
+  // meaningless: the page was verified in a browser that would start sound
+  // without a gesture, which no real browser does. The player shipped with no
+  // way to give that gesture at all and the harness stayed green.
   "about:blank",
 ], { stdio: ["ignore", "ignore", "pipe"] });
 
@@ -123,8 +151,23 @@ const evalJS = async (expr) => {
 
 await send("Runtime.enable");
 await send("Page.enable");
-await send("Page.navigate", { url: `http://127.0.0.1:${PORT}/` });
-await new Promise((ok) => setTimeout(ok, 1500));
+if (phone) {
+  // The device the on-screen controls exist for: coarse pointer, touch, small
+  // screen. A pad bug is invisible at desktop metrics.
+  await send("Emulation.setDeviceMetricsOverride",
+             { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
+  await send("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 5 });
+}
+await send("Page.navigate", { url: `http://${host}:${PORT}/` });
+await new Promise((ok) => setTimeout(ok, 2000));
+
+// The cart is PARKED behind the start overlay until a gesture, so give it one.
+// Without this the harness screenshots the overlay and reports a black game.
+await send("Input.dispatchKeyEvent", { type: "keyDown", code: "Enter", key: "Enter",
+                                       windowsVirtualKeyCode: 13 });
+await send("Input.dispatchKeyEvent", { type: "keyUp", code: "Enter", key: "Enter",
+                                       windowsVirtualKeyCode: 13 });
+await new Promise((ok) => setTimeout(ok, 300));
 
 for (const code of keys) {
   await send("Input.dispatchKeyEvent", { type: "keyDown", code, key: code, windowsVirtualKeyCode: 0 });
@@ -140,7 +183,18 @@ if (!dataUrl) {
   process.exit(1);
 }
 writeFileSync(out, Buffer.from(dataUrl.split(",")[1], "base64"));
+console.log("host:  http://" + host + ":" + PORT + (phone ? "  (phone metrics)" : ""));
 console.log("state: " + state);
+{
+  const st = JSON.parse(state || "{}");
+  // The assertion that would have caught the silent player: samples must
+  // actually be moving. Loud about it, because a warning nobody reads is how
+  // the last one survived.
+  if (st.wants && !(st.pushed > 0)) {
+    console.log("!! the cart asked for audio and the page pushed NONE"
+                + " (worklet=" + st.worklet + ", audio=" + st.audio + ")");
+  }
+}
 if (logs.length) console.log("logs:\n  " + logs.join("\n  "));
 console.log("wrote " + out);
 

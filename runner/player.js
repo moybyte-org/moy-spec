@@ -14,11 +14,12 @@ const ctx = cv.getContext("2d", { alpha: false });
 const statusEl = document.getElementById("status");
 const titleEl = document.getElementById("title");
 const padEl = document.getElementById("pad");
+const startEl = document.getElementById("start");
 const kbin = document.getElementById("kbin");
 
 let M = null;                 // the wasm module
 let W = 320, H = 240, fps = 30;
-let img = null, running = false, rafId = 0, frames = 0;
+let img = null, running = false, rafId = 0, frames = 0, started = true;
 let last = 0, t0 = 0, acc = 0;
 let cartName = "";
 
@@ -128,19 +129,31 @@ registerProcessor("moy-pcm", MoyPCM);
 `;
 
 let actx = null, awNode = null, awDepth = 0, audioRate = 44100, audioBlocked = false;
+let audioPeak = 0, audioPushed = 0, awAnalyser = null;
 
 function audioInit() {
   if (actx) return;
   const AC = window.AudioContext || window.webkitAudioContext;
   if (!AC) return;
   try { actx = new AC(); } catch (e) { actx = null; return; }
+  // AudioWorklet needs a SECURE CONTEXT. Served over plain http to anything
+  // that is not localhost -- a phone on the LAN, a machine across a VPN --
+  // actx.audioWorklet is undefined and there is no ring at all. That is not
+  // exotic: it is what happens the first time anyone opens the player on a
+  // device that is not the one running `moy run`. The chunk scheduler below is
+  // the fallback, and the reason this check does not simply give up.
   if (!actx.audioWorklet) return;
   const url = URL.createObjectURL(new Blob([WORKLET], { type: "application/javascript" }));
   actx.audioWorklet.addModule(url).then(() => {
     awNode = new AudioWorkletNode(actx, "moy-pcm", { numberOfInputs: 0, outputChannelCount: [1] });
     awNode.port.onmessage = (e) => { awDepth = e.data; };
     awNode.port.postMessage({ rate: audioRate });
-    awNode.connect(actx.destination);
+    // Through an analyser, so moy.level() can report what the node actually
+    // OUTPUTS -- which is a different question from what we pushed into it.
+    awAnalyser = actx.createAnalyser();
+    awAnalyser.fftSize = 2048;
+    awNode.connect(awAnalyser);
+    awAnalyser.connect(actx.destination);
   }).catch(() => { awNode = null; });
 }
 
@@ -149,8 +162,38 @@ function audioInit() {
  * undiagnosable -- and self-heal on the first tap or key. */
 function audioResume() {
   if (!actx) audioInit();
-  if (actx && actx.state === "suspended") actx.resume();
-  if (audioBlocked && actx && actx.state === "running") { audioBlocked = false; say(""); }
+  if (!actx) return;
+  // resume() is ASYNCHRONOUS. Checking actx.state straight after calling it
+  // reads "suspended" every time, so clearing the notice here never fired and
+  // the page went on saying "tap to enable sound" over perfectly good audio.
+  // The pump re-checks each frame; this just kicks it.
+  if (actx.state === "suspended") actx.resume();
+}
+
+/* FALLBACK: no AudioWorklet, so schedule each push as its own buffer source.
+ * Seams between chunks are audible where the ring has none -- each chunk is
+ * resampled independently and its start rounded to the context's sample grid --
+ * so this is the worse path, not the equal one. It is here because silence is
+ * worse still. */
+let audioNext = 0;
+
+function playChunk(f) {
+  const buf = actx.createBuffer(1, f.length, audioRate);
+  buf.getChannelData(0).set(f);
+  const src = actx.createBufferSource();
+  src.buffer = buf;
+  src.connect(actx.destination);
+  // A floor of currentTime + 20ms: scheduling in the past drops the chunk.
+  const t = Math.max(actx.currentTime + 0.02, audioNext);
+  src.start(t);
+  audioNext = t + buf.duration;
+}
+
+/* Seconds still queued, whichever path is live -- what the cushion tops up. */
+function audioQueuedSecs() {
+  if (!actx) return 0;
+  if (awNode) return awDepth / audioRate;
+  return Math.max(0, audioNext - actx.currentTime);
 }
 
 function audioPump() {
@@ -159,18 +202,31 @@ function audioPump() {
    * -- but telling someone to tap for audio a silent cart never wanted is
    * noise, and it would be on screen for the whole session. */
   if (!M._moy_web_audio_wanted()) return;
-  if (!awNode || !actx) return;
+  if (!actx) return;
   if (actx.state !== "running") {
     if (!audioBlocked) { audioBlocked = true; say("tap to enable sound"); }
     return;
   }
-  const want = Math.ceil((CUSHION - awDepth / audioRate) * audioRate);
+  // Running now -- so retract the notice. This is the only place that can, and
+  // it runs every frame, which is what makes it self-healing rather than
+  // dependent on catching the exact moment the context flipped.
+  if (audioBlocked) { audioBlocked = false; say(""); }
+  const want = Math.ceil((CUSHION - audioQueuedSecs()) * audioRate);
   if (want <= 0) return;
   const ptr = M._moy_web_audio(want);
   if (!ptr) return;
   const f = new Float32Array(M.HEAPF32.buffer, ptr, want).slice();
-  awDepth += want;                             // the worklet corrects this
-  awNode.port.postMessage({ p: f }, [f.buffer]);
+  for (let i = 0; i < f.length; i += 16) {     // sparse: a peak meter, not a sum
+    const v = f[i] < 0 ? -f[i] : f[i];
+    if (v > audioPeak) audioPeak = v;
+  }
+  audioPushed += want;
+  if (awNode) {
+    awDepth += want;                           // the worklet corrects this
+    awNode.port.postMessage({ p: f }, [f.buffer]);
+  } else {
+    playChunk(f);
+  }
 }
 
 /* -- input (SPEC.md 7.3) --------------------------------------------------- */
@@ -197,9 +253,22 @@ function asciiOf(e) {
   return 0;
 }
 
+/* The gesture. Anything counts -- click, tap, key -- and it both starts the
+ * cart and unlocks audio, which is the point of having one moment rather than
+ * hoping the player happens to touch something. */
+function begin() {
+  audioResume();
+  if (started) return;
+  started = true;
+  if (startEl) startEl.style.display = "none";
+  last = performance.now();
+  acc = 0;
+}
+
 function bindInput() {
+  if (startEl) startEl.addEventListener("pointerdown", (e) => { begin(); e.preventDefault(); });
   addEventListener("keydown", (e) => {
-    audioResume();
+    begin();
     const b = KEYMAP[e.code];
     /* While a cart is in textmode its keyboard is a TYPING keyboard: the letter
      * keys are letters, not a d-pad. The arrows still work as buttons, which is
@@ -233,7 +302,7 @@ function bindInput() {
     return [Math.max(0, Math.min(W - 1, x)), Math.max(0, Math.min(H - 1, y))];
   };
   cv.addEventListener("pointerdown", (e) => {
-    audioResume();
+    begin();
     cv.setPointerCapture(e.pointerId);
     const [x, y] = at(e); M._moy_web_touch(x, y, 1);
     e.preventDefault();
@@ -247,14 +316,73 @@ function bindInput() {
   cv.addEventListener("pointercancel", () => M._moy_web_touch(0, 0, 0));
   cv.addEventListener("contextmenu", (e) => e.preventDefault());
 
-  /* The on-screen pad: one element per button, held while a finger is on it. */
+  /* A/B: held while a finger is on them. */
   for (const el of padEl.querySelectorAll("[data-btn]")) {
     const b = BTN[el.dataset.btn];
-    const set = (v) => (e) => { audioResume(); M._moy_web_button(b, v); e.preventDefault(); };
+    const set = (v) => (e) => { begin(); M._moy_web_button(b, v); e.preventDefault(); };
     el.addEventListener("pointerdown", set(1));
     el.addEventListener("pointerup", set(0));
     el.addEventListener("pointerleave", set(0));
     el.addEventListener("pointercancel", set(0));
+  }
+
+  /* THE JOYSTICK. A thumb lands somewhere near the middle of a circle and
+   * slides; it does not hit 44px squares. The angle is resolved into the four
+   * logical directions with a DEADZONE, so resting a thumb on the centre is not
+   * a direction, and diagonals press two -- which is what a d-pad does and what
+   * carts expect (SPEC.md 7.3 has four, not eight). */
+  const joy = document.getElementById("joy");
+  const thumb = document.getElementById("th");
+  const DEAD = 0.34;
+  let joyId = null;
+
+  function joySet(dx, dy) {
+    const mag = Math.hypot(dx, dy);
+    M._moy_web_button(BTN.LEFT,  mag > DEAD && dx < -DEAD ? 1 : 0);
+    M._moy_web_button(BTN.RIGHT, mag > DEAD && dx > DEAD ? 1 : 0);
+    M._moy_web_button(BTN.UP,    mag > DEAD && dy < -DEAD ? 1 : 0);
+    M._moy_web_button(BTN.DOWN,  mag > DEAD && dy > DEAD ? 1 : 0);
+    const r = joy.clientWidth / 2;
+    const k = mag > 1 ? 1 / mag : 1;           // clamp the thumb to the rim
+    thumb.style.transform = "translate(" + (dx * k * r * 0.55) + "px,"
+                                         + (dy * k * r * 0.55) + "px)";
+  }
+
+  function joyAt(e) {
+    const r = joy.getBoundingClientRect();
+    joySet((e.clientX - (r.left + r.width / 2)) / (r.width / 2),
+           (e.clientY - (r.top + r.height / 2)) / (r.height / 2));
+  }
+
+  joy.addEventListener("pointerdown", (e) => {
+    begin();
+    joyId = e.pointerId;
+    joy.setPointerCapture(e.pointerId);
+    joyAt(e);
+    e.preventDefault();
+  });
+  joy.addEventListener("pointermove", (e) => {
+    if (joyId === e.pointerId) { joyAt(e); e.preventDefault(); }
+  });
+  const joyEnd = (e) => {
+    if (joyId !== e.pointerId) return;
+    joyId = null;
+    joySet(0, 0);
+    thumb.style.transform = "";
+  };
+  joy.addEventListener("pointerup", joyEnd);
+  joy.addEventListener("pointercancel", joyEnd);
+
+  /* The keyboard toggle: a textmode() cart on a phone has no other way to get
+   * a soft keyboard up, because only a focused input summons one. */
+  const kbBtn = document.getElementById("kb");
+  if (kbBtn) {
+    kbBtn.addEventListener("pointerdown", (e) => {
+      begin();
+      if (document.activeElement === kbin) kbin.blur();
+      else kbin.focus();
+      e.preventDefault();
+    });
   }
 
   /* textmode wants a real soft keyboard on a phone, and only a focused input
@@ -278,6 +406,7 @@ addEventListener("resize", fit);
 function tick(now) {
   rafId = requestAnimationFrame(tick);
   if (!running) return;
+  if (!started) { last = now; return; }
   /* SPEC.md 5: hold the cart's declared rate. rAF runs at the display's, which
    * is 60 or 120 or 144 -- a 30fps cart must not tick twice as fast on a 60Hz
    * panel just because the browser offered the frame. */
@@ -337,8 +466,25 @@ async function boot() {
   const mf = bundle[Object.keys(bundle).find((k) => k.endsWith("/manifest.json"))];
   let hint = null;
   try { hint = JSON.parse(mf).input; } catch (e) { /* no manifest, or no hint */ }
+  /* Show the pad whenever the cart uses buttons, on ANY pointer. Gating it on
+   * `(pointer: coarse)` meant a desktop browser got no visible controls at all
+   * -- fine if you know the keys, useless if you do not, and wrong on every
+   * machine that reports a fine pointer while being used by touch (a laptop
+   * with a touchscreen, a tablet in desktop mode, a remote session). The keys
+   * still work; this just stops them being the only way in. */
   const wantsPad = !hint || hint.indexOf("buttons") >= 0;
-  padEl.style.display = wantsPad && matchMedia("(pointer: coarse)").matches ? "" : "none";
+    // "flex", not "": clearing the inline style falls back to the stylesheet's
+  // `display: none`, so the pad was hidden on EVERY pointer type -- including
+  // the touch devices it exists for. It had never once been shown.
+  padEl.style.display = wantsPad ? "flex" : "none";
+
+  /* The cart is loaded and drawn but PARKED until a gesture. See #start in the
+   * page: this is the only way a browser will let audio begin, and a player
+   * that boots straight in has no such moment -- it plays silently and the
+   * person watching concludes it has no sound, which is exactly what happened.
+   * One frame is ticked first so there is a picture behind the overlay rather
+   * than a black square. */
+  started = false;
 
   /* Build the AudioContext now rather than on the first gesture. It starts
    * suspended either way, but addModule is asynchronous -- doing it at boot
@@ -371,13 +517,45 @@ function devWatch() {
  * unreachable from a console or a test harness. shot.mjs reads it; so can you.
  * Nothing in the player depends on it. */
 window.moy = {
+  /* "Is this thing on?" -- a plain oscillator through the SAME AudioContext the
+   * game uses. If you hear this and not the game, the fault is in the worklet
+   * or the samples; if you hear neither, the context is fine on paper and the
+   * problem is downstream of this page (muted tab, output device, system
+   * volume). Two seconds of A at 440Hz, quiet. */
+  beep(secs) {
+    audioResume();
+    if (!actx) return "no AudioContext";
+    const o = actx.createOscillator(), g = actx.createGain();
+    o.frequency.value = 440;
+    g.gain.value = 0.15;
+    o.connect(g); g.connect(actx.destination);
+    o.start(); o.stop(actx.currentTime + (secs || 2));
+    return "beeping for " + (secs || 2) + "s; context is " + actx.state;
+  },
+  /* RMS of what the worklet is actually emitting, right now. Push-side metering
+   * (state.peak) says the samples are good; this says whether they come out. */
+  level() {
+    if (!awAnalyser) return "no analyser";
+    const buf = new Float32Array(awAnalyser.fftSize);
+    awAnalyser.getFloatTimeDomainData(buf);
+    let sum = 0, peak = 0;
+    for (let i = 0; i < buf.length; i++) {
+      const v = buf[i] < 0 ? -buf[i] : buf[i];
+      sum += buf[i] * buf[i];
+      if (v > peak) peak = v;
+    }
+    return { rms: Math.sqrt(sum / buf.length), peak: peak };
+  },
   get state() {
     return {
-      cart: cartName, running, frames, w: W, h: H, fps,
+      cart: cartName, running, started, frames, w: W, h: H, fps,
       audio: actx ? actx.state : "none",
       worklet: !!awNode,
       wants: M ? !!M._moy_web_audio_wanted() : false,
       queued: awNode ? awDepth / audioRate : 0,
+      peak: audioPeak, pushed: audioPushed,
+      dest: actx ? actx.destination.channelCount : 0,
+      base: actx ? actx.baseLatency : -1,
       status: statusEl.textContent,
     };
   },
