@@ -11,6 +11,23 @@
     overscroll-behavior: none; touch-action: manipulation;
   }
   body { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 8px; }
+  /* SAFE centring. A centred flex column splits its overflow BOTH ways, so the
+     moment the content is taller than the viewport the first child sits above
+     y=0 -- clipped, and unreachable even by scrolling. That is not theoretical:
+     in the site's demo iframe (356x410 on a phone) the body came to 419px and
+     the title rendered at y=-9. `safe` makes an overflowing column pack to the
+     start instead, so the top is always reachable and only the bottom spills.
+     Written as two declarations because a browser without `safe` drops the
+     second and keeps plain `center`. */
+  body { justify-content: safe center; }
+  /* NO TEXT SELECTION. A long-press on a phone was selecting the title or the
+     status line and raising the callout menu mid-game -- the pad and the start
+     overlay had already opted out individually, which left exactly the elements
+     nobody thought of. The off-screen keyboard input opts back IN: it is a real
+     <input> and a textmode() cart types into it. */
+  html, body { user-select: none; -webkit-user-select: none;
+    -webkit-touch-callout: none; }
+  #kbin { user-select: text; -webkit-user-select: text; }
   #title { font-size: 13px; letter-spacing: .04em; color: #8a8a99; margin: 0; }
   /* The console's pixels are the point: never smooth them, and never let the
      browser's default image scaling turn a 320x240 canvas into a blur. */

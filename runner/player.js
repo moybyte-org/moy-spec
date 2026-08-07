@@ -451,6 +451,18 @@ function fit() {
 }
 addEventListener("resize", fit);
 if (window.visualViewport) window.visualViewport.addEventListener("resize", fit);
+/* The "has a mouse" query hides the joystick and face buttons, which changes the
+ * pad's height without changing the window's size -- so a resize listener never
+ * hears about it. Plugging a mouse into a tablet, or dragging the window to a
+ * screen with a different pointer, would otherwise leave the canvas sized for
+ * the other layout. Same reason the page hides the pad by media query rather
+ * than a one-shot matchMedia read at boot. */
+if (window.matchMedia) {
+  const mq = window.matchMedia("(hover: hover) and (pointer: fine)");
+  const onPointerChange = () => fit();
+  if (mq.addEventListener) mq.addEventListener("change", onPointerChange);
+  else if (mq.addListener) mq.addListener(onPointerChange);   // older Safari
+}
 
 function tick(now) {
   rafId = requestAnimationFrame(tick);
@@ -526,6 +538,14 @@ async function boot() {
   // A CLASS, not an inline display. See #pad in the page: the stylesheet owns
   // whether it is visible, so the "has a mouse" media query can veto it live.
   padEl.classList.toggle("on", wantsPad);
+  /* RE-FIT, because the pad just changed how much room the canvas may have.
+   * The fit() above ran before this line and therefore measured a body with no
+   * pad in it -- worth ~113px. On a tall standalone viewport the slack absorbs
+   * that; inside the site's demo iframe (356x410 on a phone) it made the canvas
+   * 340x255 where 284x213 fits, the body overflowed by 9px, and a centred flex
+   * column splits its overflow BOTH ways -- so the title sat at y=-9, clipped
+   * and unreachable. Measured, not guessed: scratch harness at phone metrics. */
+  fit();
 
   /* The cart is loaded and drawn but PARKED until a gesture. See #start in the
    * page: this is the only way a browser will let audio begin, and a player
