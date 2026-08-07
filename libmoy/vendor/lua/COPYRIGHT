@@ -31,7 +31,20 @@ THE SOFTWARE.
 
 ===============================================================================
 
-The files in this directory are Lua 5.4.7 (https://www.lua.org/), vendored
-into Moybyte. They have been MODIFIED -- see MODIFICATIONS.md next to this
-file for the exact list of changes. The Lua authors are not responsible for,
-and have not endorsed, those changes.
+The files in this directory are Lua 5.4.7 (https://www.lua.org/), vendored into
+libmoy as a convenience rather than a dependency -- moy_lua_open binds to
+whichever lua_State a host hands it, so a host with its own Lua does not need
+this copy.
+
+They have been MODIFIED, in two ways and no others:
+
+  1. The sources for io, os, debug, package, coroutine and linit are DELETED,
+     not merely left unregistered. The moy spec's sandbox (SPEC.md 4.1) calls
+     itself "a maximum, not a suggestion", and removing the sources is what
+     makes "absent entirely" true of the machine code rather than only of the
+     global table.
+  2. The build is configured LUA_32BITS, which SPEC.md 4.2 requires (32-bit
+     integers and floats) and SPEC.md 11 assumes of the build that generates
+     golden frames.
+
+The Lua authors are not responsible for, and have not endorsed, those changes.

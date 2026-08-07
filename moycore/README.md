@@ -6,11 +6,12 @@ only, no dependencies, imports on MicroPython.
 
 It exists for three reasons.
 
-**A spec whose only implementation is a 788 KB `.wasm` is not checkable.**
-SPEC.md says implementations render "pixel-identically" and calls `verbs.moy`
-the seed of a conformance suite; until now a third implementer had nothing to
-diff against. `canvas.py` is the readable answer to "what exactly does
-`circ(cx, cy, r, c)` light up", which prose cannot be.
+**A spec whose only implementation is a compiled blob is not checkable.** When this
+was written that blob was the only one there was, and a third implementer had nothing
+to diff against. `canvas.py` is the readable answer to "what exactly does
+`circ(cx, cy, r, c)` light up", which prose cannot be — and it is still the raster the
+suite's own runner draws with, now beside `libmoy/`, which answers the same question
+in C.
 
 **Embedding should be cheaper than reimplementing.** A host supplies pixels out,
 buttons in, and a Lua VM. Everything between is here.
@@ -84,7 +85,8 @@ python3 conformance/parity.py --ref /path/to/moybyte
 ```
 
 replays every conformance scene through both rasterizers and compares the
-framebuffers byte for byte. All 8 scenes are currently identical.
+framebuffers byte for byte. All 10 scenes are currently identical — the eight
+core ones and both provisional ones.
 
 ## Portability rules
 

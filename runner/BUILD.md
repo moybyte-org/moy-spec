@@ -12,6 +12,11 @@ bundle beside them is a playable game at a URL.
 | `index.html` | the page |
 | `player.js` | the platform shim -- canvas, input, audio, localStorage |
 
+`LICENSE.txt` is the fifth file and the only one that is not the player: it ships
+*with* an export, because moy.wasm has Lua and Emscripten's runtime compiled in
+and MIT requires their notices to accompany every copy. It is not part of the
+build, not in the stamp, and `build.sh` leaves it alone.
+
 The source is [`libmoy/port/wasm/`](../libmoy/port/wasm/), a sibling of the SDL2
 and ESP-IDF ports. Rebuilding needs emscripten and nothing else:
 
@@ -40,8 +45,12 @@ MicroPython cannot fill 76,800 pixels a frame, so the wasm emitted draw
 commands and JS replayed them.
 
 libmoy rasterizes in C at WebAssembly speed, so the page just uploads finished
-RGBA and the replayer is gone. **1,001,728 bytes to 296,486**, and one raster
-instead of three.
+RGBA and the replayer is gone. **1,001,728 bytes down to under a third of that**,
+and one raster instead of three. Most of what is left is the wasm; the loader
+glue, the page and the shim have grown since the swap, as the page learned what
+real phones do. The exact byte count per file is in `VERSION`, which is written
+by the build — so it is a number nobody has to maintain, and this paragraph does
+not restate it.
 
 ## It is conformance-checked, like every other implementation
 

@@ -66,6 +66,18 @@ visible in a screenshot.
   mid-call. One AudioWorklet holds the ring and resamples continuously to
   whatever rate the AudioContext actually runs at; starvation decays the last
   sample instead of cutting, which is the difference between a stutter and a pop.
+- **...and there is a second, worse audio path, which is not dead code.**
+  AudioWorklet requires a **secure context**, so over plain http to anything but
+  localhost — a phone on the LAN, a VPN, a colleague's desk — `audioWorklet` is
+  simply undefined. Every visitor who is not the person serving the page lands on
+  the chunk-scheduler fallback: per-chunk resampling, audible seams the ring does
+  not have. Seams beat silence. Deleting it as redundant once made the player
+  silent for everyone but the host, which is the kind of bug a harness on
+  127.0.0.1 cannot have.
+- **A user gesture is required before sound may begin**, so the page opens on a
+  start overlay over one already-drawn frame rather than booting straight into
+  the cart. A page that starts playing has no legal moment to open an
+  AudioContext, and reads as a console with no sound.
 - **The cart loading here is a fourth copy** of the `sprites.moygfx` /
   `map.moymap` / manifest parsers (`test/run_cart.c` and `port/sdl2/main.c` have
   the others). Each port being self-contained is deliberate — it is what makes

@@ -105,7 +105,15 @@ RUNNER = _pick_runner()
 # files in runner/ that belong to THIS repository rather than to the player,
 # and are never exported.
 VERSION_FILE = "VERSION"
-RUNNER_NOT_PLAYER = frozenset((VERSION_FILE, "BUILD.md", "THIRD_PARTY.md"))
+# The licence notice is the one file in runner/ that is neither the player nor
+# this repository's documentation of it: it must SHIP with an export. moy.wasm has
+# Lua and Emscripten's runtime compiled in, both MIT, and MIT requires the notice
+# to accompany every copy -- so an export that carried only the four player files
+# was distributing them stripped. It is not part of the build and not stamped,
+# hence its place in the set below as well.
+LICENSE_FILE = "LICENSE.txt"
+RUNNER_NOT_PLAYER = frozenset((VERSION_FILE, "BUILD.md", "THIRD_PARTY.md",
+                               LICENSE_FILE))
 
 # The player is built HERE, from libmoy: `libmoy/port/wasm/build.sh` compiles
 # the same C console an ESP32 links, through emscripten, into runner/. It used
@@ -300,10 +308,14 @@ def cmd_export(args):
     os.makedirs(out, exist_ok=True)
     for fn in runner_files():
         shutil.copy(os.path.join(RUNNER, fn), os.path.join(out, fn))
+    notice = os.path.join(RUNNER, LICENSE_FILE)
+    if os.path.isfile(notice):
+        shutil.copy(notice, os.path.join(out, LICENSE_FILE))
     with open(os.path.join(out, "carts.json"), "w", encoding="utf-8") as f:
         json.dump(pack_cart(src), f)
     print("exported -> %s" % out)
     print("  static files: host anywhere, or zip the folder for itch.io (HTML5)")
+    print("  %s covers the player; your cart's own licence is yours" % LICENSE_FILE)
 
 
 # --- port / demo (PICO-8) ----------------------------------------------------
@@ -605,8 +617,8 @@ def runner_files():
         missing = [n for n in want if not os.path.isfile(os.path.join(RUNNER, n))]
         if missing:
             die("runner/ is missing %s -- the pin (runner/%s) lists it. "
-                "Rebuild it with `%s player --build`." % PROG
-                % (", ".join(missing), VERSION_FILE))
+                "Rebuild it with `%s player --build`."
+                % (", ".join(missing), VERSION_FILE, PROG))
         return tuple(want)
     # Unpinned: the player is whatever is there, minus this repository's own
     # documentation of it.

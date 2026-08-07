@@ -45,6 +45,16 @@ jobs:
           git diff --exit-code src/moy_data.c
         working-directory: libmoy
 
+      # The same idea applied to PROSE. A handful of facts in the documents have
+      # a machine-readable owner -- the suite's scene count, SPEC.md's own
+      # section numbers, the control legend, the player's byte sizes -- and
+      # nothing was checking that the prose still agreed with the owner. A review
+      # found the scene count wrong in three READMEs at once, and nine source
+      # comments citing SPEC.md section numbers that a renumbering would break in
+      # silence. Cheap, and it runs before anything is compiled.
+      - name: The documents agree with what generates their facts
+        run: python3 tools/check_docs.py
+
       - name: Conformance (recorded traces -- the raster)
         run: make conform
         working-directory: libmoy
@@ -158,7 +168,7 @@ jobs:
             -L$SDL/lib -lmingw32 -lSDL2main -lSDL2 -lm \
             -o dist-win/moy-play.exe
           cp $SDL/bin/SDL2.dll dist-win/
-          printf 'moy-play -- the moy console as a Windows program.\r\n\r\nRun a cart:  drag a .moy folder onto moy-play.exe,\r\nor from a terminal:  moy-play.exe path\\to\\game.moy\r\n\r\nArrows = d-pad, Z/X = A/B, Enter = run, Esc = quit.\r\nSpec and tools: https://github.com/moybyte-org/moy-spec\r\n' > dist-win/README.txt
+          python3 ../tools/release_readme.py windows-player > dist-win/README.txt
         working-directory: libmoy
 
       # Linking is not running (the lesson this repo keeps re-learning). Wine
@@ -327,9 +337,9 @@ jobs:
           mkdir win lin mac
           cp art/moy-play-windows-x64/moy-play.exe art/moy-play-windows-x64/SDL2.dll win/
           cp art/moy-cli-windows-latest/moy.exe win/
-          printf 'moy -- the toy console, bundled for Windows.\r\n\r\nmoy-play.exe   the native player: drag a .moy cart folder onto it.\r\n               Arrows/WASD = d-pad, Z/X (or J/K) = A/B, Enter = run, Esc = quit.\r\nmoy.exe        the whole toolchain, no Python needed: `moy new mygame`,\r\n               `moy run mygame.moy` (browser, hot reload), check, pack,\r\n               gfx/map PNG+CSV round-trips, conform, push. Run `moy` with\r\n               no arguments for the full list.\r\n\r\nSpec and source: https://github.com/moybyte-org/moy-spec\r\n' > win/README.txt
+          python3 tools/release_readme.py windows > win/README.txt
           (cd win && zip -q ../moy-windows-x64.zip *)
-          printf 'moy -- the toy console: the CLI and the native player.\n\n  ./moy-play mygame.moy     play a cart. Arrows/WASD = d-pad,\n                            Z/X (or J/K) = A/B, Enter = run, Esc = quit\n  ./moy new mygame          scaffold a cart\n  ./moy run mygame.moy      play in your browser, hot reload on save\n  ./moy                     the full command list\n\nmacOS note: the binaries are unsigned -- first run is right-click -> Open,\nor `xattr -d com.apple.quarantine moy moy-play`.\n\nSpec and source: https://github.com/moybyte-org/moy-spec\n' > README.txt
+          python3 tools/release_readme.py unix > README.txt
           install -m 755 art/moy-cli-ubuntu-latest/moy lin/moy && cp README.txt lin/
           install -m 755 art/moy-cli-ubuntu-latest/moy-play lin/moy-play
           install -m 755 art/moy-cli-macos-latest/moy mac/moy && cp README.txt mac/

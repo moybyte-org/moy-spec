@@ -119,9 +119,10 @@ SPEC.md 1.1's floor is about 400 KB and the buffers above are most of it. On
 PSRAM-equipped parts that is nothing; the spec deliberately excludes SRAM-only
 microcontrollers (§12.4). **Where** the buffers live is yours: the reference
 console keeps its framebuffer and assets in PSRAM and steers only the Lua VM's
-hot allocations to internal SRAM, having measured an all-PSRAM heap at roughly
-2× slower cart logic on one board's 120 MHz octal bus. A cart can observe none
-of this.
+hot allocations to internal SRAM, because an all-PSRAM heap measured materially
+slower cart logic on an octal-PSRAM board — worth doing, and worth measuring on
+yours rather than taking on faith. (The spec's `RATIONALE.md`, "Memory — 400 KB",
+has the figure.) A cart can observe none of this.
 
 libmoy never allocates, so every one of those buffers is placed by you —
 `EXT_RAM_BSS_ATTR`, a `heap_caps_malloc` with `MALLOC_CAP_SPIRAM`, or plain

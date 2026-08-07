@@ -32,6 +32,11 @@ compiled to WebAssembly, and they bundle two MIT-licensed projects with it
 (Lua 5.4 and Emscripten's runtime support). Their notices are in
 [runner/THIRD_PARTY.md](runner/THIRD_PARTY.md).
 
+Because those terms require the notices to travel with every copy,
+`runner/LICENSE.txt` is a self-contained version of them and `moy export` copies
+it into every web bundle it writes. Exports made before 2026-08-08 shipped the
+compiled player without one.
+
 ## Ported carts
 
 Carts produced by `moy.py port` / `moy.py demo` are derivative works of their

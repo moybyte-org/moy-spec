@@ -34,21 +34,16 @@ project.**
 libmoy has no test suite of its own devising. It runs
 [moy-spec's conformance suite](https://github.com/moybyte-org/moy-spec/tree/main/conformance)
 — the same golden frames that check the reference console, the WebAssembly
-player, and an ESP32-P4 over serial:
+player, and an ESP32-P4 over serial. The suite is the directory above this one,
+so there is nothing to point at:
 
 ```
-make conform SPEC=../moy-spec
+make conform
 ```
 
-```
-  ok    primitives      ok    camera_clip
-  ok    edges           ok    pal_palt
-  ok    text            ok    sprites
-  ok    text_bytes      ok    tilemap
-                        ok    provisional  (excluded, not counted)
-
-all 8 core scenes pixel-identical.
-```
+It prints a line per scene and a verdict, and exits non-zero if any core scene
+differs. Its output is not pasted here: a copy of a program's output in a README
+is a screenshot, and this one rotted the next time the suite grew a scene.
 
 That works before there is a Lua VM, a cart loader or a frame loop, because the
 suite publishes each scene as a flat verb trace as well as a cart. A rasterizer
@@ -57,10 +52,13 @@ start here.
 
 ## What is here, and what is not
 
-**Here:** the 320×240 indexed raster and every SPEC.md §6 verb, camera / clip /
-pal / palt, sprites with flips, scales and colorkeys, `sspr`, the tilemap, the
-8×8 font, the 64-entry palette, RGB888/RGB565 resolution at flush time, and the
-Lua binding with SPEC.md §4.1's sandbox.
+**Here:** the indexed raster at any of SPEC.md §3.1's three canvas sizes and
+every SPEC.md §6 verb, camera / clip / pal / palt, sprites with flips, scales
+and colorkeys, `sspr`, the tilemap, the 8×8 font, the 64-entry palette,
+RGB888/RGB565 resolution at flush time, the Lua binding with SPEC.md §4.1's
+sandbox, and — as a separate, optional module — the whole of SPEC.md §8's
+synthesizer (`include/moy_audio.h`: eight waveforms, seven effects, the sfx step
+sequencer and the music row sequencer with its channel-claiming rules).
 
 **Not here, on purpose:** a VM, a frame loop, a filesystem, a launcher. libmoy
 binds to whatever `lua_State` you hand it — `vendor/lua` is a convenience, not a
@@ -105,12 +103,15 @@ needs exact values", and §6 says the font "must be byte-identical across
 implementations or all text conformance fails". So neither is hand-written:
 
 ```
-make data SPEC=../moy-spec
+make data
 ```
 
 regenerates `src/moy_data.c` and records which spec commit it came from. A
 transcribed array of 192 numbers would compile, run, look right, and disagree
 with every other implementation about colour 37.
+
+(`SPEC` defaults to `..`, the spec directly above. A vendored copy of libmoy in
+somebody else's tree overrides it: `make data SPEC=/path/to/moy-spec`.)
 
 ## Running actual carts
 
@@ -118,6 +119,9 @@ with every other implementation about colour 37.
 make lua            # build/run_cart -- runs a .moy cart through libmoy + Lua
 make conform-lua    # the suite again, but through REAL carts rather than traces
 make play           # build/moy-play -- a desktop console (SDL2)
+make audio-test     # SPEC.md 8's semantics, asserted numerically
+make lowres         # a declared 160x120 canvas really is 19,200 bytes
+make test           # all of the above that does not need SDL2
 ```
 
 `moy-play mygame.moy` is a playable console in about 250 lines
@@ -131,15 +135,19 @@ rather than a description. What a platform owes libmoy is four things:
 | **a clock** | milliseconds |
 | **persistence** | 256 signed 32-bit slots, if you have anywhere to put them |
 
-Audio is optional — SPEC.md 8.3 says silence is a valid rendering. Everything
-else is libmoy's.
+Sound is not among them. SPEC.md 8.3 makes silence a valid rendering, so audio is
+a fifth duty you may skip entirely. If you want it, it is libmoy's too — `moy_audio.h`
+synthesizes SPEC.md 8 into a buffer and asks the platform for nothing but a
+sample rate and somewhere to push samples. The SDL2 port wires it in ~50 lines;
+an ESP32 host renders into an I2S DMA buffer and nothing else changes.
+Everything else is libmoy's.
 
 `port/esp-idf/` is the same shim as an IDF component. Its README is explicit
 about what has and has not been run on hardware.
 
 `port/wasm/` is the third one, and it is the spec's own web player: libmoy plus
-Lua through emscripten, ~296 KB total, built into `runner/` and served by
-`moy.py run`. It replaced a MicroPython-WASM build of the reference console that
+Lua through emscripten, under 350 KB of static files, built into `runner/` and
+served by `moy.py run`. It replaced a MicroPython-WASM build of the reference console that
 was three times the size and had to carry a second raster in JavaScript, because
 a Python VM cannot fill 76,800 pixels a frame and this can.
 
@@ -154,10 +162,20 @@ reaching for any of them fails, as SPEC.md 11 requires of every conforming host.
 
 ## Status
 
-**Stages A, B and C: the raster, the Lua binding, and the porting layer.** The
-suite passes through both paths — recorded traces and real Lua carts. Next is
-hardware verification of the ESP-IDF shim, and audio (SPEC.md 8), which is
-absent because silence conforms and nothing yet needed it.
+**Stages A, B and C: the raster, the Lua binding, and the porting layer** — plus
+audio, which arrived once a desktop player existed to want it. The suite passes
+through both paths — recorded traces and real Lua carts — and the traces pass
+against the RGB565 build as well; `make audio-test` asserts SPEC.md 8's semantics
+numerically (8.3 exempts audio from pixel conformance, so that is its whole test
+story).
+
+**The raster is verified on real silicon**: every conformance scene passes on an
+ESP32-P4, where six of the reference console's verbs — and then `print`,
+`blit_map` and the sprite path — are calls into this library, drawing to a panel
+through its RGB565 build. What is still unverified is the **ESP-IDF shim** in
+`port/esp-idf/`: CI builds that component for three target/config combinations
+and boots the example under QEMU, so the console runs on an emulated ESP32, but
+no pixel has left that directory for a display, and QEMU is not a timing model.
 
 ## Licence
 

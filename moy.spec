@@ -8,8 +8,11 @@
 # files moycore reads beside SPEC.md, and the conformance suite's carts,
 # goldens and traces so `moy conform` can judge a third-party player from the
 # frozen binary alone. Paths inside the bundle mirror the checkout, so no
-# module needed a frozen-specific search path -- moy.py only redirects the
-# WRITABLE location (`player --update`) when frozen.
+# module needed a frozen-specific search path. The one thing frozen changes is
+# that the player may be OVERRIDDEN: `moy.py::_user_runner` is a per-user data
+# dir that wins over the bundled runner/ when it holds a VERSION, which exists
+# so somebody building the player themselves can have a release binary serve it
+# (`player --build` refuses to run from a frozen binary -- it needs a checkout).
 
 a = Analysis(
     ["moy.py"],

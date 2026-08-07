@@ -1,0 +1,74 @@
+moy web player -- licence and notices
+=====================================
+
+These files (index.html, player.js, moy.mjs, moy.wasm) are the moy web player.
+`moy export` copies them beside a cart to make a playable web bundle, so this
+notice travels with them: moy.wasm has Lua and Emscripten's runtime compiled
+into it, and both are MIT-licensed, which requires their notices to accompany
+every copy.
+
+If you are reading this inside an exported game: the LICENCE OF THE GAME IS NOT
+THIS FILE. The cart (carts.json here) belongs to whoever wrote it, under
+whatever terms they chose -- and a cart converted from a PICO-8 BBS cart carries
+the original's licence, which defaults to CC BY-NC-SA 4.0. This file covers the
+player around it.
+
+
+THE PLAYER
+----------
+
+Copyright (c) 2026 Nikola Jovicic
+https://github.com/moybyte-org/moy-spec
+
+
+COMPONENTS COMPILED INTO moy.wasm
+---------------------------------
+
+Lua 5.4 -- the cart language VM
+    Copyright (C) 1994-2024 Lua.org, PUC-Rio
+    https://www.lua.org/license.html
+    MODIFIED: the sources for io, os, debug, package and coroutine are removed
+    rather than merely left unregistered, because the moy spec's sandbox
+    (SPEC.md 4.1) is a ceiling and not a suggestion; the build is configured
+    LUA_32BITS. The Lua authors have not endorsed those changes.
+
+Emscripten runtime support -- the JS loader glue in moy.mjs and the libc it links
+    Copyright (c) 2010-2026 Emscripten authors
+    https://emscripten.org
+    MIT and University of Illinois/NCSA Open Source License
+
+MicroPython -- the 8x8 console font (font_petme128_8x8), which SPEC.md 6 makes
+normative, so these exact glyph bytes are in every conforming console
+    Copyright (c) 2013-2026 Damien P. George and contributors
+    https://github.com/micropython/micropython
+
+Palette indices 0-15 are PICO-8's base sixteen RGB values, reproduced so that
+converted carts keep their exact colours (SPEC.md 2). PICO-8 is by Lexaloffle
+Games. A list of colour values is not itself a licensable work, so no permission
+notice attaches; the origin is recorded because it is a fact about the data.
+
+
+THE MIT LICENCE
+---------------
+
+Every component above except Emscripten's NCSA-licensed portions is offered
+under the MIT licence, whose terms are these, and whose copyright notices are
+the ones listed above:
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

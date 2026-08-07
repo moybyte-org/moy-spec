@@ -6,6 +6,14 @@ here, so "why is it like that?" never gets met with "that's what we shipped."
 Where an answer is **inherited** rather than reasoned, it says so. Those are the ones
 most worth re-opening.
 
+**One argument, one home.** This file owns the reasoning behind the spec's fixed
+values; SPEC.md states each decision and its cost and points here. Four decisions run
+the other way — no display-time palette, `btnp` without autorepeat, no framebuffer
+access, and deferred cover art — and are argued in SPEC.md §12.1, §12.2, §12.6 and
+§12.7 because that is where they are cited from. Either way there is one copy. When a
+measurement changes, the doc that owns it is the only one to edit; `tools/check_docs.py`
+is what notices when that stops being true.
+
 ---
 
 ## Raster — 320 × 240
@@ -18,8 +26,39 @@ Cost of the choice: at one byte per index a framebuffer is 75 KB, which sets the
 memory floor more than any other decision. A 240 × 160 raster would have halved it.
 
 **Note for PICO-8 conversion:** 128 × 128 does not scale to fill 320 × 240 by an
-integer factor — 2× is 256 × 256, taller than the screen. Converted carts run 1:1
-centered, or use the `view` extension to letterbox at the host's best fit.
+integer factor — 2× is 256 × 256, taller than the screen. So a converted cart has
+three ways out, in increasing order of how much it gives up: run 1:1 centered in a
+letterbox; declare `"canvas": "128x128"` (§3.1) and *be* a 128 × 128 machine, which
+the host then scales as it likes; or crop eight rows and draw at 2× (the converter's
+`--zoom`), which fills the height at 256 × 240 and loses whatever was in those rows.
+The `viewport` extension's `view()` reaches the second look at runtime rather than
+through the manifest — it declares the region and the host upscales it, so it fills
+rather than letterboxes.
+
+The converter takes the first route by default and the third on request; it stays a
+320 × 240 cart and does its own scaling, so a zoomed port looks the same on every
+tier with no extension and no hardware scaler. Declaring the canvas is the route
+open to a cart written by hand for that shape.
+
+## Canvas — three sizes, and the set is closed
+
+320 × 240 is the console; 160 × 120 and 128 × 128 are the two smaller rasters a cart
+may declare instead (§3.1). Each earns its place: 160 × 120 is a chunkier pixel, which
+is a look a cart cannot fake by drawing bigger, and it is exactly half the default in
+each axis, so a host already rendering small and upscaling (above) needs no new
+scaler for it. 128 × 128 is in the set for one reason only — it is the shape of the
+back catalogue this format wants to inherit.
+
+Closed rather than arbitrary, because both of the properties that make this a
+*console* survive only if the sizes are known in advance. A host provisions a
+fixed-size machine (§1.1), and the smaller rasters are prefixes of the same
+reservation, so the memory floor does not move. And a host can choose its scaler per
+size ahead of time, where arbitrary dimensions would demand a general one from a
+device that may only have a fixed-function scaler — or none.
+
+An out-of-set value is **refused**, not clamped or ignored, for the same reason an
+unknown `runtime` is (§3.1): a cart run at a size it did not ask for has every
+coordinate in it wrong, and reports that as the author's bug.
 
 ## Tick — 30 Hz, 60 opt-in
 
@@ -97,11 +136,10 @@ buttons and each host maps its own hardware.
 `run` is optional because not every device has a third comfortable button.
 
 Exit is not in the set at all: it belongs to the host, so no cart has to spend a
-button on it and no host has to honour a cart's idea of quitting. `quit()` is the
-complement, not a contradiction: the *player* can always leave without the cart's
-cooperation, and the *cart* can end itself (a menu's EXIT entry, a game-over
-screen) — and must, when it holds the keyboard in `textmode` and the host's
-gesture can't reach through the typed stream.
+button on it and no host has to honour a cart's idea of quitting. `quit()` (§9) is the
+complement rather than a contradiction — the *player* leaves without the cart's
+cooperation, the *cart* ends itself — and the two only overlap in `textmode`, where
+the host's own gesture cannot reach through a stream of typed characters.
 
 **Touch and keyboard are optional but never required** because a cart requiring
 hardware half the devices lack fragments the catalogue on day one. That is the single
@@ -205,25 +243,21 @@ level, not a cart smuggling in a save format.
 
 ## `spr_batch` — why it *left* core
 
-It was core in an earlier draft, on this reasoning: not a drawing feature but a
-**dispatch** one, since on an interpreted host crossing the language boundary
-dominates small draws, so one call doing N sprites earns a dedicated verb.
+It was core in an earlier draft as a **dispatch** feature rather than a drawing one:
+on an interpreted host the language boundary dominates small draws, so one call doing
+N sprites looked like it earned a verb.
 
-That reasoning was checked against the reference console and did not survive. The
-Lua binding for `spr` appends each sprite's quad straight into the native batch
-array, breaking the run only when the colorkey or scale changes or the queue fills —
-so an ordinary `for` loop of `spr` calls never crosses the language boundary at all,
-and compiles to exactly the one batched call `spr_batch` would have made. The verb
-was buying a saving the runtime already provided.
+Checked against the reference console, it didn't. That console's Lua `spr` appends each
+quad straight into the native batch array and breaks the run only on a state change or
+a full queue — so an ordinary `for` loop of `spr` calls never crosses the boundary at
+all, and already compiles to the one batched call `spr_batch` would have made. Two
+things made it dead weight rather than merely redundant: no cart in the spec's own
+language ever called it, and its binding was broken, which is how nobody noticed.
 
-Two things confirmed it was dead weight rather than merely redundant: no cart written
-in the spec's own language ever called it (the one caller was written in another
-language entirely), and its Lua binding was in fact broken — nothing had exercised it.
-
-So it moved to §6.1 with the other dispatch verbs, where the open question is now
-whether *any* of them are needed. A batching win the engine can find for itself is
-the engine's job, and a verb that exists to hand-roll one is a cost passed to every
-cart author and every implementer for nothing.
+`rect_batch`, `col_batch` and `spans` followed it out on their own measurements (§6.1
+records those). Hence the rule §6.1 now states as a host's duty: a batching win the
+engine can find for itself is the engine's job, and a cart is never asked to pre-pack
+its geometry.
 
 ## `config.json`
 
@@ -234,13 +268,25 @@ hang a settings UI.
 
 ---
 
-## The §6.1 verbs — deliberately unanswered
+## The §6.1 verbs — answered, and the measurement that changed the answer
 
-`rect_batch`, `col_batch`, `tri`/`trib` and `sspr` have no entry here yet, because
-their numbers are still being measured. The one thing already established is the
-observation that motivates them: on reference hardware, tall narrow spans cost ~4× per
-pixel what wide ones do (~300ns/px vs ~74ns/px), and that gap persists when the same
-work moves from a script into a C kernel — so it is memory order, not dispatch.
+The set is `tri`, `trib`, `sspr` and `tline`, and §6.1 states the rule that admits
+them. What matters here is that turning many calls into one never qualified.
 
-Everything that follows from that (whether a column-shaped verb recovers it, whether
-the right level is a primitive or a whole renderer) is open. See SPEC.md §6.1.
+That rule is the *result* of a correction, and the correction is this document's own,
+which is why it is recorded here rather than there. An earlier draft of this file
+argued the opposite case from a measurement that was wrong: that tall narrow spans cost
+~4× per pixel what wide ones do, so the cost was memory order rather than dispatch, so
+a column-shaped verb should recover it. **That figure was a subtraction artifact**, the
+real gap is far smaller, and the verb built on it measured *slower* than the one it was
+meant to replace. So `spr_batch`, `rect_batch`, `col_batch` and `spans` are deleted and
+batching is the host's duty.
+
+The numbers that settled all of it — the corrected per-pixel costs, `col_batch`'s A/B,
+and the per-technique frame budgets on both reference boards — are tabulated in
+SPEC.md §6.1 and are not repeated here. That section is where an implementer looks
+before re-proposing one of them, and a measurement quoted in two places is a
+measurement that will be retracted in one.
+
+The lesson, which is general: a confident write-up outlives the code it measured, and
+nobody re-runs a number that reads like a verdict.

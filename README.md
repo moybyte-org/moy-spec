@@ -19,8 +19,8 @@ Status: **draft 0.1, unstable.** Names and values will still move.
 
 - **Windows** — `moy-windows-x64.zip`: `moy.exe`, the whole toolchain in one
   executable, plus `moy-play.exe`, the native player — **drag a `.moy` cart
-  folder onto it**. Arrows/WASD are the d-pad, Z/X (or J/K) are A/B, Enter is
-  run, Esc quits.
+  folder onto it**. Arrows or WASD = d-pad, Z/J = A, X/K = B, Enter or Space =
+  run, Esc = quit.
 - **Linux / macOS** — `moy-linux-x64.tar.gz` / `moy-macos-arm64.tar.gz`: the
   same pair, `moy` and `moy-play`. The macOS build is Apple Silicon and
   unsigned — first run is right-click → Open.
@@ -75,13 +75,20 @@ findable. An SD card in a reader works today:
 
 ## Coming from PICO-8
 
-`moy port cart.p8` converts a cart — assets near-verbatim (the palette's
+```
+moy demo
+```
+
+fetches Celeste Classic, ports it, and runs it in your browser. One command,
+nothing to set up first — the quickest way to see what this is.
+
+`moy port cart.p8` does that for any cart: assets near-verbatim (the palette's
 first 16 colours are PICO-8's), code mechanically ported to Lua 5.4 under a
-compat shim — and `moy demo` fetches Celeste Classic, ports it and runs it.
-A port plays 1:1 in a letterbox, since 128 × 128 has no integer fit in
-320 × 240; `--zoom` crops eight edge rows and draws at 2× instead. The crop
-is lossy and per-cart (`--zoom 0,8` chooses which edge), and ports of BBS
-carts are personal/dev material — their default license is CC BY-NC-SA.
+compat shim. A port plays 1:1 in a letterbox, since 128 × 128 has no integer
+fit in 320 × 240; `--zoom` crops eight edge rows and draws at 2× instead
+(`moy demo --zoom` as well). The crop is lossy and per-cart (`--zoom 0,8`
+chooses which edge), and ports of BBS carts are personal/dev material — their
+default license is CC BY-NC-SA.
 
 ## Why this exists
 
@@ -105,8 +112,8 @@ cleanly, and an extension never redefines what core already covers
 |---|---|
 | [moycore/](moycore/) | the console as a Python library — stdlib-only: raster, palette, font, cart format, verb table |
 | [libmoy/](libmoy/) | the console as a C99 library — no dependencies, no allocation, §4.1-sandboxed Lua binding, and three ports: SDL2 desktop, ESP-IDF component, WebAssembly |
-| [runner/](runner/) | the web player: libmoy compiled to WebAssembly, ~296 KB, built by `libmoy/port/wasm` |
-| [conformance/](conformance/) | the suite that keeps them honest — 10 scenes as real carts, golden frames, a runner that takes any player. Five implementations render every scene pixel-identically, an ESP32-P4 over serial among them; its README tells the story |
+| [runner/](runner/) | the web player: libmoy compiled to WebAssembly, under 350 KB of static files, built by `libmoy/port/wasm` |
+| [conformance/](conformance/) | the suite that keeps them honest — one scene per area, each a real cart with a golden frame, and a runner that takes any player. Five builds render every scene pixel-identically, an ESP32-P4 over serial among them — but all five descend from one raster, and its README is candid about what that costs |
 | [moybyte](https://github.com/moybyte-org/moybyte) | the reference implementation: a PC simulator and two ESP32 handhelds |
 | [proposals/](proposals/) | drafts on top of core: single-file carts (`moy pack`), compiled carts (WASM), sideload |
 | [THIRD_PARTY.md](THIRD_PARTY.md) | attribution that travels with the normative data files |
@@ -118,6 +125,12 @@ TIC-80 converter.
 ## Contributing
 
 This is early, and the useful contributions are arguments, not patches.
+
+If you do send a patch that touches the documents, `python3 tools/check_docs.py`
+is what CI runs on them: it holds the prose to the things that generate its facts
+— the suite's own scene count, SPEC.md's section numbers, the player's byte sizes
+— because each of those had gone stale in three or four files at once. Its
+docstring is also where the rule lives for when a number belongs in prose at all.
 
 If you are building a console: the numbers most likely to be wrong for you
 are the **memory floor** (§1.1), the **button set** (§7.3) and the **raster**

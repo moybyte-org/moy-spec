@@ -33,7 +33,7 @@ mkdir -p "${OUT}"
 # the output is a UNION of every player ever built here, and the stamp would
 # faithfully hash files nothing loads.
 find "${OUT}" -maxdepth 1 -type f \
-  ! -name VERSION ! -name BUILD.md ! -name THIRD_PARTY.md -delete
+  ! -name VERSION ! -name BUILD.md ! -name THIRD_PARTY.md ! -name LICENSE.txt -delete
 
 # The exported surface, and nothing else: every name here is called by page.js
 # and each one is in main.c with EMSCRIPTEN_KEEPALIVE beside it.
@@ -85,7 +85,7 @@ python3 - "${OUT}" "$(cd "${SPEC}" && git rev-parse HEAD 2>/dev/null || echo '')
           "$(emcc -dumpversion 2>/dev/null || echo '?')" <<'PY'
 import hashlib, json, os, sys
 out, commit, branch, dirty, emcc = sys.argv[1:6]
-skip = {"VERSION", "BUILD.md", "THIRD_PARTY.md"}
+skip = {"VERSION", "BUILD.md", "THIRD_PARTY.md", "LICENSE.txt"}
 files = {}
 for name in sorted(os.listdir(out)):
     path = os.path.join(out, name)

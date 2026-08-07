@@ -14,7 +14,7 @@ this repository ships, at the commit they are reading.
 
     python3 site/build.py                 # -> _site/
     python3 site/build.py --out /tmp/x    # somewhere else
-    python3 site/build.py --no-demo       # skip the ~960 KB wasm bundle
+    python3 site/build.py --no-demo       # skip the ~690 KB of player bundles
 
 Everything it emits is generated. Do not edit _site/; edit the sources.
 """

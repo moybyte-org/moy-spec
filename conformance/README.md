@@ -3,7 +3,7 @@
 > SPEC.md 11: *An implementation conforms when it runs the conformance suite and
 > produces pixel-identical output.*
 
-This is that suite. Nine scenes, eight of them counted; each is a real moy cart
+This is that suite. Ten scenes, eight of them counted; each is a real moy cart
 plus a golden frame.
 
 ```
@@ -41,12 +41,24 @@ check is what SPEC.md 6, 7.1 and 7.2 say each verb lights up.
 
 **`examples/verbs.moy` tests a HOST.** It is a real cart exercising the API
 through Lua, including the parts a trace cannot reach — the tick model, input
-edges, the sandbox ceiling.
+edges, the standard extensions, the provisional verbs. It is played and looked
+at, not diffed: there is no golden for it.
 
 An implementation needs both, and the raster one is reachable *first*: a trace
 replayer is about forty lines in any language, so a port can check its
 rasterizer long before it has a Lua VM wired up. Conformance should be something
 you reach early, not only at the end.
+
+**Neither of them tests the SPEC.md 4.1 sandbox**, which SPEC.md 11 also
+requires of a conforming host. No scene reaches for `io` and `verbs.moy` does not
+either, so a player can pass everything here with its sandbox wide open. The one
+place that check exists is a CI step over libmoy
+(`.github/workflows/libmoy.yml`, "The SPEC.md 4.1 sandbox holds": eight reaches
+— `io`, `os`, `require`, `load`, `debug`, `coroutine`, `collectgarbage`,
+`package` — each of which must make `run_cart` fail). That covers this
+repository's C core and nothing else. Putting it in the suite means teaching the
+runner to assert that a cart *fails*, which is a different protocol from "write
+me a frame" and has not been designed.
 
 ## What is in the box
 
@@ -72,7 +84,8 @@ golden/hashes.json   sha256 per frame, plus the suite manifest
 | `pal_palt` | draw-time remap and sprite transparency together; `pal` must not touch pixels already drawn |
 | `sprites` | flips, integer scales, colorkeys, out-of-range tile ids, sprites under camera and clip |
 | `tilemap` | `map()` regions, offsets, scale, colorkey, and a region starting out of range |
-| `provisional` | SPEC.md 6.1 verbs — **not counted**, SPEC.md 11 excludes 6.1 until it settles |
+| `provisional` | SPEC.md 6.1's `tri` / `trib` / `sspr` — **not counted**, SPEC.md 11 excludes 6.1 until it settles |
+| `provisional_tline` | SPEC.md 6.1's `tline`: the map sampled through 16.16 texture steps — **not counted**, same reason. The scene that caught a real board failing by 2773 pixels (below) |
 
 ## Provenance
 
@@ -103,46 +116,40 @@ a bug that was in the original. The JS replayer shared no code with any of them,
 so where it agreed, the agreement meant something.
 
 Rebuilding the player from libmoy deleted it. The page no longer rasterizes —
-that is the point, and the reason the bundle went from 1 MB to 296 KB — so there
-is no second raster in it to disagree with the first. What is left is one
-lineage checked against itself, plus real silicon (below) running the C kernel
-for real.
+that is the point, and the reason the bundle went from 1 MB to under a third of
+that — so there is no second raster in it to disagree with the first.
 
-**Getting it back is a small, well-shaped job**: an independent replayer of
-`traces/<name>.json`, written from SPEC.md rather than from moycore, in any
-language. The traces are published for exactly this, and the suite already
-claims a trace replayer is about forty lines. It has not been written, and
-until it is, this section is the honest accounting rather than a boast.
+**Getting it back is a small, well-shaped job, and it is the one thing this suite
+is missing**: a replayer of `traces/<name>.json` written from SPEC.md rather than
+from moycore, in any language. The traces are published for exactly that, and
+this file claims above that a trace replayer is about forty lines. Nobody has
+written it. Until somebody does, every "five agree" here means five descendants
+of one raster, and this section is an accounting rather than a boast.
 
 ### What the replayer found while it lasted
 
-Its whole value is in this list, which is why the history stays here.
+Three bugs, which is the whole argument for independence and why the history stays.
 
-Exactly 200 pixels differed on every scene: a 20×10 box at (299, 229). That is
-`runtime/perf_hud.py`'s FPS chip, drawn by the console into the cart's *own*
-raster. A golden frame must not contain an FPS counter, and neither should
-somebody's published web export. Fixed upstream — the player now takes
-`hud=False` and spec bundles pass it; `MOY_HUD=1` forces the chip back on and
-reproduces the 200 pixels exactly. (Moot for the current player, which has no
-console around the cart to draw a chip -- but it was a real bug in a real
-export, and it took a second implementation to see it.)
+**An FPS chip in the goldens.** Exactly 200 pixels differed on every scene, a 20×10
+box at (299, 229): the reference console's perf HUD, drawn into the cart's *own*
+raster. Nobody's golden frame — or published web export — should contain one. Fixed
+upstream, and moot for the current player, which has no console around the cart to
+draw a chip. It still took a second implementation to see it.
 
-It also found `sspr` rejecting the 10-argument form SPEC.md 7.1 gives it — a
-cap of 8 in the Lua binding, so the full form had never worked on *any* host,
-boards included. Fixed upstream; `provisional` now matches too, which puts 8 of
-the 9 scenes in agreement.
+**`sspr` had never accepted its full form.** The 10-argument signature SPEC.md 7.1
+gives it hit a cap of 8 in the Lua binding, so it had never worked on *any* host,
+boards included.
 
-And it found `print` unable to carry any byte past ASCII: a cart doing
-`print("\255")` — legal under §6, which draws nothing for that byte but still
-advances a cell — killed the whole frame with a `UnicodeError`, on every
-moy_lua host including the boards. That took the spec settling on bytes plus
-four coordinated fixes (the Lua bridge handing back a byte string, a wire form
-that can carry it, a replayer that reads it, and both fonts walking bytes).
-`text_bytes` is a core scene as a result.
+**`print` could not carry a byte past ASCII.** `print("\255")` — legal under §6, which
+draws nothing for that byte and still advances a cell — killed the frame with a
+`UnicodeError` on every moy_lua host, boards included. Fixing it took the spec settling
+on bytes plus four coordinated changes: the Lua bridge handing back a byte string, a
+wire form that can carry it, a replayer that reads it, and both fonts walking bytes.
+`text_bytes` is a core scene because of it.
 
-All ten scenes passed, `provisional` included — so the §6.1 verbs agreed too,
-even though §11 does not count them yet. The player built from libmoy passes
-them all as well; it just is not an independent witness to it.
+By the end every scene passed, the §6.1 ones included even though §11 does not count
+them. The player built from libmoy passes them too; it just is not an independent
+witness to it.
 
 ## And on real silicon
 
@@ -155,7 +162,7 @@ python3 conformance/run.py --player \
   "python3 /path/to/moybyte/tools/p4_conformance.py {cart} {out}"
 ```
 
-**All nine scenes match there too.** That is the tier where the C `moy_gfx`
+**All ten scenes match there too.** That is the tier where the C `moy_gfx`
 kernel, the RGB565 framebuffer and §1.1's memory floor actually live, and it had
 never been checked against the spec before.
 
@@ -165,29 +172,23 @@ turned up, both in shared code, so the prediction had been that both were on the
 boards too. The board run turned that prediction into a measurement, and
 reflashing closed both.
 
-So three things agree on every scene: moycore, the reference console's own
-rasterizer, and an ESP32-P4. libmoy and the web player make five.
-
-**All five are now one lineage, and the board no longer breaks it.** That was
-written when the ESP32-P4 ran `moy_gfx`, a hand transcription — the only raster
-in the set that could disagree by accident rather than by inheritance. On
-2026-08-07 six of its verbs (`tri`, `sspr`, `tline`, `circ`, `circb`, `line`)
+So five runs agree on every scene: moycore, the reference console's own
+rasterizer, libmoy, libmoy again as the WebAssembly player, and an ESP32-P4.
+**Five runs, one lineage** — and until 2026-08-07 that was not quite true, which
+is the interesting part. The board ran `moy_gfx`, a hand transcription, the only
+raster in the set that could disagree by accident rather than by inheritance.
+That day six of its verbs (`tri`, `sspr`, `tline`, `circ`, `circb`, `line`)
 became calls into libmoy, because on-glass conformance had just caught
 `provisional_tline` failing on the board by 2773 pixels while passing on the
-host — a transcription bug that only the board could see, and that no amount of
-host testing was ever going to find.
+host — a transcription bug only the board could see. Later the same day `print`,
+`blit_map` and the sprite path followed, on a re-measurement that overturned the
+numbers which had kept them out (that repo's `libmoy/UPSTREAM.md` has the table).
 
-That was the right trade and it closes the loop the wrong way round: the fix for
-"the transcription drifted" is to stop transcribing, and the cost is the last
-independent witness. What is left checking this suite is one family agreeing
-with itself, plus whatever `moy_gfx` still owns (`print`, `blit_map`, the
-sprite path — kept on measurements, see that repo's `libmoy/UPSTREAM.md`).
-
-Which makes the independent replayer described above not a nice-to-have but
-**the thing this suite is now missing**: a rasterizer for `traces/*.json`
-written from SPEC.md rather than from moycore, in any language. Until someone
-writes it, every "five implementations agree" in this repository means five
-descendants of one raster.
+The right trade, and it closes the loop the wrong way round: the fix for "the
+transcription drifted" is to stop transcribing, and the price is the last
+independent witness. What `moy_gfx` still owns is its compositor — viewport-aware
+fills, the scroll blit, async DMA, the window composite — which has no
+counterpart here to disagree with. So the replayer above is the outstanding job.
 
 ## Determinism, and one hole in it
 
