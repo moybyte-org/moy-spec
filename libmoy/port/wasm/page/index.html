@@ -36,6 +36,14 @@
      the middle and slides, it does not hit 44px squares, and moybyte's page
      learned that the hard way. Sized in vw/vh so it scales with the screen
      instead of being tiny on a tablet. */
+  /* Shown by a CLASS, hidden by a MEDIA QUERY -- never by an inline style.
+     The last version toggled style.display directly, and setting it to "" (the
+     obvious "unset") falls back to the stylesheet's `display: none`, so the pad
+     never appeared on any device at all. A class cannot make that mistake, and
+     a media query re-evaluates when the pointer changes (a tablet docked to a
+     mouse, a window dragged to another screen) where a one-shot matchMedia
+     read at boot would not. */
+  #pad.on { display: flex; }
   #pad { display: none; width: min(96vw, 112vh); max-width: 100%;
     justify-content: space-between; align-items: center; gap: min(8px, 1vw);
     padding: 10px 4px; box-sizing: border-box; touch-action: none;
@@ -54,9 +62,34 @@
     background: #22222c; border: 1px solid #33333f; }
   #pad .b:active { background: #34344a; }
   #mid { display: flex; align-items: center; gap: min(9px, 1.5vw); }
+  /* HOLD to reset, not tap: a reset one thumb-brush away from the A button
+     would lose a game to a mis-tap, and the burger sits right beside it. The
+     fill is the feedback -- a hold with no progress shown reads as a dead
+     button, so people let go before it fires. */
+  #bh { position: relative; overflow: hidden; }
+  #bh::after { content: ""; position: absolute; inset: 0; background: #5f6f9f;
+    opacity: .55; transform: scaleY(0); transform-origin: bottom; }
+  #bh.hold::after { transform: scaleY(1); transition: transform .7s linear; }
+  /* Specificity, not order: `#pad .b { display: flex }` above is (1,1,0) and
+     would beat a bare `#kb { display: none }` at (1,0,0) -- the button showed on
+     every cart no matter what the class said. Two ids wins. (Checking the class
+     is absent is NOT a test for this; only the computed style is.) */
+  #pad #kb { display: none; }          /* only for carts that declare keyboard */
+  #pad #kb.on { display: flex; }
   #mid .b { width: min(40px, 9vw); height: min(40px, 9vw); font-size: min(18px, 4vw); }
   #ab { flex: 0 0 auto; display: flex; align-items: center; gap: min(10px, 2vw); }
-  #keys { color: #6a6a78; font-size: 11px; letter-spacing: .04em; text-align: center; }
+  /* Keys on a real keyboard, the pad on a touchscreen -- each is noise on the
+     other. `hover: hover and pointer: fine` is the "has a mouse" test. */
+  #keys { display: none; color: #6a6a78; font-size: 11px; letter-spacing: .04em;
+    text-align: center; }
+  @media (hover: hover) and (pointer: fine) {
+    /* A mouse needs no joystick or face buttons -- the keys do that better.
+       The MIDDLE cluster stays: reset is worth having on a desktop too, and
+       there is no keyboard gesture for it the way the boards have one. */
+    #pad.on #joy, #pad.on #ab { display: none; }
+    #pad.on { justify-content: center; }
+    #keys { display: block; }
+  }
   /* The real focusable input, pinned 1x1 at the viewport ORIGIN rather than
      parked off-screen: an off-screen focused input makes iOS scroll the page to
      chase it. font-size 16px because anything smaller makes iOS zoom in on
@@ -76,7 +109,7 @@
 
 <div id="pad">
   <div id="joy"><div id="th"></div></div>
-  <div id="mid"><b class="b" id="kb" title="keyboard">&#9000;</b></div>
+  <div id="mid"><b class="b" id="kb" title="keyboard">&#9000;</b><b class="b" id="bh" title="hold to reset">&#9776;</b></div>
   <div id="ab"><b class="b" data-btn="B">B</b><b class="b" data-btn="A">A</b></div>
 </div>
 

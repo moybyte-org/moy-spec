@@ -15,11 +15,12 @@ const statusEl = document.getElementById("status");
 const titleEl = document.getElementById("title");
 const padEl = document.getElementById("pad");
 const startEl = document.getElementById("start");
+const wrapEl = document.getElementById("wrap");
 const kbin = document.getElementById("kbin");
 
 let M = null;                 // the wasm module
 let W = 320, H = 240, fps = 30;
-let img = null, running = false, rafId = 0, frames = 0, started = true;
+let img = null, running = false, rafId = 0, frames = 0, started = true, boots = 0;
 let last = 0, t0 = 0, acc = 0;
 let cartName = "";
 
@@ -385,6 +386,29 @@ function bindInput() {
     });
   }
 
+  /* The burger: HOLD to reset the cart. There is nothing to exit TO here -- one
+   * cart, no shell -- so the gesture the boards spend on exit is spent on the
+   * restart you would otherwise get by reloading the page, which would also
+   * throw away the audio unlock and re-download the wasm. */
+  const bhBtn = document.getElementById("bh");
+  if (bhBtn) {
+    let holdT = null;
+    const hold = (e) => {
+      begin();
+      bhBtn.classList.add("hold");
+      holdT = setTimeout(() => { bhBtn.classList.remove("hold"); restart(); }, 700);
+      e.preventDefault();
+    };
+    const drop = () => {
+      if (holdT) { clearTimeout(holdT); holdT = null; }
+      bhBtn.classList.remove("hold");
+    };
+    bhBtn.addEventListener("pointerdown", hold);
+    bhBtn.addEventListener("pointerup", drop);
+    bhBtn.addEventListener("pointerleave", drop);
+    bhBtn.addEventListener("pointercancel", drop);
+  }
+
   /* textmode wants a real soft keyboard on a phone, and only a focused input
    * summons one. It is off-screen and its value is never read -- the keydown
    * handler above is still what feeds key(). */
@@ -393,15 +417,40 @@ function bindInput() {
 
 /* -- the loop -------------------------------------------------------------- */
 
+/* Size the canvas to whatever is left after everything ELSE on the page.
+ *
+ * Measured, not enumerated. The previous version subtracted the title and the
+ * pad and a magic 24, which was right when those were the only siblings and
+ * silently wrong the moment a status line and a key legend appeared: the column
+ * overflowed, and because it is centred the overflow was clipped at BOTH ends
+ * -- the title lost its top and the legend lost its bottom. Summing the real
+ * heights cannot go stale when the page grows another row.
+ *
+ * The visual viewport where there is one: iOS collapses it for the soft
+ * keyboard WITHOUT firing window.resize on close, so sizing off innerHeight
+ * leaves the canvas stuck small after typing. */
 function fit() {
-  const pad = 24;
-  const availW = Math.max(64, innerWidth - pad);
-  const availH = Math.max(64, innerHeight - (titleEl.offsetHeight + padEl.offsetHeight + pad + 24));
+  const vv = window.visualViewport;
+  const vw = vv ? vv.width : innerWidth;
+  const vh = vv ? vv.height : innerHeight;
+  const style = getComputedStyle(document.body);
+  let used = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+  const gap = parseFloat(style.rowGap) || 0;
+  for (const el of document.body.children) {
+    if (el === wrapEl || el === kbin) continue;         // the canvas, and the 1x1 input
+    if (getComputedStyle(el).display === "none") continue;
+    used += el.offsetHeight + gap;
+  }
+  used += gap;                                           // the wrap's own gap
+  const availW = Math.max(64, vw - parseFloat(style.paddingLeft)
+                              - parseFloat(style.paddingRight));
+  const availH = Math.max(64, vh - used);
   const s = Math.min(availW / W, availH / H);
   cv.style.width = Math.round(W * s) + "px";
   cv.style.height = Math.round(H * s) + "px";
 }
 addEventListener("resize", fit);
+if (window.visualViewport) window.visualViewport.addEventListener("resize", fit);
 
 function tick(now) {
   rafId = requestAnimationFrame(tick);
@@ -450,6 +499,7 @@ async function boot() {
   const err = M.UTF8ToString(M._moy_web_error());
   if (err) say(err, true);                     // non-fatal (a bad sound bank)
 
+  boots++;
   W = M._moy_web_width(); H = M._moy_web_height(); fps = M._moy_web_fps();
   audioRate = M._moy_web_audio_rate();
   cv.width = W; cv.height = H;
@@ -473,10 +523,9 @@ async function boot() {
    * with a touchscreen, a tablet in desktop mode, a remote session). The keys
    * still work; this just stops them being the only way in. */
   const wantsPad = !hint || hint.indexOf("buttons") >= 0;
-    // "flex", not "": clearing the inline style falls back to the stylesheet's
-  // `display: none`, so the pad was hidden on EVERY pointer type -- including
-  // the touch devices it exists for. It had never once been shown.
-  padEl.style.display = wantsPad ? "flex" : "none";
+  // A CLASS, not an inline display. See #pad in the page: the stylesheet owns
+  // whether it is visible, so the "has a mouse" media query can veto it live.
+  padEl.classList.toggle("on", wantsPad);
 
   /* The cart is loaded and drawn but PARKED until a gesture. See #start in the
    * page: this is the only way a browser will let audio begin, and a player
@@ -495,6 +544,21 @@ async function boot() {
   last = performance.now(); t0 = last; acc = 0;
   running = true;
   if (!rafId) rafId = requestAnimationFrame(tick);
+}
+
+/* Re-run the cart from scratch, keeping the page (and therefore the unlocked
+ * AudioContext and the already-fetched wasm) alive. */
+async function restart() {
+  try {
+    await boot();
+  } catch (e) {
+    say(String((e && e.message) || e), true);
+    return;
+  }
+  started = true;
+  if (startEl) startEl.style.display = "none";
+  last = performance.now();
+  acc = 0;
 }
 
 /* -- dev reload ------------------------------------------------------------ */
@@ -548,7 +612,7 @@ window.moy = {
   },
   get state() {
     return {
-      cart: cartName, running, started, frames, w: W, h: H, fps,
+      cart: cartName, running, started, frames, boots, w: W, h: H, fps,
       audio: actx ? actx.state : "none",
       worklet: !!awNode,
       wants: M ? !!M._moy_web_audio_wanted() : false,

@@ -10,6 +10,21 @@
  * So this serves the real runner/ to real headless Chrome over CDP (no
  * puppeteer -- node has a WebSocket client), lets it play, and screenshots the
  * canvas element. If this produces the right picture, the player works.
+ *
+ * TWO THINGS THIS CANNOT DO, learned by shipping bugs past it:
+ *
+ *   Pointer capability. Headless reports `hover: none, pointer: none` -- there
+ *   is no input device -- and Emulation.setEmulatedMedia does not emulate those
+ *   features (tried, both documented shapes). So a rule gated on
+ *   `(hover: hover) and (pointer: fine)` is untestable here: the query is false
+ *   in this browser whatever you do. --phone sets touch and phone metrics,
+ *   which covers layout, but the has-a-mouse gate needs a real machine.
+ *
+ *   Anything a stylesheet decides. Assert the COMPUTED STYLE, never the class
+ *   or the property the JS set. Both control bugs that reached the owner were
+ *   cascade bugs where the JS was correct: `style.display = ""` fell back to
+ *   the stylesheet's `none`, and `#pad .b` (1,1,0) beat `#kb` (1,0,0). A test
+ *   reading `classList.contains("on")` passed through both.
  */
 
 import { readFileSync, writeFileSync, readdirSync, statSync } from "node:fs";

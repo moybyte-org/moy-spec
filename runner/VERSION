@@ -2,8 +2,8 @@
   "bundle": "moy web player (libmoy/port/wasm)",
   "files": {
     "index.html": {
-      "bytes": 4940,
-      "sha256": "fe931034732345665a27f0d353967d5210717e0dceb889fe9e48651353c907d0"
+      "bytes": 7078,
+      "sha256": "dc160aea69d8c461f755e25c5b6a3fe1ffd9e7206a07bcd9bd35576f0558a886"
     },
     "moy.mjs": {
       "bytes": 15407,
@@ -14,13 +14,13 @@
       "sha256": "690fb7f4a4b6d4d57bce3ca074d48cd0a9422bcbb554c373d67b137ec503a112"
     },
     "player.js": {
-      "bytes": 22650,
-      "sha256": "6eed88572e6b97e282e87d57626c6697aa3ed1c851cdfb5ed88078beace67d17"
+      "bytes": 25347,
+      "sha256": "e0054420b53fe6f2d181a18265a8b144f0eba2c73ed90d357b701dc7ebc6a974"
     }
   },
   "source": {
     "branch": "main",
-    "commit": "80fce8d530d1ee8d017e43a151156260b11631ee",
+    "commit": "48c2f82e2ce65a3a1ffcbb711cc8d61b355b0090",
     "dirty": true
   },
   "toolchain": "emscripten 6.0.4"
