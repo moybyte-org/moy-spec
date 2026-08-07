@@ -166,9 +166,28 @@ boards too. The board run turned that prediction into a measurement, and
 reflashing closed both.
 
 So three things agree on every scene: moycore, the reference console's own
-rasterizer, and an ESP32-P4 — and the board is the one that counts for most,
-because it is the only one of the three running a raster the others cannot have
-copied a bug into. libmoy and the web player make five, on the same lineage.
+rasterizer, and an ESP32-P4. libmoy and the web player make five.
+
+**All five are now one lineage, and the board no longer breaks it.** That was
+written when the ESP32-P4 ran `moy_gfx`, a hand transcription — the only raster
+in the set that could disagree by accident rather than by inheritance. On
+2026-08-07 six of its verbs (`tri`, `sspr`, `tline`, `circ`, `circb`, `line`)
+became calls into libmoy, because on-glass conformance had just caught
+`provisional_tline` failing on the board by 2773 pixels while passing on the
+host — a transcription bug that only the board could see, and that no amount of
+host testing was ever going to find.
+
+That was the right trade and it closes the loop the wrong way round: the fix for
+"the transcription drifted" is to stop transcribing, and the cost is the last
+independent witness. What is left checking this suite is one family agreeing
+with itself, plus whatever `moy_gfx` still owns (`print`, `blit_map`, the
+sprite path — kept on measurements, see that repo's `libmoy/UPSTREAM.md`).
+
+Which makes the independent replayer described above not a nice-to-have but
+**the thing this suite is now missing**: a rasterizer for `traces/*.json`
+written from SPEC.md rather than from moycore, in any language. Until someone
+writes it, every "five implementations agree" in this repository means five
+descendants of one raster.
 
 ## Determinism, and one hole in it
 

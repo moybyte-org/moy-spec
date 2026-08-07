@@ -187,9 +187,10 @@ def main():
             "Rendered by moycore. Confirmed pixel-identical on all core scenes "
             "by the reference console's own rasterizer (conformance/parity.py), "
             "by libmoy and the WebAssembly player built from it (the tiebreaker "
-            "SPEC.md 11 names), and by an ESP32-P4 over serial. Note that all "
-            "but the board share moycore's lineage -- see conformance/README.md, "
-            "'The independent check, and its loss'."),
+            "SPEC.md 11 names), and by an ESP32-P4 over serial. Note that ALL "
+            "FIVE now share moycore's lineage -- the board ran a hand "
+            "transcription until 2026-08-07 and now calls libmoy too. See "
+            "conformance/README.md, 'The independent check, and its loss'."),
         "scenes": manifest_scenes,
     }, indent=2) + "\n")
     print("\n%d scenes built (%d in core conformance)."
