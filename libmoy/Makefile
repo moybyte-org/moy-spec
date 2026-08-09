@@ -135,7 +135,22 @@ lowres: $(RUNCART)
 	  && echo "lowres: 160x120 frame is 19200 bytes" \
 	  || { echo "lowres: frame is $$(wc -c < build/lowres.bin) bytes, want 19200"; exit 1; }
 
-test: conform conform-lua audio-test lowres
+# spr at scale > 1 against the kernel it replaced. The conformance scenes cover
+# scale 3 with all four flips, but only unclipped at the origin -- and the whole
+# risk of the hoisted rewrite is the CLIPPED edge, where the destination loop
+# starts mid-source-pixel. So sweep every scale 2..5 x flip x colorkey x palt
+# across four clip windows and three camera offsets, straddling every edge and
+# corner, against the original moy_rect form transcribed verbatim. 708k cases;
+# any single differing byte fails.
+SPRSWEEP := build/spr_scale_sweep
+$(SPRSWEEP): test/spr_scale_sweep.c $(LIB)
+	@mkdir -p build
+	$(CC) $(CFLAGS) $< $(LIB) $(LDLIBS) -o $@
+
+spr-sweep: $(SPRSWEEP)
+	./$(SPRSWEEP)
+
+test: conform conform-lua audio-test lowres spr-sweep
 
 clean:
 	rm -f $(OBJ) $(LUA_OBJ) src/moy_lua.o $(LIB)
