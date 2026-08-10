@@ -14,9 +14,11 @@ art tools already work; this CLI supplies the loop around them.
                                  files that boot straight into the game --
                                  host anywhere (itch.io HTML5 uploads work)
     moy.py port <cart.p8|url>    convert a PICO-8 cart: assets via p8_import,
-                 [--zoom [T,B]]  --zoom trims edge rows so the port draws 2x
-                                 code mechanically ported to Lua 5.4 under the
-                                 p8 compat shim (p8_lua_port)
+             [--title NAME]      code mechanically ported to Lua 5.4 under the
+             [--zoom]            p8 compat shim (p8_lua_port). The cart draws
+                                 native 128x128 (manifest canvas, SPEC.md 3.1);
+                                 --zoom adds the view(128,120) hint so 4:3
+                                 hosts fill their height (SPEC.md 10)
     moy.py demo                  fetch Celeste Classic (PICO-8), port it, run
                                  it -- the one-command show-off
 
@@ -331,11 +333,17 @@ CELESTE_NOTE = """\
 def cmd_port(args):
     import p8_lua_port
     crop = p8_lua_port.parse_zoom(args)
+    title = None
+    if "--title" in args and args.index("--title") + 1 < len(args):
+        title = args[args.index("--title") + 1]
     args = [a for a in args if not a.startswith("--")]
+    if title is not None:     # drop the value that followed --title
+        args = [a for a in args if a != title]
     if crop != (0, 0):        # drop the "T,B" that followed --zoom
         args = [a for a in args if not ("," in a and a.replace(",", "").isdigit())]
     if not args:
-        die("usage: moy.py port <cart.p8 | url> [out.moy] [--zoom [T,B]]")
+        die("usage: moy.py port <cart.p8 | url> [out.moy]"
+            " [--title NAME] [--zoom [T,B]]")
     src = args[0]
     if src.startswith(("http://", "https://")):
         import urllib.request
@@ -350,7 +358,7 @@ def cmd_port(args):
         die("no such .p8: " + src)
     out = cart_dir(args[1] if len(args) > 1
                    else os.path.splitext(os.path.basename(src))[0])
-    p8_lua_port.port(src, out, crop=crop)
+    p8_lua_port.port(src, out, title=title, crop=crop)
     print("ported -> %s" % out)
     print("  PICO-8 carts carry their own licenses (BBS default CC BY-NC-SA")
     print("  4.0) -- ported carts are dev/personal material unless stated.")

@@ -19,10 +19,15 @@ emits a complete Lua cart --
                                     30fps from moy's dt-driven loop)
 
 plus sprites.moygfx / sounds.json via import_p8's converters and a lua-runtime
-manifest. The 128x128 p8 screen renders centered in the 320x240 canvas (clip +
-camera offset in the shim); p8 `sin`/`cos` turn-and-flip semantics, table verbs
-(`add/del/foreach/all/count`), and flag-masked `map()` are implemented in the
-shim over the ordinary cart verbs, so the port exercises the whole Lua bridge.
+manifest that declares `"canvas": "128x128"` (SPEC.md 1/3.1) -- the cart draws
+REAL p8 pixels 1:1 on its own raster and the HOST owns all scaling (the old
+draw-2x-yourself shim is gone; a native-res cart fills a quarter of the pixels).
+Text is the PICO-8 system font itself (3x5, 4px advance -- Lexaloffle, CC0),
+drawn by the shim through pix(), because SPEC.md 6's 8px `print` glyphs are
+twice the size p8 meant on a 128px raster. p8 `sin`/`cos` turn-and-flip
+semantics, table verbs (`add/del/foreach/all/count`), and flag-masked `map()`
+are implemented in the shim over the ordinary cart verbs, so the port exercises
+the whole Lua bridge.
 
 Usage:
     python3 p8_lua_port.py cart.p8 out_dir [--title "Name"]
@@ -291,36 +296,28 @@ SHIM = r'''-- ============================================================
 -- The p8 API written over the moy cart API; the ported cart below
 -- calls PICO-8 verbs and never knows it moved.
 -- ============================================================
--- ZOOM (--zoom T,B): p8 rows are CROPPED off the top and bottom, shrinking the
--- logical viewport so a BIGGER integer scale fits. 128x128 cannot fill 320x240
--- at an integer scale (2x is 256x256, 16px too tall), so an uncropped port runs
--- 1:1 in a letterbox; drop 8 rows and 2x = 256x240 fills the height exactly.
--- Cropping is LOSSY and per-cart -- a p8 game drawing HUD at the very top or
--- bottom loses it -- so it is opt-in, and 0,0 (no crop) by default.
-local P8_CROP_T, P8_CROP_B = __P8_CROP_T__, __P8_CROP_B__
-local P8_VH = 128 - P8_CROP_T - P8_CROP_B
--- The scale is applied BY THIS CART, in the draw verbs below -- not asked of the
--- host. A cart that draws 2x is just a cart: it looks the same on the web
--- runner, an S3 and a P4, with no extension and no hardware scaler (the S3 has
--- no PPA). Asking the host to composite instead made the zoom appear only on
--- the one tier that implements `view`, which is how it shipped looking cropped
--- but not zoomed. The cost is fill rate -- 4x the pixels -- and that is the
--- accepted trade.
-local P8_S = __P8_SCALE__
-local P8_W, P8_H = 128 * P8_S, P8_VH * P8_S   -- the drawn size, in canvas pixels
-local P8_OX, P8_OY = (320 - P8_W) // 2, (240 - P8_H) // 2
-local P8_DY = P8_OY - P8_CROP_T * P8_S        -- where p8 row 0 lands (may be off-screen)
+-- NATIVE RES: the manifest declares "canvas": "128x128" (SPEC.md 1/3.1), so
+-- this cart draws REAL p8 pixels 1:1 and the HOST owns all scaling. The old
+-- shim drew 2x itself, because asking the host to composite made the zoom
+-- appear only on the one tier that implemented `view` -- with the canvas in
+-- the manifest every conforming host sizes the raster instead, and the cart
+-- fills a QUARTER of the pixels it used to (the biggest speed lever a port
+-- has on an interpreter-bound board).
+-- ZOOM (--zoom): nothing is cropped from the raster any more -- all 128 rows
+-- draw, and pset/pget/camera stay p8-true. The flag became the SPEC.md 10
+-- viewport hint below: a host implementing `view` composites the CENTERED
+-- 128x120 at the biggest integer scale that fits (2x fills a 4:3 screen's
+-- 240px height exactly; 5x fills 600px), and a host without the extension
+-- letterboxes the full square. Guarded; lossy only at PRESENTATION.
+local P8_VH = __P8_VH__
 local P8_DT = 1 / 30               -- PICO-8 _update runs at a fixed 30fps
--- `view` is now only a LETTERBOX hint: the pixels are already the right size, so
--- a host that implements it just drops the side bars. Guarded, and nothing about
--- the cart's appearance depends on it any more.
-if view ~= nil then view(P8_W, P8_H) end
+if view ~= nil and P8_VH < 128 then view(128, P8_VH) end
 do
   local m_spr, m_btn, m_btnp = spr, btn, btnp
   local m_camera = camera
   local m_rect, m_rectb = rect, rectb
   local m_circ, m_circb = circ, circb
-  local m_print, m_sfx = print, sfx
+  local m_sfx = sfx
   local m_music, m_music_stop = music, music_stop
   -- The data tables (emitted ABOVE the shim) and the stdlib verbs, captured
   -- once as upvalues: fget hits __p8_gff on every collision probe and map()
@@ -346,10 +343,7 @@ do
   local mfloor = math.floor
   local function fl(v) return mfloor(v or 0) end
 
-  local S = P8_S
-  local function sc(v) return fl(v) * S end   -- p8 floors at the API edge,
-                                              -- THEN each p8 pixel becomes SxS
-  function camera(cx, cy) m_camera(sc(cx) - P8_OX, sc(cy) - P8_DY) end
+  function camera(cx, cy) m_camera(fl(cx), fl(cy)) end
   -- p8 math over the sandboxed Lua math lib (the moy api only registers
   -- rnd/flr; a python cart gets abs/min/max from python builtins, a lua cart
   -- gets them here). p8 angles are TURNS (0..1) and sin is flipped (+y down).
@@ -370,13 +364,13 @@ do
     w = w or 1
     h = h or 1
     if w == 1 and h == 1 then
-      m_spr(n, x * S, y * S, 0, S, flip)       -- p8 color 0 is transparent
+      m_spr(n, x, y, 0, 1, flip)               -- p8 color 0 is transparent
     else
       for ty = 0, h - 1 do
         for tx = 0, w - 1 do
           local cx = fx and (w - 1 - tx) or tx
           local cy = fy and (h - 1 - ty) or ty
-          m_spr(n + cx + cy * 16, (x + tx * 8) * S, (y + ty * 8) * S, 0, S, flip)
+          m_spr(n + cx + cy * 16, x + tx * 8, y + ty * 8, 0, 1, flip)
         end
       end
     end
@@ -387,34 +381,67 @@ do
     x0 = fl(x0) y0 = fl(y0) x1 = fl(x1) y1 = fl(y1)
     if x1 < x0 then x0, x1 = x1, x0 end
     if y1 < y0 then y0, y1 = y1, y0 end
-    m_rect(x0 * S, y0 * S, (x1 - x0 + 1) * S, (y1 - y0 + 1) * S, fl(c))
+    m_rect(x0, y0, x1 - x0 + 1, y1 - y0 + 1, fl(c))
   end
   function rect(x0, y0, x1, y1, c)
     x0 = fl(x0) y0 = fl(y0) x1 = fl(x1) y1 = fl(y1)
     if x1 < x0 then x0, x1 = x1, x0 end
     if y1 < y0 then y0, y1 = y1, y0 end
-    m_rectb(x0 * S, y0 * S, (x1 - x0 + 1) * S, (y1 - y0 + 1) * S, fl(c))
+    m_rectb(x0, y0, x1 - x0 + 1, y1 - y0 + 1, fl(c))
   end
-  function circfill(x, y, r, c) m_circ(sc(x), sc(y), sc(r), fl(c)) end
-  function circ(x, y, r, c) m_circb(sc(x), sc(y), sc(r), fl(c)) end
-  -- SPEC.md 6: `print` has no scale, text is ALWAYS 8px. So a zoomed port
-  -- positions its text at scale but draws the glyphs at 1x -- the one thing
-  -- a 2x port cannot double.
-  function print(s, x, y, c) m_print(s, sc(x), sc(y), c == nil and 7 or fl(c)) end
+  function circfill(x, y, r, c) m_circ(fl(x), fl(y), fl(r), fl(c)) end
+  function circ(x, y, r, c) m_circb(fl(x), fl(y), fl(r), fl(c)) end
+  -- SPEC.md 6 gives `print` fixed 8px glyphs -- TWICE the size p8 meant on a
+  -- native 128px raster, and celeste's memorial letters its text at the p8
+  -- 4px advance (8px glyphs smear into each other). So the port carries the
+  -- PICO-8 system font ITSELF (Lexaloffle, released CC0; bitmaps read from
+  -- fake-08's 0x5600 memory dump): chars 32..127 as 15-bit 3x5 glyphs at the
+  -- true 4px advance / 6px line height, drawn through pix() -- pure spec
+  -- verbs, portable to any conforming host.
+  local m_pix = pix
+  local P8_GLYPHS = {}
+  do
+    local hex = "00002092002d5f7d2f9f52a57adb000a224a292255d505d0140001c020001494"
+             .. "7b6f749373e779a749ed79cf7bc949277bef49ef0410141044540e38151121a7"
+             .. "636a5f787ad872783b5872f812f87a785f6874b834b85ae872485bf85b583b70"
+             .. "1f7867505778387024b86b682f687f685aa879e87338324b44916926002a7000"
+             .. "00225bef7aef624e7b6b72cf12cf7a4e5bed749734975aed72495b7f5b6b3b6e"
+             .. "13ef676a5aef39ce24976b6d2f6d7f6d5aad79ed72a764d62492359303e07b50"
+    for i = 0, 95 do
+      P8_GLYPHS[i + 32] = tonumber(string.sub(hex, i * 4 + 1, i * 4 + 4), 16)
+    end
+  end
+  local sbyte = string.byte
+  function print(s, x, y, c)
+    s = tostring(s)
+    c = c == nil and 7 or fl(c)
+    local lx = fl(x)
+    local cx, cy = lx, fl(y)
+    for i = 1, #s do
+      local b = sbyte(s, i)
+      if b == 10 then
+        cx, cy = lx, cy + 6
+      else
+        local g = P8_GLYPHS[b]
+        if g and g ~= 0 then
+          for p = 0, 14 do
+            if (g >> p) & 1 == 1 then m_pix(cx + p % 3, cy + p // 3, c) end
+          end
+        end
+        cx = cx + 4
+      end
+    end
+  end
 
   local m_pal = pal
   function pal(a, b)
     if a == nil then m_pal() else m_pal(fl(a), fl(b)) end
   end
-  local m_pix = pix
-  function pset(x, y, c)                       -- one p8 pixel = an SxS block
-    if S == 1 then m_pix(fl(x), fl(y), fl(c))
-    else m_rect(sc(x), sc(y), S, S, fl(c)) end
-  end
-  function pget(x, y) return m_pix(sc(x), sc(y)) end
+  function pset(x, y, c) m_pix(fl(x), fl(y), fl(c)) end
+  function pget(x, y) return m_pix(fl(x), fl(y)) end
   local m_line = line
   function line(x0, y0, x1, y1, c)
-    m_line(sc(x0), sc(y0), sc(x1), sc(y1), fl(c))   -- 1px thick at any scale
+    m_line(fl(x0), fl(y0), fl(x1), fl(y1), fl(c))
   end
 
   function sfx(n) if n and n >= 0 then m_sfx(fl(n)) end end
@@ -495,14 +522,13 @@ do
         local tile = p8map[rowb + celx + cx + 1] or 0
         if tile > 0 and (mask == nil or mask == 0
                          or ((gff[tile] or 0) & mask) ~= 0) then
-          m_spr(tile, (sx + cx * 8) * S, (sy + cy * 8) * S, 0, S, 0)
+          m_spr(tile, sx + cx * 8, sy + cy * 8, 0, 1, 0)
         end
       end
     end
   end
 
   -- moybyte lifecycle -> the p8 one, paced at PICO-8's fixed 30fps
-  local m_clip = clip
   local ticked, phase = true, 0
   function _init()
     if p8_init then p8_init() end
@@ -536,10 +562,9 @@ do
   end
   function _draw()
     if ticked and p8_draw then
-      -- the console resets camera/clip/pal after every cart frame (so its own
-      -- overlays are never offset) -- re-park the 128x128 window each draw
+      -- the console resets camera/clip/pal after every cart frame; re-park the
+      -- p8 camera so a cart that trusts persistent camera state draws at origin
       camera()
-      m_clip(P8_OX, P8_OY, P8_W, P8_H)
       p8_draw()
       ticked = false
     end
@@ -615,6 +640,10 @@ def build_manifest(title, icon=None):
         "version": 1,
         "main": "main.lua",
         "fps": 30,
+        # SPEC.md 1/3.1: the p8 screen IS the raster. The cart draws native
+        # 128x128 pixels and the host scales/letterboxes -- a quarter of the
+        # fill the old draw-2x-yourself shim paid.
+        "canvas": "128x128",
         "input": ["buttons"],
         "ported_from": "pico-8",
     }
@@ -638,10 +667,12 @@ def port(p8_path, out_dir, title=None, crop=(0, 0)):
               "-- is the original cart's Lua, mechanically converted to Lua 5.4.\n"
               % title)
     vh = 128 - int(crop[0]) - int(crop[1])
-    scale = max(1, min(320 // 128, 240 // vh)) if vh > 0 else 1
-    shim = (SHIM.replace("__P8_CROP_T__", str(int(crop[0])))
-                .replace("__P8_CROP_B__", str(int(crop[1])))
-                .replace("__P8_SCALE__", str(scale)))
+    if vh not in (120, 128):
+        # The host's view crop shows the CENTERED 128x120 (SPEC.md 10) -- the
+        # only crop a native-res port can ask for is 8 rows or none.
+        raise SystemExit("--zoom: the view crop is 8 rows (128x120) or nothing"
+                         " -- T+B must be 8 or 0, got %d,%d" % tuple(crop))
+    shim = SHIM.replace("__P8_VH__", str(vh))
     # Data tables BEFORE the shim, so the shim captures them as upvalues.
     main_lua = (header + data_tables_lua(sections) + "\n" + shim + "\n"
                 + localization_lua(body) + body)
@@ -683,12 +714,14 @@ def port(p8_path, out_dir, title=None, crop=(0, 0)):
 
 
 def parse_zoom(argv):
-    """--zoom [T,B] -> (top, bottom) p8 rows to crop, or (0, 0) when absent.
+    """--zoom [T,B] -> (top, bottom) p8 rows the port can spare, or (0, 0).
 
-    Bare --zoom means 4,4: the symmetric crop that leaves a 128x120 viewport,
-    the largest that still fits 320x240 at 2x (256x240, filling the height).
-    An explicit T,B lets a cart protect the edge its HUD lives on -- celeste
-    draws its summit timer at y=4, so it survives 4 off the top but not 8."""
+    Bare --zoom means 4,4: the 8-row concession that lets a 4:3 host fill its
+    height (view(128, 120) composites at 2x = 256x240 there). Nothing is
+    cropped from the RASTER any more -- the rows only leave the picture on
+    hosts that exploit the SPEC.md 10 view hint, and that crop is CENTERED,
+    so T,B survives as CLI shape only; 8,0-style edge protection no longer
+    maps and port() refuses any split that isn't 8 rows total (or none)."""
     if "--zoom" not in argv:
         return (0, 0)
     i = argv.index("--zoom")
@@ -714,11 +747,11 @@ def main(argv):
     out = port(args[0], args[1], title, crop)
     vh = 128 - crop[0] - crop[1]
     print("ported ->", out)
+    print("  canvas: 128x128 (native p8 pixels -- the host scales)")
     if crop != (0, 0):
-        scale = max(1, min(320 // 128, 240 // vh)) if vh else 1
-        print("  zoom: cropped %d/%d rows -> the cart DRAWS at %dx = %dx%d "
-              "(text stays 8px -- SPEC.md 6)"
-              % (crop[0], crop[1], scale, 128 * scale, vh * scale))
+        print("  zoom: view(128, %d) -- a host with the SPEC.md 10 viewport"
+              " shows the centered rows at its best integer scale"
+              " (2x fills 240px, 5x fills 600px); others letterbox" % vh)
     return 0
 
 
