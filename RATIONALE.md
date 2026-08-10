@@ -27,18 +27,19 @@ memory floor more than any other decision. A 240 × 160 raster would have halved
 
 **Note for PICO-8 conversion:** 128 × 128 does not scale to fill 320 × 240 by an
 integer factor — 2× is 256 × 256, taller than the screen. So a converted cart has
-three ways out, in increasing order of how much it gives up: run 1:1 centered in a
-letterbox; declare `"canvas": "128x128"` (§3.1) and *be* a 128 × 128 machine, which
-the host then scales as it likes; or crop eight rows and draw at 2× (the converter's
-`--zoom`), which fills the height at 256 × 240 and loses whatever was in those rows.
-The `viewport` extension's `view()` reaches the second look at runtime rather than
-through the manifest — it declares the region and the host upscales it, so it fills
-rather than letterboxes.
+three ways out: run 1:1 centered in a letterbox; declare `"canvas": "128x128"`
+(§3.1) and *be* a 128 × 128 machine, which the host then scales as it likes; or —
+on top of the declared canvas — concede eight rows through the `viewport`
+extension's guarded `view(128, 120)`, which lets a 4:3 host fill its height
+(2× = 256 × 240, 5× = 640 × 600) while a host without the extension still
+letterboxes the whole square.
 
-The converter takes the first route by default and the third on request; it stays a
-320 × 240 cart and does its own scaling, so a zoomed port looks the same on every
-tier with no extension and no hardware scaler. Declaring the canvas is the route
-open to a cart written by hand for that shape.
+The converter declares the canvas always and adds the `view` hint on request
+(`--zoom`); nothing is cropped from the raster itself, so the cart draws native
+p8 pixels everywhere and the loss — eight centered rows — happens only at
+presentation, only on hosts that exploit the hint. (It once drew 2× itself into
+a 320 × 240 canvas instead; that filled four times the pixels and baked one
+host's geometry into every cart, and died when hosts learned to size the raster.)
 
 ## Canvas — three sizes, and the set is closed
 

@@ -84,11 +84,12 @@ nothing to set up first — the quickest way to see what this is.
 
 `moy port cart.p8` does that for any cart: assets near-verbatim (the palette's
 first 16 colours are PICO-8's), code mechanically ported to Lua 5.4 under a
-compat shim. A port plays 1:1 in a letterbox, since 128 × 128 has no integer
-fit in 320 × 240; `--zoom` crops eight edge rows and draws at 2× instead
-(`moy demo --zoom` as well). The crop is lossy and per-cart (`--zoom 0,8`
-chooses which edge), and ports of BBS carts are personal/dev material — their
-default license is CC BY-NC-SA.
+compat shim. A port declares `"canvas": "128x128"` (SPEC.md 3.1) and draws
+native p8 pixels — the host owns the scaling; `--zoom` adds the guarded
+`view(128, 120)` hint (`moy demo --zoom` as well) so a 4:3 host fills its
+height at 2×, at the cost of the eight centered edge rows on hosts that honor
+it. Ports of BBS carts are personal/dev material — their default license is
+CC BY-NC-SA.
 
 ## Why this exists
 
