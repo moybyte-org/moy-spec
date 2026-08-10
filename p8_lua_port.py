@@ -322,6 +322,13 @@ do
   local m_circ, m_circb = circ, circb
   local m_print, m_sfx = print, sfx
   local m_music, m_music_stop = music, music_stop
+  -- The data tables (emitted ABOVE the shim) and the stdlib verbs, captured
+  -- once as upvalues: fget hits __p8_gff on every collision probe and map()
+  -- on every tile, where a global read is a hash lookup in _ENV per call --
+  -- on a 240MHz interpreter those lookups were measurable frame time.
+  local gff, mm = __p8_gff, __music_map
+  local msin, mcos, matan, mrandom = math.sin, math.cos, math.atan, math.random
+  local tremove = table.remove
 
   local BTN = {[0] = "left", [1] = "right", [2] = "up", [3] = "down",
                [4] = "a", [5] = "b"}
@@ -346,14 +353,14 @@ do
   -- p8 math over the sandboxed Lua math lib (the moy api only registers
   -- rnd/flr; a python cart gets abs/min/max from python builtins, a lua cart
   -- gets them here). p8 angles are TURNS (0..1) and sin is flipped (+y down).
-  function sin(t) return -math.sin((t or 0) * 6.283185307179586) end
-  function cos(t) return math.cos((t or 0) * 6.283185307179586) end
+  function sin(t) return -msin((t or 0) * 6.283185307179586) end
+  function cos(t) return mcos((t or 0) * 6.283185307179586) end
   flr = math.floor
   abs = math.abs
   min = math.min
   max = math.max
   sqrt = math.sqrt
-  function atan2(dx, dy) return math.atan(-(dy or 0), dx or 0) / 6.283185307179586 % 1 end
+  function atan2(dx, dy) return matan(-(dy or 0), dx or 0) / 6.283185307179586 % 1 end
 
   function spr(n, x, y, w, h, fx, fy)
     local flip = (fx and 1 or 0) + (fy and 2 or 0)
@@ -416,10 +423,10 @@ do
     -- song starts to Moybyte track ids, nearest-lower for a mid-song index.
     if n == -1 then m_music_stop()
     elseif n then
-      local t = __music_map and __music_map[n]
-      if t == nil and __music_map then
+      local t = mm and mm[n]
+      if t == nil and mm then
         for k = n, 0, -1 do
-          if __music_map[k] ~= nil then t = __music_map[k] break end
+          if mm[k] ~= nil then t = mm[k] break end
         end
       end
       m_music(t or 0)
@@ -432,7 +439,7 @@ do
   function add(t, v) t[#t + 1] = v return v end
   function del(t, v)
     for i = 1, #t do
-      if t[i] == v then table.remove(t, i) return end
+      if t[i] == v then tremove(t, i) return end
     end
   end
   function all(t)
@@ -450,43 +457,44 @@ do
   tostr = tostring
   function sgn(x) if (x or 0) < 0 then return -1 end return 1 end
   function mid(a, b, c) return max(min(a, b), min(max(a, b), c)) end
-  function rnd(n) return math.random() * (n or 1) end
+  function rnd(n) return mrandom() * (n or 1) end
 
   -- map + flags: the map DATA now ships as map.moymap (the console's own
   -- format -- editable, native-map()-able); build the fast Lua-side lookup
   -- from it ONCE at start via the console mget (captured before the p8 mget
   -- shadows it). __gff__ stays baked below the shim (flags have no moy home).
   local m_mget = mget
-  __p8_map = {}
+  local p8map = {}
+  __p8_map = p8map                     -- the global name stays for tooling
   for y = 0, 63 do
     local base = y * 128
     for x = 0, 127 do
       local v = m_mget(x, y)
-      __p8_map[base + x + 1] = (v and v >= 0) and v or 0
+      p8map[base + x + 1] = (v and v >= 0) and v or 0
     end
   end
   function mget(x, y)
-    x = math.floor(x or 0)
-    y = math.floor(y or 0)
+    x = mfloor(x or 0)
+    y = mfloor(y or 0)
     if x < 0 or x > 127 or y < 0 or y > 63 then return 0 end
-    return __p8_map[y * 128 + x + 1]
+    return p8map[y * 128 + x + 1]
   end
   function fget(n, f)
-    local v = __p8_gff[math.floor(n or 0)] or 0
+    local v = gff[mfloor(n or 0)] or 0
     if f == nil then return v end
     return (v >> f) & 1 == 1
   end
   function map(celx, cely, sx, sy, cw, ch, mask)
-    celx = math.floor(celx or 0)
-    cely = math.floor(cely or 0)
+    celx = mfloor(celx or 0)
+    cely = mfloor(cely or 0)
     sx = sx or 0
     sy = sy or 0
     for cy = 0, (ch or 16) - 1 do
       local rowb = (cely + cy) * 128
       for cx = 0, (cw or 16) - 1 do
-        local tile = __p8_map[rowb + celx + cx + 1] or 0
+        local tile = p8map[rowb + celx + cx + 1] or 0
         if tile > 0 and (mask == nil or mask == 0
-                         or ((__p8_gff[tile] or 0) & mask) ~= 0) then
+                         or ((gff[tile] or 0) & mask) ~= 0) then
           m_spr(tile, (sx + cx * 8) * S, (sy + cy * 8) * S, 0, S, 0)
         end
       end
@@ -564,6 +572,39 @@ def data_tables_lua(sections):
     return "\n".join(lines)
 
 
+# Every global the shim defines for the game code. Order is cosmetic; the
+# emitted block groups them a line at a time.
+P8_API = ("btn btnp camera sin cos flr abs min max sqrt atan2 spr rectfill "
+          "rect circfill circ print pal pset pget line sfx music menuitem "
+          "add del all foreach count sub tostr sgn mid rnd mget fget map").split()
+
+
+def localization_lua(body):
+    """`local NAME = NAME` aliases at file scope, between shim and game code.
+
+    Game functions compiled after this block bind the p8 API as UPVALUES (a
+    slot read) instead of _ENV lookups (a table hash on EVERY call) -- on the
+    interpreter-bound boards the hashes were measurable frame time (#67).
+    A name the cart itself reassigns at global scope stays global: an alias
+    would freeze the pre-assignment value for every later caller. The scan is
+    conservative -- a false positive only loses that one name's speedup."""
+    keep = []
+    for name in P8_API:
+        if re.search(r"(?<![\w.:])function\s+%s\s*\(" % name, body):
+            continue                      # cart defines its own
+        if re.search(r"(?m)^\s*%s\s*(?:=(?!=)|,)" % name, body):
+            continue                      # cart assigns the global
+        keep.append(name)
+    if not keep:
+        return ""
+    lines = ["-- Localized p8 API (generated -- see localization_lua): the game",
+             "-- code below binds these as upvalues, not per-call _ENV lookups."]
+    for i in range(0, len(keep), 8):
+        chunk = ", ".join(keep[i:i + 8])
+        lines.append("local %s = %s" % (chunk, chunk))
+    return "\n".join(lines) + "\n"
+
+
 def build_manifest(title, icon=None):
     # The spec manifest (SPEC.md 3.1). fps 30 because that IS PICO-8's rate --
     # the shim paces the p8 lifecycle at a fixed 1/30 dt. "ported_from" is an
@@ -593,7 +634,7 @@ def port(p8_path, out_dir, title=None, crop=(0, 0)):
 
     body = p8_lua_to_lua54(sections.get("lua", []))
     header = ("-- %s -- ported from PICO-8 by tools/p8_lua_port.py (#11/#67).\n"
-              "-- The shim + data tables are generated; the game code below them\n"
+              "-- The data tables + shim are generated; the game code below them\n"
               "-- is the original cart's Lua, mechanically converted to Lua 5.4.\n"
               % title)
     vh = 128 - int(crop[0]) - int(crop[1])
@@ -601,7 +642,9 @@ def port(p8_path, out_dir, title=None, crop=(0, 0)):
     shim = (SHIM.replace("__P8_CROP_T__", str(int(crop[0])))
                 .replace("__P8_CROP_B__", str(int(crop[1])))
                 .replace("__P8_SCALE__", str(scale)))
-    main_lua = header + shim + "\n" + data_tables_lua(sections) + "\n" + body
+    # Data tables BEFORE the shim, so the shim captures them as upvalues.
+    main_lua = (header + data_tables_lua(sections) + "\n" + shim + "\n"
+                + localization_lua(body) + body)
     with open(os.path.join(out_dir, "main.lua"), "w", encoding="utf-8") as f:
         f.write(main_lua)
 
