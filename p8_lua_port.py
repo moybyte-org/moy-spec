@@ -511,16 +511,30 @@ do
     if f == nil then return v end
     return (v >> f) & 1 == 1
   end
+  -- Flag-masked map: ONE native call when the host offers the C walk
+  -- (moybyte's __moy_map_masked, #66 M0 -- the flags crossed once in the
+  -- __gff__ block above; the quads ride the same batch the spr fast path
+  -- stamps), else the Lua cell loop. The loop was 4.5ms of celeste's render
+  -- on the interpreter-bound boards, measured by difference. Args are
+  -- floored up front (p8 floors every API arg), so both lanes agree.
+  local native_map = __moy_map_masked
   function map(celx, cely, sx, sy, cw, ch, mask)
     celx = mfloor(celx or 0)
     cely = mfloor(cely or 0)
-    sx = sx or 0
-    sy = sy or 0
-    for cy = 0, (ch or 16) - 1 do
+    sx = mfloor(sx or 0)
+    sy = mfloor(sy or 0)
+    cw = mfloor(cw or 16)
+    ch = mfloor(ch or 16)
+    mask = mask or 0
+    if native_map ~= nil
+        and native_map(celx, cely, sx, sy, cw, ch, mask) then
+      return
+    end
+    for cy = 0, ch - 1 do
       local rowb = (cely + cy) * 128
-      for cx = 0, (cw or 16) - 1 do
+      for cx = 0, cw - 1 do
         local tile = p8map[rowb + celx + cx + 1] or 0
-        if tile > 0 and (mask == nil or mask == 0
+        if tile > 0 and (mask == 0
                          or ((gff[tile] or 0) & mask) ~= 0) then
           m_spr(tile, sx + cx * 8, sy + cy * 8, 0, 1, 0)
         end
@@ -592,6 +606,10 @@ def data_tables_lua(sections):
              "  for i = 0, 255 do",
              "    __p8_gff[i] = tonumber(string.sub(gff, i * 2 + 1, i * 2 + 2), 16)",
              "  end",
+             "  -- hosts with the native masked-map walk take the flags ONCE",
+             "  -- (moybyte's __moy_map_flags, #66 M0); the Lua table above",
+             "  -- stays -- fget reads it either way.",
+             "  if __moy_map_flags ~= nil then __moy_map_flags(gff) end",
              "end",
               ""]
     return "\n".join(lines)
