@@ -429,7 +429,150 @@ static int l_textmode(lua_State *L)
     return 0;
 }
 
+
+/* -- SPEC.md 10 extensions ------------------------------------------------
+ *
+ * Installed only when the host supplies the matching callback, because 10 says
+ * an extension's verbs "simply do not exist as globals on a host without it" --
+ * so the capability is the pointer, and a cart's `if view ~= nil` is answering
+ * a real question.
+ *
+ * `layers` is a full drawing surface, and the trick that keeps it from being a
+ * second implementation of the verb table is that it reuses the FIRST one: a
+ * layer method swaps con->canvas, calls the ordinary verb unchanged, and swaps
+ * back. Every verb already takes its canvas from the console, none of them
+ * raise (argi() coerces rather than checks), and the layer's method receiver is
+ * removed before the call so the verb sees exactly the arguments it always
+ * does. Twenty verbs, one wrapper, and no way for the two paths to disagree
+ * about what rect() means.
+ */
+
+#define LAYER_MT "moy.layer"
+
+typedef struct {
+    moy_canvas c;
+    moy_pixel *pix;          /* the host's buffer, for layer_free */
+} moy_lua_layer;
+
+/* The verbs a layer answers: everything that draws, and the draw STATE that
+ * scopes it. Not spr's siblings from other extensions, and not input/audio --
+ * a layer is a surface, not a console. */
+static const luaL_Reg LAYER_VERBS[] = {
+    {"cls", l_cls}, {"pix", l_pix}, {"line", l_line}, {"rect", l_rect},
+    {"rectb", l_rectb}, {"circ", l_circ}, {"circb", l_circb},
+    {"print", l_print}, {"camera", l_camera}, {"clip", l_clip},
+    {"pal", l_pal}, {"palt", l_palt},
+    {"spr", l_spr}, {"map", l_map},
+    {"tri", l_tri}, {"trib", l_trib}, {"sspr", l_sspr}, {"tline", l_tline},
+    {NULL, NULL}
+};
+
+static int l_layer_method(lua_State *L)
+{
+    moy_lua_layer *ly = (moy_lua_layer *)luaL_checkudata(L, 1, LAYER_MT);
+    int idx = (int)lua_tointeger(L, lua_upvalueindex(1));
+    moy_console *con = con_of(L);
+    moy_canvas *save;
+    int n;
+    lua_remove(L, 1);                       /* drop `self`: the verb sees its
+                                               own argument list, unshifted */
+    save = con->canvas;
+    con->canvas = &ly->c;
+    n = LAYER_VERBS[idx].func(L);
+    con->canvas = save;
+    return n;
+}
+
+static int l_make_layer(lua_State *L)
+{
+    moy_console *con = con_of(L);
+    int w = argi(L, 1, MOY_W), h = argi(L, 2, MOY_H);
+    moy_pixel *pix;
+    moy_lua_layer *ly;
+    if (w <= 0 || h <= 0 || !con->host.layer_new) return 0;      /* nil */
+    pix = con->host.layer_new(con->host.user, w, h);
+    if (!pix) return 0;          /* the host declined (no room): nil, not an
+                                    error -- a cart can test for it */
+    ly = (moy_lua_layer *)lua_newuserdata(L, sizeof(moy_lua_layer));
+    ly->pix = pix;
+    moy_canvas_init(&ly->c, pix, w, h);
+#ifdef MOY_PIXEL_RGB565
+    /* A layer is composited onto the screen verbatim, so it must encode
+     * colours the way the screen does. */
+    moy_canvas_wire(&ly->c, con->canvas->wire);
+#endif
+    luaL_getmetatable(L, LAYER_MT);
+    lua_setmetatable(L, -2);
+    return 1;
+}
+
+static int l_draw_layer(lua_State *L)
+{
+    moy_console *con = con_of(L);
+    moy_lua_layer *ly = (moy_lua_layer *)luaL_checkudata(L, 1, LAYER_MT);
+    moy_blit_window(con->canvas, &ly->c, argi(L, 2, 0), argi(L, 3, 0));
+    return 0;
+}
+
+static int l_background(lua_State *L)
+{
+    moy_console *con = con_of(L);
+    if (con->host.background) con->host.background(con->host.user, argi(L, 1, 0));
+    return 0;
+}
+
+static int l_layer_gc(lua_State *L)
+{
+    moy_lua_layer *ly = (moy_lua_layer *)luaL_checkudata(L, 1, LAYER_MT);
+    moy_console *con = con_of(L);
+    if (ly->pix && con->host.layer_free) {
+        con->host.layer_free(con->host.user, ly->pix);
+    }
+    ly->pix = NULL;
+    return 0;
+}
+
+static int l_view(lua_State *L)
+{
+    moy_console *con = con_of(L);
+    if (con->host.view) con->host.view(con->host.user, argi(L, 1, MOY_W),
+                                       argi(L, 2, MOY_H));
+    return 0;
+}
+
+/* Install whichever extensions this host implements. */
+static void open_extensions(lua_State *L, moy_console *con)
+{
+    if (con->host.view) {
+        lua_pushcfunction(L, l_view);
+        lua_setglobal(L, "view");
+    }
+    if (con->host.background) {
+        lua_pushcfunction(L, l_background);
+        lua_setglobal(L, "background");
+    }
+    if (con->host.layer_new) {
+        int i;
+        luaL_newmetatable(L, LAYER_MT);
+        lua_newtable(L);                              /* the method table */
+        for (i = 0; LAYER_VERBS[i].name; i++) {
+            lua_pushinteger(L, i);
+            lua_pushcclosure(L, l_layer_method, 1);
+            lua_setfield(L, -2, LAYER_VERBS[i].name);
+        }
+        lua_setfield(L, -2, "__index");
+        lua_pushcfunction(L, l_layer_gc);
+        lua_setfield(L, -2, "__gc");
+        lua_pop(L, 1);                                /* the metatable */
+        lua_pushcfunction(L, l_make_layer);
+        lua_setglobal(L, "make_layer");
+        lua_pushcfunction(L, l_draw_layer);
+        lua_setglobal(L, "draw_layer");
+    }
+}
+
 /* -- installation -------------------------------------------------------- */
+
 
 static const luaL_Reg VERBS[] = {
     {"cls", l_cls}, {"pix", l_pix}, {"line", l_line}, {"rect", l_rect},
@@ -497,6 +640,10 @@ int moy_lua_open(struct lua_State *Ls, moy_console *con)
         lua_pushcfunction(L, v->func);
         lua_setglobal(L, v->name);
     }
+    /* SPEC.md 10's optional features, each installed only if this host
+     * implements it -- so a cart's `if make_layer ~= nil` is a real question
+     * with a real answer, and a host that implements none is unchanged. */
+    open_extensions(L, con);
     /* SPEC.md 9: read these, do not assume 320x240. */
     lua_pushinteger(L, con->canvas->w);
     lua_setglobal(L, "W");

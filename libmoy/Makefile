@@ -120,6 +120,17 @@ play: $(PLAY)
 # SPEC.md 8's semantics, asserted numerically (8.3 exempts audio from pixel
 # conformance, so this is its whole test story: pitch by zero crossings,
 # envelopes by RMS, and the channel-claiming rules by inspection).
+EXTT    := build/ext_test
+
+# SPEC.md 10's extensions need the Lua binding, hence moy_lua.o and the VM --
+# the audio test above needs neither, which is why they are separate targets.
+$(EXTT): test/ext_test.c src/moy_lua.o $(LUA_OBJ) $(LIB)
+	@mkdir -p build
+	$(CC) $(CFLAGS) -DMOY_WITH_LUA -I$(LUA_DIR) $^ $(LDLIBS) -o $@
+
+ext-test: $(EXTT)
+	./$(EXTT)
+
 $(AUDIOT): test/audio_test.c $(LIB)
 	@mkdir -p build
 	$(CC) $(CFLAGS) $< $(LIB) $(LDLIBS) -o $@
