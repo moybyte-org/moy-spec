@@ -86,11 +86,20 @@ runs:
 | Cart heap | **192 KB** | the Lua VM and everything the cart allocates |
 | Audio | **8 KB** | bank plus mix buffer |
 | | | |
-| **Core total** | **≈ 400 KB** | with headroom |
-| **With `layers`** (§10) | **≈ 1 MB** | each full-screen off-screen buffer is another 75 KB |
+| One layer (§6) | **75 KB** | a full-screen off-screen buffer; more than one is host-dependent |
+| | | |
+| **Total** | **≈ 400 KB** | with headroom |
 
-For calibration: a measured fully-bridged cart on the reference implementation uses
-about 41 KB of Lua heap, so 192 KB is generous rather than tight.
+**Measured, not derived** (2026-08-13, the reference implementation): a deliberately
+heap-heavy cart — 200 actors each carrying a closure, per-frame string garbage, a
+full-screen layer, a 128 × 128 map — reaches **88.8 KB** of Lua heap and **295 KB**
+in total, layer included. An ordinary fully-bridged cart uses about 41 KB of heap.
+So 192 KB for the heap is generous rather than tight, and the floor has room for the
+layer that used to sit outside it.
+
+**One layer is guaranteed; further ones are not.** A host may decline, and
+`make_layer` returns nil when it does (§6) — an allocation that can fail is an
+ordinary runtime condition a cart tests for, unlike a verb that does not exist.
 
 **This is a floor, not a target.** A host that cannot free 400 KB while a cart runs
 cannot conform — freeing it is the implementer's problem, and a "game mode" that
@@ -557,6 +566,22 @@ next reader does not re-derive them:
 
 ---
 
+### `layers`
+
+Off-screen buffers for scrolling worlds — draw a wide level once and window-copy it
+each frame instead of re-rendering it.
+
+| verb | |
+|---|---|
+| `make_layer(w, h)` | a layer speaking the full drawing API, with its own camera, clip, pal and palt — or **nil** if the host declines |
+| `draw_layer(layer, cx, cy)` | blit the visible window whose top-left is `(cx, cy)`; like `cls`, this composites and so ignores the screen's camera, clip and pal |
+
+§1.1 reserves one full-screen layer, so `make_layer` succeeds at least once on every
+conforming host. Beyond that a host may decline and return nil, which a cart handles
+the way it handles any allocation that can fail — by testing, not by guarding a verb.
+A layer's own draw state is its own: setting `camera` on a layer does not move the
+screen's.
+
 ### `background` and `view`
 
 Both are **core verbs whose effect depends on the host**, in the same way
@@ -819,29 +844,32 @@ array; a host that doesn't implement it refuses the cart cleanly rather than cra
 partway in.
 
 Declaring is for *requiring*. A cart may instead use an extension
-opportunistically — check the verb exists before calling it (`if make_layer ~=
-nil then ... end`) and declare nothing. Such a cart runs on every host,
+opportunistically — check the verb exists before calling it (`if espnow ~= nil
+then ... end`) and declare nothing. Such a cart runs on every host,
 degraded where the extension is absent, lit up where it isn't; an extension's
 verbs do not exist as globals on a host without it.
 
 **What belongs here, and what does not.** An extension is for a capability whose
-absence a cart cannot be shielded from. `layers` qualifies: there is no honest
-fallback for an off-screen buffer that does not exist, because a no-op
-`make_layer` would give a cart that runs and draws *nothing* where its world
-should be — which reads as a bug in the cart rather than a missing feature. So
-its absence is answered by the manifest, declared and refused before a frame
-runs, which costs the author no guard either — just one honest line.
+absence a cart cannot be shielded from *and* which a conforming host may
+genuinely lack — a radio, a second cart language, an on-device authoring format.
+Hardware, in other words, rather than software a host could always choose to
+implement.
 
-`background` and `view` do not qualify, which is why both are core (§6): a
-console that cannot honour them does something truthful anyway, and a cart
-cannot tell it was denied. **A verb whose absence can be degraded truthfully
-belongs in core; only one whose absence cannot belongs here.** Deciding which
-is which is the extension designer's real work, and getting it wrong in the
-generous direction is worse than in the strict one — a cart that silently draws
-nothing is harder to diagnose than one a host refused by name.
+`background` and `view` do not qualify, and neither does `layers`: the first two
+because a console that cannot honour them does something truthful anyway, and
+layers because §1.1's floor now covers one. **A verb whose absence can be
+degraded truthfully, or afforded by every conforming host, belongs in core;
+only one whose absence cannot belongs here.** Deciding which is which is the
+extension designer's real work, and getting it wrong in the generous direction
+is worse than in the strict one — a cart that silently draws nothing is harder
+to diagnose than one a host refused by name.
 
-The one below is a **standard extension** — optional, but specified here so that two
-consoles implementing `layers` implement the same `layers`.
+**There are currently no standard extensions.** Both that this section once defined
+turned out not to need it: `background` and `view` because a host that cannot honour
+them does something truthful anyway (§6), and `layers` because measurement put it
+inside the floor (§1.1). That is the section working as intended rather than emptying
+out — an extension is for a capability whose absence a cart cannot be shielded from,
+and each of those failed that test on inspection.
 
 A console may also define **its own** extensions for hardware or features core says
 nothing about — a radio (`espnow`), a second cart language, an on-device authoring
@@ -857,24 +885,9 @@ cart's code — rather than its manifest — the place portability is declared. 
 manifest is the honest place: one line says what this cart needs, and a host can
 refuse it before a single frame runs.
 
-### `layers`
-
-Off-screen buffers for scrolling worlds — draw a wide level once, window-copy it each
-frame instead of re-rendering. `make_layer(w, h)` returns a layer speaking the full
-drawing API; `draw_layer(layer, cx, cy)` blits its visible window. Costs 75 KB per
-full-screen layer (§1.1), which is the whole reason this is optional: a console that
-cannot spare that implements every core verb and simply is not one of the ones with
-layers.
-
-(`background` used to be listed here. It is core now — see §6. It was filed with
-layers because a host's best implementation of it often IS a layer, but that is an
-optimisation, not a dependency: the verb means "repaint this backdrop for me", which
-any console can honour with a clear.)
-
-(`viewport` used to be an extension here. `view` is core now — see §6 — because a
-console that cannot composite a scaled region still draws the cart's region
-correctly, and an extension whose absence is invisible to the cart was never
-optional in the way this section means.)
+(`layers` used to be a standard extension here. It is core now — see §6 — because
+measurement put a full-screen layer inside the 400 KB floor, so requiring hosts to
+negotiate it was buying nothing.)
 
 ### Not here: networking
 
@@ -958,13 +971,17 @@ cart-supplied palettes (§2.2) make it *sixteen at a time* rather than sixteen s
 colors. **Cost:** an artist cannot use more than 16 distinct colors within one sprite
 sheet, only in backgrounds and shapes. — *RATIONALE, "Sprites — 16 colors".*
 
-### 12.4 — 400 KB is the memory floor.
+### 12.4 — 400 KB is the memory floor, and layers fit inside it.
 
-Derived from §1.1's allocations with headroom, not negotiated, and not yet profiled
-against a running console. Any kind of RAM counts, so the floor only bites SRAM-only
-parts. **Cost:** it rules out the smallest of those, deliberately — a lower floor would
-mean a smaller screen, sheet or heap promise, and those are worse trades.
-— *RATIONALE, "Memory — 400 KB".*
+Now **measured** rather than derived (§1.1): a deliberately heap-heavy cart with a
+full-screen layer totals 295 KB on the reference implementation, so the layer that
+used to be an optional extension sits comfortably under the floor and is core (§6).
+Any kind of RAM counts, so the floor only bites SRAM-only parts. **Cost:** it rules
+those out below 400 KB — including RP2040-class boards at 264 KB, which were already
+excluded before layers moved and are not newly so. A lower floor would mean a smaller
+screen, sheet or heap promise, and those are worse trades. **What would reopen it:**
+a cart class that genuinely needs several layers at once, since only one is
+guaranteed. — *RATIONALE, "Memory — 400 KB".*
 
 ### 12.5 — 512 tiles, but only 254 placeable on a map.
 

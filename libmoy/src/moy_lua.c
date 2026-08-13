@@ -489,6 +489,9 @@ static int l_make_layer(lua_State *L)
     int w = argi(L, 1, MOY_W), h = argi(L, 2, MOY_H);
     moy_pixel *pix;
     moy_lua_layer *ly;
+    /* A host that supplies no allocator can still be conforming only if no
+     * cart asks -- 1.1 reserves one layer, so this is the "asked for more than
+     * I reserved" path and nil is its answer, same as a refused allocation. */
     if (w <= 0 || h <= 0 || !con->host.layer_new) return 0;      /* nil */
     pix = con->host.layer_new(con->host.user, w, h);
     if (!pix) return 0;          /* the host declined (no room): nil, not an
@@ -557,23 +560,18 @@ static int l_view(lua_State *L)
 /* Install whichever extensions this host implements. */
 static void open_extensions(lua_State *L, moy_console *con)
 {
-    /* view and background are CORE (SPEC.md 6), not extensions -- they live in
-     * this function only because they are installed beside the one real
-     * extension below. A console that cannot honour them does something
-     * truthful anyway (unscaled presentation; a clear), so a cart cannot tell
-     * it was denied, which is precisely what disqualifies them from 10.
-     *
-     * `layers` IS an extension and stays gated: there is no honest fallback
-     * for an off-screen buffer that does not exist. A no-op layer would give a
-     * cart that runs and draws NOTHING where its world should be, which reads
-     * as a bug in the cart rather than a missing feature -- so its absence is
-     * answered by the manifest instead (10: declared, refused cleanly before a
-     * frame runs), which costs the cart no guard either. */
+    /* All CORE (SPEC.md 6). None of these is gated on a host callback, because
+     * none of them can leave a cart unable to tell it was denied: view and
+     * background degrade truthfully (unscaled presentation; a clear), and
+     * 1.1's floor reserves one full-screen layer, so make_layer succeeds at
+     * least once everywhere. What a host may still refuse is the SECOND layer
+     * -- which surfaces as nil from make_layer, an ordinary allocation failure
+     * a cart tests for rather than a verb that is missing. */
     lua_pushcfunction(L, l_view);
     lua_setglobal(L, "view");
     lua_pushcfunction(L, l_background);
     lua_setglobal(L, "background");
-    if (con->host.layer_new) {
+    {
         int i;
         luaL_newmetatable(L, LAYER_MT);
         lua_newtable(L);                              /* the method table */

@@ -96,11 +96,11 @@ int main(void)
 
     puts("a host WITHOUT the extensions offers no such globals");
     L = boot(&con, &cv, fb, &sh, &mp, 0);
-    /* layers has no honest fallback, so its absence is real and the manifest
-     * answers it. */
-    ok("make_layer absent", !has_global(L, "make_layer"));
-    ok("draw_layer absent", !has_global(L, "draw_layer"));
-    /* ...while these two degrade truthfully, so a cart never has to ask. */
+    /* All three are core now, so all three exist even here; what a host
+     * without an allocator cannot do is HAND OUT a layer, which is nil rather
+     * than a missing name. */
+    ok("make_layer present", has_global(L, "make_layer"));
+    ok("draw_layer present", has_global(L, "draw_layer"));
     ok("view present even unimplemented", has_global(L, "view"));
     ok("background present even unimplemented", has_global(L, "background"));
     ok("core verbs still present", has_global(L, "rect") && has_global(L, "spr"));
@@ -111,13 +111,18 @@ int main(void)
     ok("...and the cart drew over it", fb[0] == 9);
     ok("the declaration was recorded for a host that polls",
        con.view_w == 16 && con.view_h == 8);
+    ok("make_layer with no allocator returns nil, not an error",
+       run(L, "got = 'unset'\n"
+              "function _draw() local L = make_layer(8, 8)\n"
+              "  got = (L == nil) and 'nil' or 'layer' end\n"));
+    { int t = lua_getglobal(L, "got");
+      ok("...and the cart saw the nil", t == LUA_TSTRING
+         && strcmp(lua_tostring(L, -1), "nil") == 0);
+      lua_pop(L, 1); }
     lua_close(L);
 
-    puts("a host WITH them installs exactly those globals");
+    puts("a host WITH an allocator hands out real layers");
     L = boot(&con, &cv, fb, &sh, &mp, 1);
-    ok("make_layer present", has_global(L, "make_layer"));
-    ok("draw_layer present", has_global(L, "draw_layer"));
-
     puts("layers draw, and composite where the window says");
     ok("cart ran",
        run(L, "function _init()\n"
