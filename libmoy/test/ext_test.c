@@ -96,23 +96,27 @@ int main(void)
 
     puts("a host WITHOUT the extensions offers no such globals");
     L = boot(&con, &cv, fb, &sh, &mp, 0);
+    /* layers has no honest fallback, so its absence is real and the manifest
+     * answers it. */
     ok("make_layer absent", !has_global(L, "make_layer"));
     ok("draw_layer absent", !has_global(L, "draw_layer"));
-    ok("background absent", !has_global(L, "background"));
-    ok("view absent", !has_global(L, "view"));
+    /* ...while these two degrade truthfully, so a cart never has to ask. */
+    ok("view present even unimplemented", has_global(L, "view"));
+    ok("background present even unimplemented", has_global(L, "background"));
     ok("core verbs still present", has_global(L, "rect") && has_global(L, "spr"));
-    /* ...so the documented guard is answerable rather than decorative. */
-    ok("a guarded cart runs anyway",
-       run(L, "seen = false\n"
-              "function _draw() if view ~= nil then seen = true end cls(1) end\n"));
+    ok("an UNGUARDED cart runs on a host implementing neither",
+       run(L, "function _init() view(16, 8) background(3) end\n"
+              "function _draw() rect(0, 0, 4, 4, 9) end\n"));
+    ok("libmoy cleared to the declared background", fb[31] == 3);
+    ok("...and the cart drew over it", fb[0] == 9);
+    ok("the declaration was recorded for a host that polls",
+       con.view_w == 16 && con.view_h == 8);
     lua_close(L);
 
     puts("a host WITH them installs exactly those globals");
     L = boot(&con, &cv, fb, &sh, &mp, 1);
     ok("make_layer present", has_global(L, "make_layer"));
     ok("draw_layer present", has_global(L, "draw_layer"));
-    ok("background present", has_global(L, "background"));
-    ok("view present", has_global(L, "view"));
 
     puts("layers draw, and composite where the window says");
     ok("cart ran",

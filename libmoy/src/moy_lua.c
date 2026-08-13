@@ -517,7 +517,13 @@ static int l_draw_layer(lua_State *L)
 static int l_background(lua_State *L)
 {
     moy_console *con = con_of(L);
-    if (con->host.background) con->host.background(con->host.user, argi(L, 1, 0));
+    con->bg = argi(L, 1, 0);
+    con->has_bg = 1;
+    /* A host that can do better than a full clear -- restore a cached
+     * backdrop, blit a prepared layer -- takes it here. One that cannot does
+     * nothing, and moy_lua_draw clears for it. Either way the cart's call
+     * worked, which is why this verb needs no guard. */
+    if (con->host.background) con->host.background(con->host.user, con->bg);
     return 0;
 }
 
@@ -535,22 +541,37 @@ static int l_layer_gc(lua_State *L)
 static int l_view(lua_State *L)
 {
     moy_console *con = con_of(L);
-    if (con->host.view) con->host.view(con->host.user, argi(L, 1, MOY_W),
-                                       argi(L, 2, MOY_H));
+    con->view_w = argi(L, 1, MOY_W);
+    con->view_h = argi(L, 2, MOY_H);
+    if (con->view_w < 0) con->view_w = 0;
+    if (con->view_h < 0) con->view_h = 0;
+    /* The declaration is recorded whatever the host does with it: a host may
+     * poll con->view_w instead of taking a callback, and a host that ignores
+     * it entirely simply presents the whole canvas -- the cart's region drawn
+     * unscaled, which is the honest degrade and the reason this verb does not
+     * need guarding. */
+    if (con->host.view) con->host.view(con->host.user, con->view_w, con->view_h);
     return 0;
 }
 
 /* Install whichever extensions this host implements. */
 static void open_extensions(lua_State *L, moy_console *con)
 {
-    if (con->host.view) {
-        lua_pushcfunction(L, l_view);
-        lua_setglobal(L, "view");
-    }
-    if (con->host.background) {
-        lua_pushcfunction(L, l_background);
-        lua_setglobal(L, "background");
-    }
+    /* ALWAYS present, because their absence has an honest fallback and a cart
+     * should not have to ask. view() unhonoured means the cart's region draws
+     * unscaled; background() unhonoured is cleared by moy_lua_draw below. A
+     * verb you can degrade truthfully is a verb nobody should have to guard.
+     *
+     * `layers` is not like that and stays gated: there is no honest fallback
+     * for an off-screen buffer that does not exist. A no-op layer would give a
+     * cart that runs and draws NOTHING where its world should be, which reads
+     * as a bug in the cart rather than a missing feature -- so its absence is
+     * answered by the manifest instead (10: declared, and refused cleanly
+     * before a frame runs), which costs the cart no guard either. */
+    lua_pushcfunction(L, l_view);
+    lua_setglobal(L, "view");
+    lua_pushcfunction(L, l_background);
+    lua_setglobal(L, "background");
     if (con->host.layer_new) {
         int i;
         luaL_newmetatable(L, LAYER_MT);
@@ -693,5 +714,14 @@ int moy_lua_update(struct lua_State *L, float dt, char *err, size_t errlen)
 
 int moy_lua_draw(struct lua_State *L, char *err, size_t errlen)
 {
+    /* SPEC.md 10: background(x) declares a backdrop repainted each frame. A
+     * host that took the callback has already done it its own way; one that
+     * did not gets it here, which is what lets a cart call background()
+     * unguarded on every console. Before _draw, where the cart would have
+     * cls()'d itself. */
+    moy_console *con = con_of((lua_State *)L);
+    if (con && con->has_bg && !con->host.background) {
+        moy_cls(con->canvas, con->bg);
+    }
     return call_hook((lua_State *)L, "_draw", 0, err, errlen);
 }

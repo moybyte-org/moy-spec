@@ -792,10 +792,33 @@ array; a host that doesn't implement it refuses the cart cleanly rather than cra
 partway in.
 
 Declaring is for *requiring*. A cart may instead use an extension
-opportunistically — check the verb exists before calling it (`if view ~= nil
-then view(...) end`) and declare nothing. Such a cart runs on every host,
+opportunistically — check the verb exists before calling it (`if make_layer ~=
+nil then ... end`) and declare nothing. Such a cart runs on every host,
 degraded where the extension is absent, lit up where it isn't; an extension's
-verbs simply do not exist as globals on a host without it.
+verbs do not exist as globals on a host without it.
+
+**With one deliberate exception, because a guard nobody needs is a tax on every
+cart author.** Where an extension's absence has an *honest* fallback, its verbs
+are present on every host and the fallback simply happens:
+
+| verb | on a host that implements it | on one that does not |
+|---|---|---|
+| `view(w, h)` | the region composites centered and scaled | the cart's region draws unscaled — the declaration is recorded, and a host may read it instead of being called |
+| `background(x)` | the host repaints its own way (a cached backdrop, a prepared layer) | the console clears to that colour before each `_draw` |
+
+Neither can mislead a cart: it asked for something, and something truthful
+happened. So neither needs `~= nil` around it.
+
+`layers` is not like that and stays gated. There is no honest fallback for an
+off-screen buffer that does not exist: a no-op `make_layer` would give a cart
+that runs and draws *nothing* where its world should be, which reads as a bug
+in the cart rather than a missing feature. Its absence is answered by the
+manifest instead — declared, and refused before a frame runs — which costs the
+author no guard either, just one honest line.
+
+The rule generalises: **a verb whose absence can be degraded truthfully should
+always exist; one whose absence cannot must be declared.** Guessing which is
+which is the extension designer's real work.
 
 The two below are **standard extensions** — optional, but specified here so that two
 consoles implementing `layers` implement the same `layers`.

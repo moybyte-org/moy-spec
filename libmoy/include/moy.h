@@ -295,7 +295,7 @@ typedef struct {
      * canvas; compositing it centered at the largest integer scale that fits
      * is the host's job, because only the host knows what it is compositing
      * onto. libmoy just relays the declaration. */
-    void (*view)(void *user, int w, int h);
+    void (*view)(void *user, int w, int h);        /* optional; see moy_console */
 
     /* `layers`: the host owns the memory, as it does for every other buffer
      * here -- libmoy allocates nothing. layer_new returns w*h pixels (or NULL
@@ -304,7 +304,10 @@ typedef struct {
      * may leave it NULL and reclaim them wholesale. */
     moy_pixel *(*layer_new)(void *user, int w, int h);
     void (*layer_free)(void *user, moy_pixel *pix);
-    /* background(col) declares a backdrop the host repaints each frame. */
+    /* background(col): OPTIONAL, and only as an optimisation -- libmoy clears
+     * to the declared colour itself when this is NULL (see moy_console.bg), so
+     * the verb always works. A host takes it over when it can do better than a
+     * full clear, e.g. restoring a cached backdrop. */
     void (*background)(void *user, int col);
 } moy_host;
 
@@ -317,6 +320,13 @@ typedef struct {
     moy_map    *map;
     moy_host    host;
     uint32_t    rng;        /* see moy_rnd */
+    /* SPEC.md 10, the always-present half. A cart calls view() or background()
+     * unguarded; what it declared lands HERE whether or not the host took the
+     * callback, so a host may read state instead of accepting calls, and a
+     * host that does neither still runs the cart correctly -- unscaled for
+     * view, cleared by libmoy for background. view_w == 0 means undeclared. */
+    int         view_w, view_h;
+    int         bg, has_bg;
 } moy_console;
 
 void moy_console_init(moy_console *con, moy_canvas *c, moy_sheet *s, moy_map *m);
