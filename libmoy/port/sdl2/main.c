@@ -53,6 +53,10 @@ typedef struct {
     uint8_t prev[MOY_BTN_COUNT];
     uint32_t t0;
     int running;
+    /* SPEC.md 10 `viewport` / `layers` state. view_w = 0 means the cart has
+     * not declared one, so the whole canvas presents. */
+    int view_w, view_h;
+    int bg, has_bg;
 } host_state;
 
 /* One physical key per logical button, plus the arrows. A real handheld maps
@@ -85,6 +89,33 @@ static int h_btnp(void *u, moy_button b, int player)
     /* A real released->held edge, latched once per tick: SPEC.md 12.2 gives
      * btnp no autorepeat, and a cart wanting repeat writes its own timer. */
     return h->held[b] && !h->prev[b];
+}
+
+/* SPEC.md 10. A desktop has no reason to decline either extension: the 75 KB a
+ * layer costs (1.1) constrains a handheld, not a PC, and a window can
+ * composite any viewport. A reference port that declined them would leave
+ * carts declaring them refused by the very implementation meant to show what
+ * a host owes libmoy. */
+static moy_pixel *h_layer_new(void *u, int w, int h)
+{
+    (void)u;
+    return (moy_pixel *)calloc((size_t)w * (size_t)h, sizeof(moy_pixel));
+}
+
+static void h_layer_free(void *u, moy_pixel *pix) { (void)u; free(pix); }
+
+static void h_view(void *u, int w, int h)
+{
+    host_state *hs = (host_state *)u;
+    hs->view_w = w > 0 ? w : 0;
+    hs->view_h = h > 0 ? h : 0;
+}
+
+static void h_background(void *u, int col)
+{
+    host_state *hs = (host_state *)u;
+    hs->bg = col;
+    hs->has_bg = 1;
 }
 
 static int      h_players(void *u) { (void)u; return 1; }
@@ -336,6 +367,13 @@ int main(int argc, char **argv)
     con.host.pmem_get = h_pmem_get;
     con.host.pmem_set = h_pmem_set;
     con.host.quit = h_quit;
+    /* SPEC.md 10's standard extensions. Supplying the callbacks is what
+     * installs the verbs -- a port that left these NULL would still be
+     * conforming, and its carts would simply not see the names. */
+    con.host.layer_new = h_layer_new;
+    con.host.layer_free = h_layer_free;
+    con.host.view = h_view;
+    con.host.background = h_background;
     moy_srand(&con, (uint32_t)time(NULL));
 
     snprintf(path, sizeof path, "%s/%s", cart, mainfile);
@@ -437,6 +475,11 @@ int main(int argc, char **argv)
 
         moy_reset_state(&canvas);
         if (moy_lua_update(L, dt, err, sizeof err)) { fprintf(stderr, "moy-play: _update: %s\n", err); break; }
+        /* SPEC.md 10 `layers`: background(x) declares a backdrop the host
+         * repaints automatically each frame, so a cart that has one need not
+         * cls() itself. Between _update and _draw, which is where the cart
+         * would have done it. */
+        if (host.has_bg) moy_cls(&canvas, host.bg);
         if (moy_lua_draw(L, err, sizeof err))       { fprintf(stderr, "moy-play: _draw: %s\n", err); break; }
 
         {   /* pixels out: the one place the console's colours become anyone's */
@@ -449,7 +492,32 @@ int main(int argc, char **argv)
         }
         SDL_UpdateTexture(tex, NULL, pixels, cw * 4);
         SDL_RenderClear(ren);
-        SDL_RenderCopy(ren, tex, NULL, NULL);
+        if (host.view_w > 0 && host.view_h > 0
+            && (host.view_w < cw || host.view_h < ch)) {
+            /* SPEC.md 10 `viewport`: present the CENTERED region the cart
+             * declared, at the largest integer scale that fits -- which is how
+             * a converted 128x128 cart fills the window instead of sitting in
+             * a letterbox. The scale is integer on purpose: this is a pixel
+             * console, and a fractional one would resample its art. */
+            SDL_Rect src, dst;
+            int ww, wh, sx, sy, sc;
+            SDL_GetRendererOutputSize(ren, &ww, &wh);
+            sx = ww / host.view_w;
+            sy = wh / host.view_h;
+            sc = sx < sy ? sx : sy;
+            if (sc < 1) sc = 1;
+            src.x = (cw - host.view_w) / 2;
+            src.y = (ch - host.view_h) / 2;
+            src.w = host.view_w;
+            src.h = host.view_h;
+            dst.w = host.view_w * sc;
+            dst.h = host.view_h * sc;
+            dst.x = (ww - dst.w) / 2;
+            dst.y = (wh - dst.h) / 2;
+            SDL_RenderCopy(ren, tex, &src, &dst);
+        } else {
+            SDL_RenderCopy(ren, tex, NULL, NULL);
+        }
         SDL_RenderPresent(ren);
 
         {   /* Hold the declared rate. vsync usually does this already; the
