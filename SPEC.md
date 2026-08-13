@@ -402,6 +402,8 @@ canvas and honours the current `camera`, `clip` and `pal` state.
 | verb | effect |
 |---|---|
 | `cls(c)` | clear the screen to color `c` (default 0) |
+| `background(c)` | declare a backdrop repainted before every `_draw` — `cls` you say once |
+| `view(w, h)` | declare a logical viewport smaller than the canvas |
 | `pix(x, y, c)` | set one pixel |
 | `line(x0, y0, x1, y1, c)` | line |
 | `rect(x, y, w, h, c)` | **filled** rectangle |
@@ -554,6 +556,31 @@ next reader does not re-derive them:
   never core. Core verbs are the primitives every genre shares.
 
 ---
+
+### `background` and `view`
+
+Both are **core verbs whose effect depends on the host**, in the same way
+`touch()` reads nil where there is no pointer and `textmode` is a no-op on a
+keyboard with one mode. A cart calls them plainly; what varies is how much a
+given console can do with them, never whether the call works.
+
+`background(c)` declares a backdrop instead of clearing to it every frame — the
+same pixels as a `cls(c)` at the top of `_draw`, said once. A console that can
+do better than a flat clear (restoring a cached backdrop, blitting a prepared
+layer) does; one that cannot clears. The cart cannot tell, and should not need
+to.
+
+`view(w, h)` declares that the cart only uses a centered `w × h` region of the
+canvas. A console with a bigger screen composites that region at the largest
+integer scale that fits, which is how a converted 128 × 128 cart fills a display
+instead of sitting in a letterbox; a console that presents pixel-for-pixel draws
+it unscaled, which is what it would have done anyway. Declaring `"canvas"`
+(§3.1) is the static twin — the raster itself shrinks and `W`/`H` change with it
+— where `view` chooses the region at runtime with the full canvas still
+underneath.
+
+Neither can mislead a cart, which is why neither is an extension and neither
+needs a `~= nil` guard.
 
 ## 7. Sprites, map, input
 
@@ -797,30 +824,23 @@ nil then ... end`) and declare nothing. Such a cart runs on every host,
 degraded where the extension is absent, lit up where it isn't; an extension's
 verbs do not exist as globals on a host without it.
 
-**With one deliberate exception, because a guard nobody needs is a tax on every
-cart author.** Where an extension's absence has an *honest* fallback, its verbs
-are present on every host and the fallback simply happens:
+**What belongs here, and what does not.** An extension is for a capability whose
+absence a cart cannot be shielded from. `layers` qualifies: there is no honest
+fallback for an off-screen buffer that does not exist, because a no-op
+`make_layer` would give a cart that runs and draws *nothing* where its world
+should be — which reads as a bug in the cart rather than a missing feature. So
+its absence is answered by the manifest, declared and refused before a frame
+runs, which costs the author no guard either — just one honest line.
 
-| verb | on a host that implements it | on one that does not |
-|---|---|---|
-| `view(w, h)` | the region composites centered and scaled | the cart's region draws unscaled — the declaration is recorded, and a host may read it instead of being called |
-| `background(x)` | the host repaints its own way (a cached backdrop, a prepared layer) | the console clears to that colour before each `_draw` |
+`background` and `view` do not qualify, which is why both are core (§6): a
+console that cannot honour them does something truthful anyway, and a cart
+cannot tell it was denied. **A verb whose absence can be degraded truthfully
+belongs in core; only one whose absence cannot belongs here.** Deciding which
+is which is the extension designer's real work, and getting it wrong in the
+generous direction is worse than in the strict one — a cart that silently draws
+nothing is harder to diagnose than one a host refused by name.
 
-Neither can mislead a cart: it asked for something, and something truthful
-happened. So neither needs `~= nil` around it.
-
-`layers` is not like that and stays gated. There is no honest fallback for an
-off-screen buffer that does not exist: a no-op `make_layer` would give a cart
-that runs and draws *nothing* where its world should be, which reads as a bug
-in the cart rather than a missing feature. Its absence is answered by the
-manifest instead — declared, and refused before a frame runs — which costs the
-author no guard either, just one honest line.
-
-The rule generalises: **a verb whose absence can be degraded truthfully should
-always exist; one whose absence cannot must be declared.** Guessing which is
-which is the extension designer's real work.
-
-The two below are **standard extensions** — optional, but specified here so that two
+The one below is a **standard extension** — optional, but specified here so that two
 consoles implementing `layers` implement the same `layers`.
 
 A console may also define **its own** extensions for hardware or features core says
@@ -841,19 +861,20 @@ refuse it before a single frame runs.
 
 Off-screen buffers for scrolling worlds — draw a wide level once, window-copy it each
 frame instead of re-rendering. `make_layer(w, h)` returns a layer speaking the full
-drawing API; `draw_layer(layer, cx, cy)` blits its visible window; `background(x)`
-declares a backdrop the host repaints automatically each frame. Costs 75 KB per
-full-screen layer (§1.1).
+drawing API; `draw_layer(layer, cx, cy)` blits its visible window. Costs 75 KB per
+full-screen layer (§1.1), which is the whole reason this is optional: a console that
+cannot spare that implements every core verb and simply is not one of the ones with
+layers.
 
-### `viewport`
+(`background` used to be listed here. It is core now — see §6. It was filed with
+layers because a host's best implementation of it often IS a layer, but that is an
+optimisation, not a dependency: the verb means "repaint this backdrop for me", which
+any console can honour with a clear.)
 
-`view(w, h)` declares a logical viewport smaller than the canvas; the host composites
-that centered region at the largest integer scale that fits. This is how a converted
-128 × 128 PICO-8 cart fills a screen instead of sitting in a 320 × 240 letterbox.
-Declaring `"canvas": "128x128"` (§3.1) reaches the same look through the manifest —
-the raster itself shrinks and `W`/`H` change with it — with no extension involved;
-`view` is for choosing (or changing) the region at runtime while keeping the full
-canvas underneath.
+(`viewport` used to be an extension here. `view` is core now — see §6 — because a
+console that cannot composite a scaled region still draws the cart's region
+correctly, and an extension whose absence is invisible to the cart was never
+optional in the way this section means.)
 
 ### Not here: networking
 

@@ -557,17 +557,18 @@ static int l_view(lua_State *L)
 /* Install whichever extensions this host implements. */
 static void open_extensions(lua_State *L, moy_console *con)
 {
-    /* ALWAYS present, because their absence has an honest fallback and a cart
-     * should not have to ask. view() unhonoured means the cart's region draws
-     * unscaled; background() unhonoured is cleared by moy_lua_draw below. A
-     * verb you can degrade truthfully is a verb nobody should have to guard.
+    /* view and background are CORE (SPEC.md 6), not extensions -- they live in
+     * this function only because they are installed beside the one real
+     * extension below. A console that cannot honour them does something
+     * truthful anyway (unscaled presentation; a clear), so a cart cannot tell
+     * it was denied, which is precisely what disqualifies them from 10.
      *
-     * `layers` is not like that and stays gated: there is no honest fallback
+     * `layers` IS an extension and stays gated: there is no honest fallback
      * for an off-screen buffer that does not exist. A no-op layer would give a
      * cart that runs and draws NOTHING where its world should be, which reads
      * as a bug in the cart rather than a missing feature -- so its absence is
-     * answered by the manifest instead (10: declared, and refused cleanly
-     * before a frame runs), which costs the cart no guard either. */
+     * answered by the manifest instead (10: declared, refused cleanly before a
+     * frame runs), which costs the cart no guard either. */
     lua_pushcfunction(L, l_view);
     lua_setglobal(L, "view");
     lua_pushcfunction(L, l_background);
