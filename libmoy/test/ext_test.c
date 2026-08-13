@@ -150,6 +150,33 @@ int main(void)
     ok("screen camera untouched by the layer", cv.cam_x == 0 && cv.cam_y == 0);
     lua_close(L);
 
+    puts("a console with NO sheet and NO map is a console, not a crash");
+    /* moy_console holds both by pointer, so "the host has neither yet" is a
+     * legal state -- a brand-new project, or an embedder that wants only the
+     * geometry verbs. It used to be a segfault: the verbs handed the NULL
+     * straight to a raster that dereferences what it is given. Per SPEC.md
+     * 10's rule for anything the host did not supply, they degrade truthfully
+     * instead -- an absent sheet reads as empty tiles, an absent map as empty
+     * cells, both indistinguishable from data a cart simply has not drawn. */
+    moy_canvas_init(&cv, fb, 32, 16);
+    moy_console_init(&con, &cv, NULL, NULL);
+    L = luaL_newstate();
+    moy_lua_open(L, &con);
+    memset(fb, 5, sizeof fb);
+    ok("every sheet/map verb runs",
+       run(L, "function _draw()\n"
+              "  spr(1, 0, 0)  sspr(0, 0, 8, 8, 0, 0)\n"
+              "  map(0, 0)     tline(0, 0, 8, 8, 0, 0, 65536, 0)\n"
+              "  mset(1, 1, 3)\n"
+              "  GOT = mget(1, 1)\n"
+              "end\n"));
+    ok("...drawing nothing rather than something", fb[0] == 5 && fb[64] == 5);
+    { lua_getglobal(L, "GOT");
+      ok("mget answers -1, the same nothing it answers off a real map",
+         (int)lua_tointeger(L, -1) == -1);
+      lua_pop(L, 1); }
+    lua_close(L);
+
     printf("%s (%d failure%s)\n", fails ? "FAILED" : "all ok", fails,
            fails == 1 ? "" : "s");
     return fails ? 1 : 0;
