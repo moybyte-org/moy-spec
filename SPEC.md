@@ -423,7 +423,7 @@ canvas and honours the current `camera`, `clip` and `pal` state.
 | `trib(x1, y1, x2, y2, x3, y3, c)` | triangle **outline** — provisional, see §6.1 |
 | `tline(x0, y0, x1, y1, u, v, du, dv, ck)` | textured line sampled from the map — provisional, see §6.1 |
 | `print(s, x, y, c)` | text, 8 × 8 fixed font |
-| `camera(x, y)` | offset subsequent draws by `-x, -y`. No args resets |
+| `camera(x, y)` | offset subsequent draws by `-x, -y`. No args resets. **Returns the previous offset** as two values, so `local px, py = camera(x, y)` … `camera(px, py)` saves and restores |
 | `clip(x, y, w, h)` | clip subsequent draws to a rect. No args resets |
 | `pal(c0, c1)` | draw color `c0` as `c1`. No args resets |
 | `palt(c, on)` | mark index `c` transparent. No args resets |
