@@ -11,7 +11,7 @@ no per-device binary.
 - **[SPEC.md](SPEC.md)** — the console: raster, palette, verb table, cart format
 - **[RATIONALE.md](RATIONALE.md)** — why each number is what it is
 
-Status: **draft 0.1, unstable.** Names and values will still move.
+Status: **draft 0.2, unstable.** Names and values will still move.
 
 ## Get moy
 

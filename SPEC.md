@@ -1,9 +1,9 @@
-# moy core 0.1 — the portable console spec
+# moy core 0.2 — the portable console spec
 
-> **Status: DRAFT 0.1.** Everything outside §6.1 is decided and implemented — it
+> **Status: DRAFT 0.2.** Everything outside §6.1 is decided and implemented — it
 > describes a console that exists and runs games today, not a design sketch.
 > **§6.1 (the 3D verbs) is provisional**: its membership is settled and its
-> semantics are frozen, but nothing in it is core 0.1 until each verb clears the
+> semantics are frozen, but nothing in it is core 0.2 until each verb clears the
 > promotion gates stated there. Decisions worth arguing about are collected in
 > §12 with their reasoning.
 
@@ -454,7 +454,7 @@ glyph data means shipping that notice. See `THIRD_PARTY.md`.
 > provisional scene; `tline` is implemented in the reference library, the C
 > core, and the reference console's native kernels (2026-08), golden-checked,
 > and measured on the floor board. None
-> are core 0.1: each is promoted by the gates at the end of this section, on
+> are core 0.2: each is promoted by the gates at the end of this section, on
 > evidence rather than argument. The batch verbs that used to fill this section
 > are **deleted**, and the measurements that deleted them are recorded below so
 > they are not reinvented.
@@ -1026,7 +1026,7 @@ already run a cart and cache a frame, so it needs no spec — and it is the wron
 artefact, because an automatic frame is arbitrary and the author should choose how
 their game is represented.
 
-**Cost:** a store built on 0.1 lays out 8 × 8 tile art and will look sparse beside a
+**Cost:** a store built on 0.2 lays out 8 × 8 tile art and will look sparse beside a
 storefront with key art. Right way round: a missing cover is a design problem later, a
 wrong image format is a compatibility problem forever.
 
@@ -1067,4 +1067,4 @@ boundary moves, and it never exposes the **host's**.
 `proposals/wasm-runtime.md` is the rest of it, and the only copy: the measured
 numbers and the doctrine they force, the module shape, the import table, the
 framebuffer contract, the determinism profile, distribution, and the open items.
-Not part of 0.1.
+Not part of 0.2.

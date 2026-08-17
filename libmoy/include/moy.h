@@ -44,7 +44,7 @@
 extern "C" {
 #endif
 
-#define MOY_VERSION "0.1.0"
+#define MOY_VERSION "0.2.0"
 
 /* SPEC.md 1: the console is a fixed-size machine. */
 #define MOY_W            320
@@ -199,7 +199,7 @@ void moy_pal_reset(moy_canvas *c);
 void moy_palt  (moy_canvas *c, int col, int on);
 void moy_palt_reset(moy_canvas *c);
 
-/* PROVISIONAL -- SPEC.md 6.1 is unsettled and these are not part of core 0.1. */
+/* PROVISIONAL -- SPEC.md 6.1 is unsettled and these are not part of core 0.2. */
 void moy_tri   (moy_canvas *c, int x1, int y1, int x2, int y2, int x3, int y3, int col);
 void moy_trib  (moy_canvas *c, int x1, int y1, int x2, int y2, int x3, int y3, int col);
 
