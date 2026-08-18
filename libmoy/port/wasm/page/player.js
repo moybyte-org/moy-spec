@@ -254,10 +254,33 @@ function asciiOf(e) {
   return 0;
 }
 
+/* TAKE THE KEYBOARD. Every pointer handler here calls preventDefault -- it has
+ * to, or a drag on the joystick scrolls the page and a long press raises the
+ * callout menu -- and preventDefault on pointerdown suppresses the compat
+ * mousedown, whose default action is the focus change. Top-level that costs
+ * nothing, because the page already holds the keyboard. EMBEDDED IN AN IFRAME
+ * it is the difference between a playable cart and a dead one: the click starts
+ * the cart, focus stays in the host document, and keydown never reaches this
+ * window. The canvas is tabindex="-1" so this can focus it without putting a
+ * game inside the host page's tab order.
+ *
+ * Not while the off-screen input holds it: a textmode() cart is being typed
+ * into, and pulling focus away closes a phone's soft keyboard mid-word. */
+function grabFocus() {
+  if (document.activeElement === kbin) return;
+  // preventScroll: focusing inside a small iframe on a long page otherwise
+  // scrolls the HOST to bring the frame into view -- a jump on every click.
+  cv.focus({ preventScroll: true });
+}
+
 /* The gesture. Anything counts -- click, tap, key -- and it both starts the
  * cart and unlocks audio, which is the point of having one moment rather than
  * hoping the player happens to touch something. */
 function begin() {
+  /* Before the `started` gate, not after: a click that returns to the game
+   * after the player clicked away has to restore focus too, and by then the
+   * cart has long since started. */
+  grabFocus();
   audioResume();
   if (started) return;
   started = true;

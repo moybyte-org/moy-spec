@@ -32,6 +32,11 @@
   /* The console's pixels are the point: never smooth them, and never let the
      browser's default image scaling turn a 320x240 canvas into a blur. */
   #screen { image-rendering: pixelated; image-rendering: crisp-edges; background: #000; display: block; }
+  /* The canvas is focused on every gesture so an EMBEDDED player owns the
+     keyboard (see grabFocus in player.js). tabindex="-1" keeps it out of the
+     host page's tab order, so the ring would only ever appear on a click --
+     which is decoration, not a navigation cue. */
+  #screen:focus { outline: none; }
   #status { min-height: 1.4em; color: #8a8a99; }
   /* CLICK TO START. Not decoration: a browser will not start an AudioContext
      without a user gesture, so a page that boots straight into the cart has no
@@ -117,7 +122,7 @@
 
 <h1 id="title">moy</h1>
 <div id="wrap">
-  <canvas id="screen" width="320" height="240"></canvas>
+  <canvas id="screen" width="320" height="240" tabindex="-1"></canvas>
   <div id="start"><div class="tri"></div><small>CLICK TO PLAY</small></div>
 </div>
 <div id="status"></div>
