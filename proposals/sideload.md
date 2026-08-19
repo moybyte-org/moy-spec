@@ -1,6 +1,6 @@
 # Proposal: sideload — how a cart gets onto a console
 
-**Status: draft. Not part of core 0.1.** SPEC.md 3 deliberately says nothing
+**Status: draft. Not part of core 0.2.** SPEC.md 3 deliberately says nothing
 about how a cart travels; this stays true. What this proposes is not a
 transport requirement but a **ladder of conventions**, with the floor at zero
 code, so "works with `moy push`" is a claim the smallest OS can make honestly.

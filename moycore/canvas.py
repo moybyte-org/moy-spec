@@ -297,7 +297,7 @@ class Canvas:
                 err -= 2 * x + 1
 
     def tri(self, x1, y1, x2, y2, x3, y3, c):
-        """FILLED triangle. PROVISIONAL -- SPEC.md 6.1, not part of core 0.1."""
+        """FILLED triangle. PROVISIONAL -- SPEC.md 6.1, not part of core 0.2."""
         for sx, sy, sw in tri_spans(x1, y1, x2, y2, x3, y3):
             self.rect(sx, sy, sw, 1, c)
 

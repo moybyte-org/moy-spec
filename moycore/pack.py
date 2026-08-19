@@ -1,4 +1,4 @@
-"""The single-file cart -- a PROPOSAL, not part of core 0.1.
+"""The single-file cart -- a PROPOSAL, not part of core 0.2.
 
 SPEC.md 3 says a cart is a folder and that how it travels is packaging the spec
 deliberately says nothing about. That is right for AUTHORING: text files in a

@@ -1,6 +1,6 @@
 # Proposal: `runtime: "wasm"` — the compiled-cart binding
 
-**Status: draft. Not part of core 0.1.** SPEC.md §15 records the doctrine; this
+**Status: draft. Not part of core 0.2.** SPEC.md §15 records the doctrine; this
 document is the ABI it points at. Every number in it is measured, not estimated —
 the evidence run is a 6502 interpreter core, line-faithful in Lua and C with
 identical cycle counts out of every runtime, on the reference console's RISC-V

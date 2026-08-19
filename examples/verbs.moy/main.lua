@@ -160,7 +160,7 @@ end
 -- 9 --------------------------------------------- section 6.1 provisional ----
 local function s_draft()
   cls(0)
-  print("SECTION 6.1 -- PROVISIONAL, not core 0.1", 20, 30, 9)
+  print("SECTION 6.1 -- PROVISIONAL, not core 0.2", 20, 30, 9)
   tri(60, 160, 120, 60 + flr(20 * math.sin(t)), 180, 160, 12)  -- filled tri
   trib(60, 160, 120, 60 + flr(20 * math.sin(t)), 180, 160, 7)  -- outline
   local w = 24 + flr(20 * math.sin(t * 2))

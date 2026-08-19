@@ -1,4 +1,4 @@
--- Brick Siege -- a tank game, and a worked example of moy core 0.1.
+-- Brick Siege -- a tank game, and a worked example of moy core 0.2.
 --
 -- Drive the green tank with the arrows (you MOVE and FACE the way you press) and
 -- press A to FIRE -- one of your bullets on screen at a time. Wreck the grey enemy
@@ -6,7 +6,7 @@
 -- cell by cell; steel walls stop bullets dead. Clear the wave to win; lose your
 -- lives, or the base, and it is game over (it restarts after a beat).
 --
--- WHY THIS CART IS HERE: it uses ONLY core 0.1 -- no extensions, no vendor verbs --
+-- WHY THIS CART IS HERE: it uses ONLY core 0.2 -- no extensions, no vendor verbs --
 -- so a conformant console must be able to run it as-is. Between them, the twelve
 -- verbs it touches are most of what a real game needs:
 --
@@ -657,7 +657,7 @@ function _draw()
 
     -- Every moving sprite (eagle + enemies + players + bullets + explosions) is one
     -- spr() at colorkey 0, scale 2. A plain contiguous run of spr() calls like this
-    -- is the idiom core 0.1 asks for (SPEC.md 7.1: "many tiles is a plain loop over
+    -- is the idiom core 0.2 asks for (SPEC.md 7.1: "many tiles is a plain loop over
     -- spr"), and it leaves a console free to coalesce the run into one blit.
     -- the eagle base (or its rubble) at the fortress center
     local bx = BASE_CX * TS + sx

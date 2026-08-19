@@ -51,10 +51,11 @@ DEMOS = [
 DEMO_CART = DEMOS[0][1]        # the hero, still linked from the prose
 
 # Root markdown that becomes a page. Everything else that is linked resolves to
-# GitHub, so no repo-relative link is left dangling.
+# GitHub, so no repo-relative link is left dangling. `{core}` in a description
+# is filled from SPEC.md's title.
 PAGES = {
     "SPEC.md": ("spec.html", "Spec",
-                "moy core 0.1 -- the portable console spec: raster, palette, "
+                "moy {core} -- the portable console spec: raster, palette, "
                 "verb table and cart format."),
     "RATIONALE.md": ("rationale.html", "Rationale",
                      "Why each fixed number in the moy console spec is what it is."),
@@ -70,7 +71,19 @@ NAV = [("index.html", "Home"), ("spec.html", "Spec"),
        ("rationale.html", "Rationale"), ("index.html#play", "Play")]
 
 
-# --- palette + font: the spec's own data files drive the design -------------
+# --- the spec's own files drive the site: version, palette, font -------------
+
+def core_version(spec):
+    """The core this site publishes, read from SPEC.md's title.
+
+    SPEC.md owns the version, the way palette.json owns the colours: the
+    generator renders it and never states it.
+    """
+    m = re.match(r"#\s+moy\s+(core\s+\S+)", spec)
+    if not m:
+        raise SystemExit("SPEC.md: no '# moy core <version>' title to read")
+    return m.group(1)
+
 
 def load_palette():
     with open(os.path.join(ROOT, "palette.json"), encoding="utf-8") as f:
@@ -209,10 +222,10 @@ def toc_html(toc):
             '<nav aria-label="Table of contents"><ol>%s</ol></nav></details>' % items)
 
 
-def page(shell, *, title, desc, body, nav, cls="", wordmark=""):
+def page(shell, *, title, desc, body, nav, core, cls="", wordmark=""):
     return fill(shell, TITLE=html.escape(title), DESC=html.escape(desc, quote=True),
                 BODY=body, NAV=nav, CLASS=cls, WORDMARK=wordmark, REPO=REPO,
-                IMPL=IMPL)
+                IMPL=IMPL, CORETEXT=html.escape(core))
 
 
 # --- the landing page --------------------------------------------------------
@@ -302,6 +315,7 @@ def build(out, demo=True):
     # Pass 1: collect the spec's section numbers, so a reference to one links
     # from any page (including this repo's other documents).
     sections = md.render(src["SPEC.md"], Ctx("spec.html")).sections
+    core = core_version(src["SPEC.md"])          # e.g. "core 0.2"
     shell = tmpl("shell.html")
 
     for rel, (name, label, desc) in PAGES.items():
@@ -314,8 +328,8 @@ def build(out, demo=True):
         if "moy" not in title.lower():
             title += " — moy core"
         with open(os.path.join(out, name), "w", encoding="utf-8") as f:
-            f.write(page(shell, title=title, desc=desc, body=body,
-                         nav=nav_html(name), cls="doc-page",
+            f.write(page(shell, title=title, desc=desc.replace("{core}", core),
+                         body=body, nav=nav_html(name), cls="doc-page", core=core,
                          wordmark=pixel_svg("moy", font)))
 
     # The landing page: assembled from the README, never a copy of it.
@@ -328,7 +342,8 @@ def build(out, demo=True):
                 PALETTE=palette_grid(pal),
                 README=md.render(rest, ctx).html,
                 WORDMARK_BIG=pixel_svg("moy", font, cls="px big"),
-                CORE=pixel_svg("core 0.1", font, cls="px small"),
+                CORE=pixel_svg(core, font, cls="px small"),
+                CORETEXT=html.escape(core),
                 DEMOTABS="\n".join(
                     '      <button class="demotab%s" data-src="%s/" '
                     'data-cart="%s"><b>%s</b><span>%s</span></button>'
@@ -339,12 +354,12 @@ def build(out, demo=True):
                 CARTLINK="%s/tree/%s/%s" % (REPO, BRANCH, DEMO_CART),
                 REPO=REPO, IMPL=IMPL)
     with open(os.path.join(out, "index.html"), "w", encoding="utf-8") as f:
-        f.write(page(shell, title="moy core 0.1 — a portable console spec",
+        f.write(page(shell, title="moy %s — a portable console spec" % core,
                      desc="A small game console that exists as a spec: 320x240, "
                           "64 colours, Lua carts that play on an ESP32 handheld, "
                           "a PC simulator or a browser tab. Play one now.",
                      body=home, nav=nav_html("index.html"), cls="home",
-                     wordmark=pixel_svg("moy", font)))
+                     core=core, wordmark=pixel_svg("moy", font)))
 
     # Styles: the palette becomes CSS custom properties, so every colour on the
     # page is a colour the spec defines.

@@ -1,6 +1,6 @@
 # Proposal: the PICO-8 / TIC-80 verb gaps — what a native of those consoles misses here
 
-**Status: draft. Not part of core 0.1.** Nothing in this file changes SPEC.md;
+**Status: draft. Not part of core 0.2.** Nothing in this file changes SPEC.md;
 it is the gap analysis of 2026-08-12, grounded against SPEC.md's actual verb
 tables, the p8 port shim's stub list (every stub is a confessed gap), and the
 reference console's shipped Lua sandbox — written down so each item gets a

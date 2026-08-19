@@ -264,6 +264,55 @@ def check_prose_duplication():
                  "budget in DUP_BUDGET with a reason." % (n, SHINGLE, cap))
 
 
+# --- 7. every version self-reference names the version SPEC.md declares ------
+#
+# Owner: SPEC.md's title. "core <v>", "not part of <v>" and MOY_VERSION all mean
+# "this version of the spec", so a bump has to move every one of them -- and a
+# bump is exactly when a sweep by hand is least likely to be complete, because
+# the phrase hides in a Lua comment, a C table and a generated web page as
+# readily as in prose. Version drift is worse than a stale count: the document
+# contradicts its own title, and a reader cannot tell which half is current.
+
+# Where the version is carried as a value rather than said in a sentence. Each
+# is major.minor.patch and must agree with SPEC.md on the first two.
+VERSION_CONSTANTS = {
+    "libmoy/include/moy.h": r'#define MOY_VERSION "(\d+\.\d+)\.\d+"',
+    "moycore/__init__.py": r'__version__ = "(\d+\.\d+)\.\d+"',
+}
+
+# The ways the prose names a version. `\bcore` does not match inside "moycore",
+# which is what keeps hashes.json's "generated_by": "moycore 0.1.0" out of scope
+# -- that one is a record of what built the goldens, and is meant to stay put.
+SAYS_VERSION = re.compile(r"\bcore (\d+\.\d+)|\bpart of (\d+\.\d+)\b"
+                          r"|\bbuilt on (\d+\.\d+)\b")
+
+VERSION_SCAN = ("*.md", "*.py", "*.lua", "*.c", "*.h", "*.html")
+
+
+def check_version_is_one_version():
+    m = re.match(r"#\s+moy core (\d+\.\d+)", read("SPEC.md"))
+    if not m:
+        fail("SPEC.md", "no '# moy core <version>' title to read the version from")
+        return
+    ver = m.group(1)
+
+    for rel, pat in VERSION_CONSTANTS.items():
+        found = re.search(pat, read(rel))
+        if not found:
+            fail(rel, "no version constant matching %s" % pat)
+        elif found.group(1) != ver:
+            fail(rel, "carries %s, but SPEC.md's title says %s"
+                 % (found.group(1), ver))
+
+    for rel in tracked(*VERSION_SCAN):
+        for n, line in enumerate(read(rel).split("\n"), 1):
+            for hit in SAYS_VERSION.finditer(line):
+                said = next(g for g in hit.groups() if g)
+                if said != ver:
+                    fail(rel, "line %d says %r, but SPEC.md is core %s"
+                         % (n, hit.group(0), ver))
+
+
 def main():
     check_scene_counts()
     check_spec_refs()
@@ -271,6 +320,7 @@ def main():
     check_no_exact_bundle_size()
     check_measurements_have_one_home()
     check_prose_duplication()
+    check_version_is_one_version()
     if PROBLEMS:
         print("check_docs: %d problem%s" % (len(PROBLEMS),
                                             "" if len(PROBLEMS) == 1 else "s"))

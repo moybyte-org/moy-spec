@@ -1,6 +1,6 @@
 # Proposal: a single-file shipping form for carts
 
-**Status: proposal. Not part of core 0.1.** Implemented in `moycore/pack.py` and
+**Status: proposal. Not part of core 0.2.** Implemented in `moycore/pack.py` and
 `moy.py pack` / `moy.py unpack` so the idea can be used and argued with, but
 SPEC.md is unchanged and this is not required of any host.
 
