@@ -274,30 +274,6 @@ def table_rows(text, heading):
             if r and not all(set(c) <= set("-: ") for c in r)]
 
 
-def status_chips(readme, ctx):
-    """The README's own status table, as chips -- honest by construction.
-
-    Each cell is trimmed to its lead phrase (the table's own text carries the
-    detail); a row whose state stays long is dropped rather than truncated.
-    """
-    out = []
-    for row in table_rows(readme, "Status of the pieces"):
-        if len(row) != 2 or not row[0].strip():
-            continue
-        name, state = row
-        for sep in (" — ", ", "):
-            if len(md.plain(state)) > 30 and sep in state:
-                state = state.split(sep)[0]
-        if len(md.plain(state)) > 30:
-            continue
-        flat = md.plain(state).lower()
-        tone = ("no" if "not started" in flat
-                else "wip" if ("draft" in flat or "open" in flat) else "ok")
-        out.append('<li class="%s"><b>%s</b><span>%s</span></li>'
-                   % (tone, md.inline(name, ctx), md.inline(state, ctx)))
-    return '<ul class="status">%s</ul>' % "".join(out) if out else ""
-
-
 def console_facts(spec, ctx):
     rows = table_rows(spec, "1. The console")
     out = []
@@ -348,7 +324,6 @@ def build(out, demo=True):
     lede, sub, cards, status, extra = preamble_parts(pre, ctx)
     home = fill(tmpl("home.html"),
                 LEDE=lede, SUB=sub, CARDS=cards, STATUS=status, EXTRA=extra,
-                CHIPS=status_chips(src["README.md"], ctx),
                 FACTS=console_facts(src["SPEC.md"], ctx),
                 PALETTE=palette_grid(pal),
                 README=md.render(rest, ctx).html,

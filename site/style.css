@@ -157,18 +157,6 @@ main { display: block; }
 .statusline p { margin: 0; }
 .statusline strong { color: var(--ink); }
 
-ul.status { display: flex; flex-wrap: wrap; gap: .5rem; list-style: none;
-  margin: 1.4rem 0 0; padding: 0; font-size: .85rem; }
-ul.status li { display: flex; align-items: baseline; gap: .45rem;
-  padding: .3rem .7rem; border: 1px solid var(--line); border-radius: 99px;
-  background: var(--surface); }
-ul.status b { color: var(--ink); font-weight: 600; }
-ul.status span { color: var(--muted); }
-ul.status li::before { content: ""; width: .5rem; height: .5rem; border-radius: 50%;
-  background: var(--muted); }
-ul.status li.ok::before { background: var(--ok); }
-ul.status li.wip::before { background: var(--wip); }
-ul.status li.no::before { background: var(--warn); }
 
 @media (max-width: 40rem) {
   .hero { padding-top: 1.8rem; }
