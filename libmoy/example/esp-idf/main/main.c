@@ -77,8 +77,7 @@ static const char CART[] =
 static uint8_t framebuffer[MOY_W * MOY_H];                    /*  75 KB */
 static uint8_t sheet_pix[MOY_SHEET_W * MOY_SHEET_H];          /*  32 KB */
 static uint8_t map_cells[MOY_MAP_MAX * MOY_MAP_MAX];          /*  16 KB */
-static uint8_t layer_pix[MOY_W * MOY_H];                      /*  75 KB */
-static uint8_t layer_taken;
+static moy_pixel *layer_pix;                                  /*  75 KB, on demand */
 static uint16_t *rgb565;                                      /* 150 KB, see below */
 
 /* -- 1. buttons in (SPEC.md 7.3) ----------------------------------------- *
@@ -179,24 +178,32 @@ static void pmem_init(void)
 
 /* -- the guaranteed layer (SPEC.md 1.1) ---------------------------------- *
  *
- * "One layer is guaranteed; further ones are not." One full-screen buffer is
- * part of the floor, so it is static like the rest; a second request gets NULL,
- * which make_layer reports to the cart as nil -- an allocation that failed, not
- * a verb that is missing. A board with room to spare can hand out more from the
- * heap instead. */
+ * "One layer is guaranteed; further ones are not." 1.1 lets a host reserve that
+ * "however it likes", and this takes it from the heap on first use rather than
+ * from BSS -- PSRAM first, like the resolved frame below. Static would be the
+ * simpler read, but 75 KB of .bss overflows plain-ESP32 DRAM at link time, and
+ * a board that cannot spare it should fail the way 1.1 describes (nil from
+ * make_layer, at runtime, on the SECOND request) rather than refuse to link a
+ * cart that never draws a layer at all.
+ *
+ * A second request gets NULL: one layer is the promise, and the rest is the
+ * ordinary allocation failure a cart tests for. */
 static moy_pixel *h_layer_new(void *u, int w, int h)
 {
+    size_t want;
     (void)u;
-    if (layer_taken || w <= 0 || h <= 0
-        || (size_t)w * (size_t)h > sizeof layer_pix) return NULL;
-    layer_taken = 1;
+    if (layer_pix || w <= 0 || h <= 0) return NULL;
+    if ((size_t)w * (size_t)h > (size_t)(MOY_W * MOY_H)) return NULL;
+    want = (size_t)w * (size_t)h * MOY_PIXEL_BYTES;
+    layer_pix = heap_caps_malloc(want, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!layer_pix) layer_pix = heap_caps_malloc(want, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     return layer_pix;
 }
 
 static void h_layer_free(void *u, moy_pixel *pix)
 {
     (void)u;
-    if (pix == layer_pix) layer_taken = 0;
+    if (pix && pix == layer_pix) { heap_caps_free(layer_pix); layer_pix = NULL; }
 }
 
 static int32_t h_pmem_get(void *u, int slot) { (void)u; return pmem_cache[slot]; }
