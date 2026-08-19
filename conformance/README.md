@@ -41,7 +41,7 @@ check is what SPEC.md 6, 7.1 and 7.2 say each verb lights up.
 
 **`examples/verbs.moy` tests a HOST.** It is a real cart exercising the API
 through Lua, including the parts a trace cannot reach — the tick model, input
-edges, the standard extensions, the provisional verbs. It is played and looked
+edges, the host-dependent core verbs, the provisional verbs. It is played and looked
 at, not diffed: there is no golden for it.
 
 An implementation needs both, and the raster one is reachable *first*: a trace

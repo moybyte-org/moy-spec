@@ -53,8 +53,8 @@ typedef struct {
     uint8_t prev[MOY_BTN_COUNT];
     uint32_t t0;
     int running;
-    /* SPEC.md 10 `viewport` / `layers` state. view_w = 0 means the cart has
-     * not declared one, so the whole canvas presents. */
+    /* SPEC.md 6 view/background state. view_w = 0 means the cart has not
+     * declared a region, so the whole canvas presents. */
     int view_w, view_h;
     int bg, has_bg;
 } host_state;
@@ -91,11 +91,9 @@ static int h_btnp(void *u, moy_button b, int player)
     return h->held[b] && !h->prev[b];
 }
 
-/* SPEC.md 10. A desktop has no reason to decline either extension: the 75 KB a
- * layer costs (1.1) constrains a handheld, not a PC, and a window can
- * composite any viewport. A reference port that declined them would leave
- * carts declaring them refused by the very implementation meant to show what
- * a host owes libmoy. */
+/* SPEC.md 1.1 guarantees a cart one full-screen layer, and a desktop has no
+ * reason to stop at one: the 75 KB constrains a handheld, not a PC. Only the
+ * SECOND and later requests are a host's to refuse, and this one does not. */
 static moy_pixel *h_layer_new(void *u, int w, int h)
 {
     (void)u;
@@ -367,9 +365,9 @@ int main(int argc, char **argv)
     con.host.pmem_get = h_pmem_get;
     con.host.pmem_set = h_pmem_set;
     con.host.quit = h_quit;
-    /* SPEC.md 10's standard extensions. Supplying the callbacks is what
-     * installs the verbs -- a port that left these NULL would still be
-     * conforming, and its carts would simply not see the names. */
+    /* The host side of SPEC.md 6's varying core verbs. The verbs exist with or
+     * without these; supplying them is what lets this port do better than the
+     * fallback -- real layer memory, a composited region, a cached backdrop. */
     con.host.layer_new = h_layer_new;
     con.host.layer_free = h_layer_free;
     con.host.view = h_view;
@@ -475,7 +473,7 @@ int main(int argc, char **argv)
 
         moy_reset_state(&canvas);
         if (moy_lua_update(L, dt, err, sizeof err)) { fprintf(stderr, "moy-play: _update: %s\n", err); break; }
-        /* SPEC.md 10 `layers`: background(x) declares a backdrop the host
+        /* SPEC.md 6: background(x) declares a backdrop the host
          * repaints automatically each frame, so a cart that has one need not
          * cls() itself. Between _update and _draw, which is where the cart
          * would have done it. */
@@ -494,8 +492,8 @@ int main(int argc, char **argv)
         SDL_RenderClear(ren);
         if (host.view_w > 0 && host.view_h > 0
             && (host.view_w < cw || host.view_h < ch)) {
-            /* SPEC.md 10 `viewport`: present the CENTERED region the cart
-             * declared, at the largest integer scale that fits -- which is how
+            /* SPEC.md 6 view: present the CENTERED region the cart declared,
+             * at the largest integer scale that fits -- which is how
              * a converted 128x128 cart fills the window instead of sitting in
              * a letterbox. The scale is integer on purpose: this is a pixel
              * console, and a fractional one would resample its art. */

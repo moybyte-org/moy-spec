@@ -4,9 +4,9 @@
 -- is a worked example of its verbs), a smoke test for any new implementation
 -- (if every screen looks right, you're close), and the seed of the conformance
 -- suite (pin golden frames of these screens and "conformance" becomes a diff).
--- Screens 1-7 are core 0.1. Screen 8 is the `layers` STANDARD EXTENSION
--- (declared in this cart's manifest -- a host without it refuses the cart,
--- SPEC.md section 10). Screen 9 exercises SPEC.md section 6.1, which is DRAFT.
+-- Screens 1-8 are core 0.2 and this cart declares no extensions -- SPEC.md
+-- section 10 defines none, so every conforming host must run screen 8's layers
+-- too. Screen 9 exercises SPEC.md section 6.1, which is DRAFT.
 
 local screen = 1
 local t = 0                       -- seconds since start (accumulated dt)

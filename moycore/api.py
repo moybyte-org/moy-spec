@@ -214,16 +214,49 @@ class Pmem:
             self._on_write(i, v)
 
 
+class Display:
+    """What `background` and `view` declare -- presentation state a host reads
+    back (SPEC.md 6).
+
+    Both are CORE verbs whose effect depends on the host, the way `touch` reads
+    nil where there is no pointer. `bg` is the backdrop to repaint before each
+    `_draw`, `None` until a cart declares one; `view_w`/`view_h` are the region
+    the cart says it uses, the full canvas until it narrows them. A host that
+    can do better than a flat clear, or can composite that region at an integer
+    scale, takes the callbacks; a host that does neither still leaves both calls
+    working -- which is why neither verb is an extension and neither needs a
+    `~= nil` guard.
+    """
+
+    def __init__(self, w, h, on_background=None, on_view=None):
+        self.bg = None
+        self.view_w = int(w)
+        self.view_h = int(h)
+        self._on_background = on_background
+        self._on_view = on_view
+
+    def begin_frame(self, canvas):
+        """The flat-clear fallback: what a host does before `_draw` when it has
+        nothing better. `background(c)` is `cls(c)` said once, so a host with no
+        cached backdrop to restore honours it by clearing here."""
+        if self.bg is not None:
+            canvas.cls(self.bg)
+
+
 def make_api(canvas, cart=None, input=None, audio=None, pmem=None,
-             clock=None, rng=None, extensions=()):
+             clock=None, rng=None, display=None, extensions=()):
     """The cart's entire global namespace.
 
     `canvas` is where drawing lands, `cart` supplies the sheet/tilemap/config,
     `input` the buttons, `audio` the sound backend (None is legal -- SPEC.md 8.3
     says silence is a valid rendering and a cart MUST NOT depend on audio).
-    `clock` returns milliseconds since the cart started. `extensions` names the
-    standard extensions this host grants, which is what gates the `layers`
-    verbs -- a cart that did not declare it never sees them.
+    `clock` returns milliseconds since the cart started, `display` collects
+    what `background` and `view` declare.
+
+    `extensions` names the extensions this host grants. SPEC.md 10 defines no
+    STANDARD ones -- the two that lived there are core now -- so this is for a
+    console's own `vendor.feature` verbs, and every name in the dict below is
+    core, present on every conforming host.
     """
     sheet = cart.sheet if cart is not None else None
     tilemap = cart.tilemap if cart is not None else None
@@ -231,6 +264,7 @@ def make_api(canvas, cart=None, input=None, audio=None, pmem=None,
     inp = input if input is not None else Input()
     mem = pmem if pmem is not None else Pmem()
     r = rng if rng is not None else _Rng()
+    disp = display if display is not None else Display(canvas.w, canvas.h)
 
     if clock is None:
         import time as _time
@@ -269,6 +303,34 @@ def make_api(canvas, cart=None, input=None, audio=None, pmem=None,
     def mset(x, y, tile):
         if tilemap is not None:
             tilemap.mset(x, y, tile)
+
+    def background(c=0):
+        # SPEC.md 6: a backdrop repainted before every _draw -- `cls` said once.
+        # Recorded whatever the host does with it; Display.begin_frame is the
+        # flat clear a host falls back to.
+        disp.bg = int(c)
+        if disp._on_background is not None:
+            disp._on_background(disp.bg)
+
+    def view(w=None, h=None):
+        # SPEC.md 6: the cart uses a centered w x h region. A host with a bigger
+        # screen composites it at the largest integer scale that fits; one that
+        # presents pixel-for-pixel draws it unscaled, which is what it would
+        # have done anyway. No args restores the full canvas.
+        disp.view_w = canvas.w if w is None else max(0, int(w))
+        disp.view_h = canvas.h if h is None else max(0, int(h))
+        if disp._on_view is not None:
+            disp._on_view(disp.view_w, disp.view_h)
+
+    def make_layer(w, h):
+        # SPEC.md 1.1's floor reserves one full-screen layer, so the first call
+        # succeeds on every conforming host. A host may still refuse the SECOND,
+        # which surfaces as None -- an ordinary allocation failure a cart tests
+        # for, not a verb that is missing.
+        return canvas.new_layer(w, h)
+
+    def draw_layer(layer, cx=0, cy=0):
+        canvas.blit_window_from(layer, cx, cy)
 
     # -- audio (SPEC.md 8) --------------------------------------------------
     # Every one of these is a no-op without a backend. SPEC.md 8.3: a host that
@@ -361,6 +423,13 @@ def make_api(canvas, cart=None, input=None, audio=None, pmem=None,
         "quit": quit_,
         "W": canvas.w,
         "H": canvas.h,
+        # SPEC.md 6: the host-dependent core verbs. Neither can mislead a
+        # cart -- an ignored view() presents the region unscaled, an unhonoured
+        # background() is a cls -- so both are installed unconditionally.
+        "background": background,
+        "view": view,
+        "make_layer": make_layer,
+        "draw_layer": draw_layer,
         # PROVISIONAL (SPEC.md 6.1) -- present so the suite can exercise them,
         # and excluded from conformance until 6.1 leaves TBD.
         "tri": canvas.tri,
@@ -368,19 +437,6 @@ def make_api(canvas, cart=None, input=None, audio=None, pmem=None,
         "sspr": sspr,
         "tline": tline,
     }
-
-    if "layers" in extensions:
-        # SPEC.md 10: granted only to a cart that declared it. A host that hands
-        # these out unconditionally breeds carts that run nowhere else, which is
-        # the one thing the extension mechanism exists to prevent.
-        def make_layer(w, h):
-            return canvas.new_layer(w, h)
-
-        def draw_layer(layer, cx=0, cy=0):
-            canvas.blit_window_from(layer, cx, cy)
-
-        api["make_layer"] = make_layer
-        api["draw_layer"] = draw_layer
 
     return api
 

@@ -29,16 +29,18 @@ FORBIDDEN_GLOBALS = (
     "load", "loadstring", "dofile", "require", "collectgarbage",
 )
 
-# SPEC.md 6.1 -- provisional, explicitly not part of core 0.1. The batch verbs
+# SPEC.md 6.1 -- provisional, explicitly not part of core 0.2. The batch verbs
 # that used to sit alongside these were deleted from the spec (6.1 records the
 # measurements); a cart using one now names an unknown verb, not a provisional one.
 PROVISIONAL_VERBS = ("tri", "trib", "sspr", "tline")
 
-# SPEC.md 10 standard extensions, and the verbs each one grants.
-EXTENSION_VERBS = {
-    "layers": ("make_layer", "draw_layer", "background"),
-    "viewport": ("view",),
-}
+# SPEC.md 10 defines NO standard extensions. The two that once lived there are
+# core now -- `layers` because 1.1's floor covers a full-screen layer, `view` and
+# `background` because a host that cannot honour them does something truthful
+# anyway -- and a verb like that never needed declaring. The mechanism stays for
+# a capability whose absence a cart cannot be shielded from, so this tuple is
+# where a future standard extension lands, and the only place check() learns it.
+STANDARD_EXTENSIONS = ()
 
 TOUCH_VERBS = ("touch",)
 KEYBOARD_VERBS = ("key", "keyp", "textmode")
@@ -176,45 +178,29 @@ def check_source(source, manifest, findings):
                              "the sandbox; this must fail on every conforming host" % name))
 
     declared = manifest.get("extensions") or []
-    for ext in EXTENSION_VERBS:
-        used = [v for v in EXTENSION_VERBS[ext] if _calls(code, v)]
-        if used and ext not in declared:
-            # Opportunistic use is legitimate and different from a missing
-            # declaration: a cart that checks the verb exists before calling
-            # it runs everywhere, degraded where the extension is absent.
-            # Declaring would make those hosts refuse a cart that works.
-            guarded = all(("%s ~= nil" % v) in code or ("nil ~= %s" % v) in code
-                          or ("type(%s)" % v) in code for v in used)
-            if guarded:
-                findings.append(("info", "extensions",
-                                 "uses %s behind an existence check without declaring "
-                                 '"%s" -- optional use: hosts without the extension '
-                                 "run the cart degraded (SPEC.md 10)"
-                                 % (", ".join(used), ext)))
-            else:
-                findings.append(("error", "extensions",
-                                 "the cart calls %s but does not declare \"%s\" in "
-                                 "extensions; a host without it cannot refuse the cart "
-                                 "cleanly and will crash partway in (SPEC.md 10)"
-                                 % (", ".join(used), ext)))
     for ext in declared:
-        if ext in EXTENSION_VERBS:
-            if not any(_calls(code, v) for v in EXTENSION_VERBS[ext]):
-                findings.append(("warn", "extensions",
-                                 'declares "%s" but never uses it; every console '
-                                 "without that extension refuses this cart for nothing"
-                                 % ext))
-        elif "." not in ext:
-            findings.append(("warn", "extensions",
-                             '"%s" is neither a standard extension nor namespaced; '
-                             "a vendor extension MUST be vendor.feature so it can never "
-                             "collide with a future standard one (SPEC.md 10)" % ext))
+        if ext in STANDARD_EXTENSIONS:
+            continue
+        if "." in ext:
+            # The deliberate trade SPEC.md 10 allows: one console runs this cart
+            # and the rest refuse it by name, which is the honest failure.
+            findings.append(("info", "extensions",
+                             '"%s" is a vendor extension, so this cart is '
+                             "non-portable by construction -- only that console "
+                             "runs it (SPEC.md 10)" % ext))
+        else:
+            findings.append(("error", "extensions",
+                             '"%s" is not a standard extension -- SPEC.md 10 '
+                             "defines none, so EVERY conforming host refuses this "
+                             "cart. If it is a console's own, namespace it "
+                             "vendor.feature; if it named a verb that is core now "
+                             "(layers, view, background), just drop it" % ext))
 
     used_prov = [v for v in PROVISIONAL_VERBS if _calls(code, v)]
     if used_prov:
         findings.append(("warn", "provisional",
                          "uses %s, which SPEC.md 6.1 marks provisional and excludes "
-                         "from core 0.1 until its promotion gates clear; semantics "
+                         "from core 0.2 until its promotion gates clear; semantics "
                          "are frozen but a host may not implement it yet"
                          % ", ".join(used_prov)))
 

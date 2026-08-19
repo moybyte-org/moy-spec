@@ -1,11 +1,14 @@
-/* SPEC.md 10's standard extensions: `layers` and `viewport`.
+/* The host-dependent core verbs: view, background and the layers.
  *
- * What is actually at stake here is not "do the verbs work" but the rule that
- * makes them optional: 10 says an extension's verbs "simply do not exist as
- * globals on a host without it", which is what lets a cart nil-guard them and
- * run everywhere. So the first thing this asserts is ABSENCE -- a console with
- * no callbacks must give a cart no such names -- and only then that a console
- * with them draws the right pixels.
+ * What is at stake is not "do the verbs work" but the rule that keeps them out
+ * of SPEC.md 10: each does something truthful on a host that implements
+ * nothing, so its ABSENCE can never be observed and a cart needs no guard. So
+ * the first thing this asserts is PRESENCE -- a console with no callbacks at
+ * all still gives a cart every name, and an unguarded cart runs on it -- and
+ * only then that a console with callbacks draws the right pixels.
+ *
+ * The one thing a host may still refuse is a SECOND layer, and that surfaces
+ * as nil from make_layer: an allocation that failed, not a verb that is gone.
  *
  *   cc -DMOY_WITH_LUA -Iinclude -Ivendor/lua test/ext_test.c src/moy_lua.o \
  *      vendor/lua/*.o libmoy.a -lm
@@ -94,7 +97,7 @@ int main(void)
     moy_sheet_init(&sh, sheet_pix);
     moy_map_init(&mp, cells, 4, 4);
 
-    puts("a host WITHOUT the extensions offers no such globals");
+    puts("a host implementing NOTHING still offers every global");
     L = boot(&con, &cv, fb, &sh, &mp, 0);
     /* All three are core now, so all three exist even here; what a host
      * without an allocator cannot do is HAND OUT a layer, which is nil rather

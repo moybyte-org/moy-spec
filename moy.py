@@ -18,7 +18,7 @@ art tools already work; this CLI supplies the loop around them.
              [--zoom]            p8 compat shim (p8_lua_port). The cart draws
                                  native 128x128 (manifest canvas, SPEC.md 3.1);
                                  --zoom adds the view(128,120) hint so 4:3
-                                 hosts fill their height (SPEC.md 10)
+                                 hosts fill their height (SPEC.md 6)
     moy.py demo                  fetch Celeste Classic (PICO-8), port it, run
                                  it -- the one-command show-off
 
@@ -416,8 +416,20 @@ def cmd_check(args):
     else:
         die("no such cart: " + src)
 
+    # `check` ANALYSES a cart; it does not host one. It grants whatever the
+    # manifest declares so SPEC.md 10's capability gate never fires here -- a
+    # cart no host can run is a FINDING, with a line to change, and refusing to
+    # load it would hide that behind "FAILS TO LOAD".
+    declared = []
     try:
-        cart = moycore.Cart.from_files(files, supported_extensions=("layers", "viewport"))
+        ext = json.loads(files["manifest.json"]).get("extensions")
+        if isinstance(ext, (list, tuple)):
+            declared = [e for e in ext if isinstance(e, str)]
+    except (KeyError, ValueError, AttributeError):
+        pass
+
+    try:
+        cart = moycore.Cart.from_files(files, supported_extensions=tuple(declared))
     except moycore.CartError as exc:
         print("%s: FAILS TO LOAD" % src)
         print("  error  %s" % exc)
@@ -450,7 +462,7 @@ def cmd_pack(args):
     files = _pack.read_folder(src)
     files.pop("moy-api.lua", None)      # editor stubs are never part of the game
     try:
-        moycore.Cart.from_files(files, supported_extensions=("layers", "viewport"))
+        moycore.Cart.from_files(files)
     except moycore.CartError as exc:
         die("refusing to pack a cart that does not load: %s" % exc)
     blob = _pack.pack_bytes(files)
@@ -782,7 +794,7 @@ def cmd_push(args):
     files = _pack.read_folder(src)
     files.pop("moy-api.lua", None)
     try:
-        moycore.Cart.from_files(files, supported_extensions=("layers", "viewport"))
+        moycore.Cart.from_files(files)
     except moycore.CartError as exc:
         die("refusing to push a cart that does not load: %s" % exc)
 

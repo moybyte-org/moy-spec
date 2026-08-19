@@ -5,13 +5,17 @@
 -- and typo squiggles on every console verb. The behavioural contract is the
 -- moy spec (SPEC.md); one line here per verb, the spec is the truth.
 --
--- Every verb below is CORE (runs on any conforming console) unless marked:
---   EXTENSION: <name> -- standard extension (SPEC.md 10); declare it in your
---                        manifest's "extensions" or hosts may lack it
+-- Every verb below is CORE -- it runs on any conforming console -- unless marked:
 --   DRAFT 6.1         -- provisional (SPEC.md 6.1): names/signatures still
---                        moving, NOT core 0.1, may be dropped entirely
+--                        moving, NOT core 0.2, may be dropped entirely
 --
--- Only core and the standard extensions are listed. A console may offer more
+-- SPEC.md 10 defines no standard extensions, so nothing here needs declaring in
+-- your manifest's "extensions" and no verb below needs an `if v ~= nil` guard.
+-- Some are host-dependent in EFFECT -- view and background do more on a console
+-- that can, and exactly what you asked for on one that cannot -- but the call
+-- always works, which is what keeps them core.
+--
+-- Only core is listed. A console may offer more
 -- (the reference one does: a pointer verb, palette colour names, painted-image
 -- and spreadsheet/document assets); those belong to that console, so they are
 -- deliberately absent here -- a cart calling them is non-portable.
@@ -271,9 +275,9 @@ function pmem(i, v) end
 ---textmode(true) cart.
 function quit() end
 
----Declare a logical viewport: the console scales the centered w x h region of
----the canvas to the screen (a 128x128 game fills the display). view() resets.
----EXTENSION: viewport.
+---Declare a logical viewport: the console composites the centered w x h region
+---of the canvas at the largest integer scale that fits (a 128x128 game fills the
+---display); one that presents pixel-for-pixel draws it unscaled. view() resets.
 ---@param w? integer
 ---@param h? integer
 function view(w, h) end
@@ -306,7 +310,7 @@ function sound_stop(chan) end
 ---@param level number
 function volume(level) end
 
--- --- layers / images --------------------------------------------------------
+-- --- layers / images (core: SPEC.md 6, floor in 1.1) ------------------------
 
 ---@class MoyLayer
 ---@field W integer
@@ -325,20 +329,21 @@ function MoyLayer:cls(c) end
 
 ---An off-screen canvas (w x h, may be wider than the screen): pre-render a
 ---level ONCE, then window-copy per frame with draw_layer -- the 60fps
----scroller pattern. EXTENSION: layers.
+---scroller pattern. SPEC.md 1.1's floor reserves one full-screen layer, so the
+---first call succeeds everywhere; a host may refuse a SECOND, returning nil.
 ---@param w integer
 ---@param h integer
----@return MoyLayer
+---@return MoyLayer|nil
 function make_layer(w, h) end
 
 ---Blit the visible window of `layer` at camera offset (cam_x, cam_y).
----EXTENSION: layers.
 ---@param layer MoyLayer
 ---@param cam_x? integer
 ---@param cam_y? integer
 function draw_layer(layer, cam_x, cam_y) end
 
 ---Declare a backdrop the console repaints automatically each frame -- a
----colour index, or a layer to pin behind everything. EXTENSION: layers.
+---colour index, or a layer to pin behind everything. `cls` said once: a console
+---that cannot cache the backdrop simply clears, and the cart cannot tell.
 ---@param x integer|MoyLayer
 function background(x) end

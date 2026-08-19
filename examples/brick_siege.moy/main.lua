@@ -644,11 +644,11 @@ function _draw()
         sx = trunc(rnd(shake * 2) - shake)
         sy = trunc(rnd(shake * 2) - shake)
     end
-    -- The battlefield backdrop. The Python twin DECLARES it once via background()
-    -- and lets the engine repaint it each frame, but that verb is the `layers`
-    -- standard extension and this cart is deliberately moy core 0.1 ONLY, so it
-    -- clears explicitly. The draw stream is IDENTICAL either way: background()'s
-    -- restore hook is itself a cls(), fired at this same point in the frame.
+    -- The battlefield backdrop. background() would declare it once and let the
+    -- engine repaint it each frame -- it is core, so this cart could use it --
+    -- but clearing explicitly keeps the frame readable top to bottom. The draw
+    -- stream is IDENTICAL either way: background()'s restore hook is itself a
+    -- cls(), fired at this same point in the frame.
     -- (The HUD strip below repaints its own black over it.)
     cls(1)                                 -- 1 = dark_blue
     -- the whole brick/steel field in ONE native map() call (#32): 15x15 cells of

@@ -359,7 +359,7 @@ KEEP int moy_web_height(void) { return ch; }
 KEEP int moy_web_fps(void)    { return fps; }
 KEEP int moy_web_running(void) { return running; }
 KEEP int moy_web_textmode(void) { return text_mode; }
-/* SPEC.md 10 `layers`. malloc/free is all a browser needs: the cart's layers
+/* SPEC.md 6 layers. malloc/free is all a browser needs: the cart's layers
  * die with its lua_State, and the page has no say in the matter. */
 static moy_pixel *h_layer_new(void *u, int w, int h)
 {
@@ -446,18 +446,16 @@ KEEP int moy_web_boot(uint32_t seed)
     con.host.pmem_get = h_pmem_get;
     con.host.pmem_set = h_pmem_set;
     con.host.quit = h_quit;
-    /* SPEC.md 10 `layers`: claimed, because it is entirely libmoy-side -- a
-     * buffer and a window copy, with nothing for the page to do differently.
-     * A browser is not short of 75 KB (10 / 1.1).
+    /* Layers: an allocator, because it is entirely libmoy-side -- a buffer and
+     * a window copy, with nothing for the page to do differently, and a browser
+     * is not short of the 75 KB SPEC.md 1.1 reserves.
      *
-     * `viewport` is deliberately NOT claimed here, and the omission is the
-     * point of the mechanism rather than a gap in it: view() only means
-     * anything if the PAGE composites the declared region scaled, and this
-     * port hands the page a whole-canvas RGBA buffer. Supplying the callback
-     * would install the verb, a cart would see `view ~= nil`, believe it had
-     * been honoured, and get an unscaled frame -- strictly worse than the verb
-     * being absent and the cart taking its documented fallback. Claim what you
-     * implement. */
+     * No `view` callback, and that is a presentation choice rather than a
+     * missing capability: this port hands the page a whole-canvas RGBA buffer,
+     * so the declared region arrives unscaled -- exactly the degrade SPEC.md 6
+     * describes for a console that presents pixel-for-pixel. The cart's call
+     * still works and the declaration is still recorded in moy_console, so a
+     * page that grows a compositor can read it without a change here. */
     con.host.layer_new = h_layer_new;
     con.host.layer_free = h_layer_free;
     con.host.touch = h_touch;

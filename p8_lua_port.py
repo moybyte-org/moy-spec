@@ -304,14 +304,15 @@ SHIM = r'''-- ============================================================
 -- fills a QUARTER of the pixels it used to (the biggest speed lever a port
 -- has on an interpreter-bound board).
 -- ZOOM (--zoom): nothing is cropped from the raster any more -- all 128 rows
--- draw, and pset/pget/camera stay p8-true. The flag became the SPEC.md 10
--- viewport hint below: a host implementing `view` composites the CENTERED
--- 128x120 at the biggest integer scale that fits (2x fills a 4:3 screen's
--- 240px height exactly; 5x fills 600px), and a host without the extension
--- letterboxes the full square. Guarded; lossy only at PRESENTATION.
+-- draw, and pset/pget/camera stay p8-true. The flag became the `view` hint
+-- below: a host with room composites the CENTERED 128x120 at the biggest
+-- integer scale that fits (2x fills a 4:3 screen's 240px height exactly; 5x
+-- fills 600px), and one that presents pixel-for-pixel draws it unscaled. view
+-- is core (SPEC.md 6) and cannot mislead a cart, so no guard -- lossy only at
+-- PRESENTATION.
 local P8_VH = __P8_VH__
 local P8_DT = 1 / 30               -- PICO-8 _update runs at a fixed 30fps
-if view ~= nil and P8_VH < 128 then view(128, P8_VH) end
+if P8_VH < 128 then view(128, P8_VH) end
 do
   local m_spr, m_btn, m_btnp = spr, btn, btnp
   local m_camera = camera
@@ -686,7 +687,7 @@ def port(p8_path, out_dir, title=None, crop=(0, 0)):
               % title)
     vh = 128 - int(crop[0]) - int(crop[1])
     if vh not in (120, 128):
-        # The host's view crop shows the CENTERED 128x120 (SPEC.md 10) -- the
+        # The host's view crop shows the CENTERED 128x120 (SPEC.md 6) -- the
         # only crop a native-res port can ask for is 8 rows or none.
         raise SystemExit("--zoom: the view crop is 8 rows (128x120) or nothing"
                          " -- T+B must be 8 or 0, got %d,%d" % tuple(crop))
@@ -737,7 +738,7 @@ def parse_zoom(argv):
     Bare --zoom means 4,4: the 8-row concession that lets a 4:3 host fill its
     height (view(128, 120) composites at 2x = 256x240 there). Nothing is
     cropped from the RASTER any more -- the rows only leave the picture on
-    hosts that exploit the SPEC.md 10 view hint, and that crop is CENTERED,
+    hosts that exploit the SPEC.md 6 view hint, and that crop is CENTERED,
     so T,B survives as CLI shape only; 8,0-style edge protection no longer
     maps and port() refuses any split that isn't 8 rows total (or none)."""
     if "--zoom" not in argv:
@@ -767,9 +768,10 @@ def main(argv):
     print("ported ->", out)
     print("  canvas: 128x128 (native p8 pixels -- the host scales)")
     if crop != (0, 0):
-        print("  zoom: view(128, %d) -- a host with the SPEC.md 10 viewport"
-              " shows the centered rows at its best integer scale"
-              " (2x fills 240px, 5x fills 600px); others letterbox" % vh)
+        print("  zoom: view(128, %d) -- a host with room shows the centered"
+              " rows at its best integer scale (2x fills 240px, 5x fills"
+              " 600px); one that presents pixel-for-pixel draws them"
+              " unscaled" % vh)
     return 0
 
 

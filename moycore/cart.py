@@ -176,7 +176,11 @@ class Cart:
 
         `supported_extensions` / `supported_runtimes` are what THIS host
         implements. Both are checked before anything else is parsed, so a cart
-        the console cannot run is refused before it costs a sheet decode."""
+        the console cannot run is refused before it costs a sheet decode.
+
+        Extensions default to none, which is what SPEC.md 10 now defines: no
+        standard extension exists, so the only names a host grants here are its
+        own `vendor.feature` ones."""
         if MANIFEST not in files:
             raise CartError("no %s -- a cart folder must have one (SPEC.md 3)" % MANIFEST)
         try:

@@ -161,7 +161,7 @@ $(SPRSWEEP): test/spr_scale_sweep.c $(LIB)
 spr-sweep: $(SPRSWEEP)
 	./$(SPRSWEEP)
 
-test: conform conform-lua audio-test lowres spr-sweep
+test: conform conform-lua ext-test audio-test lowres spr-sweep
 
 clean:
 	rm -f $(OBJ) $(LUA_OBJ) src/moy_lua.o $(LIB)

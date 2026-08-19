@@ -5,6 +5,5 @@
   "main": "main.lua",
   "fps": 60,
   "input": ["buttons", "keyboard", "touch"],
-  "icon": [1, 1, 1],
-  "extensions": ["layers"]
+  "icon": [1, 1, 1]
 }

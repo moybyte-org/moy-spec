@@ -77,6 +77,8 @@ static const char CART[] =
 static uint8_t framebuffer[MOY_W * MOY_H];                    /*  75 KB */
 static uint8_t sheet_pix[MOY_SHEET_W * MOY_SHEET_H];          /*  32 KB */
 static uint8_t map_cells[MOY_MAP_MAX * MOY_MAP_MAX];          /*  16 KB */
+static uint8_t layer_pix[MOY_W * MOY_H];                      /*  75 KB */
+static uint8_t layer_taken;
 static uint16_t *rgb565;                                      /* 150 KB, see below */
 
 /* -- 1. buttons in (SPEC.md 7.3) ----------------------------------------- *
@@ -173,6 +175,28 @@ static void pmem_init(void)
         if (nvs_get_i32(pmem_nvs, key, &pmem_cache[i]) != ESP_OK)
             pmem_cache[i] = 0;              /* SPEC.md 9: unset reads as 0 */
     }
+}
+
+/* -- the guaranteed layer (SPEC.md 1.1) ---------------------------------- *
+ *
+ * "One layer is guaranteed; further ones are not." One full-screen buffer is
+ * part of the floor, so it is static like the rest; a second request gets NULL,
+ * which make_layer reports to the cart as nil -- an allocation that failed, not
+ * a verb that is missing. A board with room to spare can hand out more from the
+ * heap instead. */
+static moy_pixel *h_layer_new(void *u, int w, int h)
+{
+    (void)u;
+    if (layer_taken || w <= 0 || h <= 0
+        || (size_t)w * (size_t)h > sizeof layer_pix) return NULL;
+    layer_taken = 1;
+    return layer_pix;
+}
+
+static void h_layer_free(void *u, moy_pixel *pix)
+{
+    (void)u;
+    if (pix == layer_pix) layer_taken = 0;
 }
 
 static int32_t h_pmem_get(void *u, int slot) { (void)u; return pmem_cache[slot]; }
@@ -315,6 +339,8 @@ void app_main(void)
     con.host.pmem_get = h_pmem_get;
     con.host.pmem_set = h_pmem_set;
     con.host.quit     = h_quit;
+    con.host.layer_new  = h_layer_new;
+    con.host.layer_free = h_layer_free;
     /* sfx and music stay NULL: SPEC.md 8.3 makes silence a valid rendering, so
      * a board with no audio is still conforming and the cart never finds out. */
 

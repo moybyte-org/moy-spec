@@ -31,6 +31,8 @@ static uint8_t frame[MOY_W * MOY_H];
 static uint8_t sheet_pix[MOY_SHEET_W * MOY_SHEET_H];
 static uint8_t map_cells[MOY_MAP_MAX * MOY_MAP_MAX];
 static int32_t pmem_slots[256];
+static uint8_t layer_pix[MOY_W * MOY_H];
+static int layer_taken;
 
 /* -- the host: what a platform supplies (SPEC.md 7.3, 9) ----------------- */
 /* Deterministic on purpose. A conformance frame must not depend on when it was
@@ -41,6 +43,24 @@ static int  h_players(void *u)                  { (void)u; return 1; }
 static uint32_t h_time(void *u)                 { (void)u; return 0; }
 static int32_t h_pmem_get(void *u, int s)       { (void)u; return pmem_slots[s]; }
 static void h_pmem_set(void *u, int s, int32_t v) { (void)u; pmem_slots[s] = v; }
+
+/* SPEC.md 1.1 guarantees one full-screen layer, so a harness that runs REAL
+ * carts has to provide it -- otherwise a conformance cart calling make_layer
+ * gets nil here and passes for the wrong reason. A second request declines,
+ * which is equally part of the contract. */
+static moy_pixel *h_layer_new(void *u, int w, int h)
+{
+    (void)u;
+    if (layer_taken || w <= 0 || h <= 0
+        || (size_t)w * (size_t)h > sizeof layer_pix) return NULL;
+    layer_taken = 1;
+    return layer_pix;
+}
+static void h_layer_free(void *u, moy_pixel *pix)
+{
+    (void)u;
+    if (pix == layer_pix) layer_taken = 0;
+}
 
 static int quit_requested = 0;
 static void h_quit(void *u) { (void)u; quit_requested = 1; }
@@ -215,6 +235,8 @@ int main(int argc, char **argv)
     con.host.pmem_get = h_pmem_get;
     con.host.pmem_set = h_pmem_set;
     con.host.quit = h_quit;
+    con.host.layer_new = h_layer_new;
+    con.host.layer_free = h_layer_free;
 
     manifest_main(cart, mainfile, sizeof mainfile);
     snprintf(path, sizeof path, "%s/%s", cart, mainfile);

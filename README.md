@@ -48,7 +48,7 @@ Your own art tools already work: `moy gfx mygame.moy` round-trips the sprite
 sheet through an indexed PNG (Aseprite, GIMP, Piskel), and `moy map` does the
 same for the tilemap through CSV (Tiled). Before you ship, `moy check
 mygame.moy` tells you what the *strictest* console would say — a sandbox
-reach, an undeclared extension, a blown budget — before it surfaces on
+reach, an extension no host implements, a blown budget — before it surfaces on
 somebody else's handheld.
 
 ```
@@ -85,7 +85,7 @@ nothing to set up first — the quickest way to see what this is.
 `moy port cart.p8` does that for any cart: assets near-verbatim (the palette's
 first 16 colours are PICO-8's), code mechanically ported to Lua 5.4 under a
 compat shim. A port declares `"canvas": "128x128"` (SPEC.md 3.1) and draws
-native p8 pixels — the host owns the scaling; `--zoom` adds the guarded
+native p8 pixels — the host owns the scaling; `--zoom` adds the
 `view(128, 120)` hint (`moy demo --zoom` as well) so a 4:3 host fills its
 height at 2×, at the cost of the eight centered edge rows on hosts that honor
 it. Ports of BBS carts are personal/dev material — their default license is
@@ -102,10 +102,17 @@ carts run on two real ESP32 boards today.
 
 The spec is deliberately narrow: it describes what a *game* touches, and says
 nothing about operating systems, shells or drivers — exactly where consoles
-differ and should keep differing. Everything past core is an **extension**: a
-cart that needs one declares it, a console that lacks it declines the cart
-cleanly, and an extension never redefines what core already covers
-(SPEC.md 10).
+differ and should keep differing.
+
+Past core there is an **extension** mechanism — declare what your cart needs,
+and a console that lacks it turns the cart away by name instead of crashing
+halfway through a frame. It is currently **empty**, which is the more
+interesting fact about it. Every candidate so far turned out to be something a
+console could either afford outright or fake convincingly, and both of those
+belong in core: `layers`, `view` and `background` all moved there, and the
+`~= nil` guard a cart would have written around them was a guard that could
+never fire. What is left for an extension is hardware a cart cannot paper over
+— a radio, say. SPEC.md 10 has the test.
 
 ## The pieces
 
@@ -116,7 +123,7 @@ cleanly, and an extension never redefines what core already covers
 | [runner/](runner/) | the web player: libmoy compiled to WebAssembly, under 350 KB of static files, built by `libmoy/port/wasm` |
 | [conformance/](conformance/) | the suite that keeps them honest — one scene per area, each a real cart with a golden frame, and a runner that takes any player. Five builds render every scene pixel-identically, an ESP32-P4 over serial among them — but all five descend from one raster, and its README is candid about what that costs |
 | [moybyte](https://github.com/moybyte-org/moybyte) | the reference implementation: a PC simulator and two ESP32 handhelds |
-| [proposals/](proposals/) | drafts on top of core: single-file carts (`moy pack`), compiled carts (WASM), sideload |
+| [proposals/](proposals/) | drafts on top of core: single-file carts (`moy pack`), compiled carts (WASM), sideload, the p8/TIC-80 verb gaps |
 | [THIRD_PARTY.md](THIRD_PARTY.md) | attribution that travels with the normative data files |
 
 The known gaps: audio authoring (sprites and maps round-trip through PNG and

@@ -79,6 +79,13 @@ jobs:
         run: make conform-lua
         working-directory: libmoy
 
+      # SPEC.md 6's host-dependent core verbs -- view, background, layers. It
+      # asserts they exist on a console that implements NONE of them, which is
+      # the property that keeps them out of 10 and lets a cart drop the guard.
+      - name: Core verbs a host varies but cannot withhold
+        run: make ext-test
+        working-directory: libmoy
+
       - name: The desktop port still builds
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq libsdl2-dev
