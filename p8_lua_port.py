@@ -544,36 +544,45 @@ do
   end
 
   -- moybyte lifecycle -> the p8 one, paced at PICO-8's fixed 30fps
-  local ticked, phase = true, 0
+  local ticked = true
   function _init()
     if p8_init then p8_init() end
   end
-  local sdt = P8_DT / 2                          -- smoothed frame time
+  -- WALL-CLOCK cadence: p8_update runs 30x per real second whatever rate the
+  -- host calls _update at, and a host too slow to draw that often loses DRAWS,
+  -- not game speed. That is SPEC.md 5's one sanctioned degradation ("skip
+  -- _draw while continuing to call _update at the full rate"), applied from
+  -- inside the cart because the shim cannot verify the host is doing it.
+  --
+  -- On a host that does pace to 30 (both reference players do), dt is 1/30 and
+  -- this ticks exactly once per call -- the same frame-for-frame behaviour a
+  -- quantized cadence gave, reached without assuming the pacing.
+  --
+  -- The cost, and it is real: where the host rate is not a multiple of 30, the
+  -- ticks land on ITS frame grid, so their spacing alternates (at 45fps, gaps
+  -- of 22 and 44ms). That is arithmetic, not a scheme to tune away -- a 45fps
+  -- host cannot place 30 evenly spaced ticks per second. Even spacing at the
+  -- wrong rate is what this replaced: it ran a cart at 75% speed there, and
+  -- 53% at 32fps.
+  local EPS = P8_DT * 0.02      -- absorbs an integer-ms host period (33 vs 33.33)
+  local MAX_CATCHUP = 4         -- past this the board genuinely cannot keep up
+  local acc = 0
   function _update(dt)
     for i = 0, 5 do                              -- latch edges EVERY frame
       if m_btnp(BTN[i]) then pending[i] = true end
     end
-    dt = dt or sdt
-    if dt > 0.1 then dt = 0.1 end
-    sdt = sdt + (dt - sdt) * 0.12
-    -- FRAME-QUANTIZED cadence: tick every ceil(P8_DT/sdt) frames -- every
-    -- frame on a governed ~30fps loop, every 2nd on a ~60fps loop. The game
-    -- rate slaves to the loop rate (a few % slow at worst, NEVER fast) with
-    -- perfectly even spacing. Real PICO-8 hosts run integer-locked loops;
-    -- every wall-clock drift-correction scheme tried here instead produced
-    -- the artifact it was meant to fix (double-ticks reading as speed-ups,
-    -- alternating ticks reading as slow-mo). A transient loop dip just slows
-    -- the game briefly, exactly like PICO-8 on weak hardware. The 0.94
-    -- tolerance absorbs the governor's integer-ms period (33ms vs 33.33).
-    local n = math.ceil(P8_DT * 0.94 / sdt)
-    if n < 1 then n = 1 end
-    phase = phase + 1
-    if phase >= n then
-      phase = 0
+    dt = dt or P8_DT
+    if dt > 0.25 then dt = 0.25 end              -- a stall is a pause, not debt
+    acc = acc + dt
+    local n = 0
+    while acc >= P8_DT - EPS and n < MAX_CATCHUP do
+      acc = acc - P8_DT
+      n = n + 1
       if p8_update then p8_update() end
       for i = 0, 5 do pending[i] = false end     -- the tick consumed the edges
       ticked = true
     end
+    if n >= MAX_CATCHUP then acc = 0 end         -- write off what cannot be paid
   end
   function _draw()
     if ticked and p8_draw then
