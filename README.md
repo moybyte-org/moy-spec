@@ -35,12 +35,18 @@ also runs as `python3 moy.py …` — Python 3.8+ and nothing else.
 ### Writing a game → **[GUIDE.md](GUIDE.md)**
 
 ```
-moy new mygame
-moy run mygame.moy
+moy demo                 # fetch Celeste Classic, port it from PICO-8, play it
+moy new mygame           # scaffold your own cart: manifest, Lua, editor stubs
+moy run mygame.moy       # play it in your browser, restarting as you save
 ```
 
-Your browser opens with the game running; edit `mygame.moy/main.lua` in your
-own editor and save, and it restarts in under a second. Your art tools already
+**Start with `moy demo`.** There is nothing to set up first, and what it hands
+back is a real PICO-8 game running as a moy cart seconds after you asked for
+it — the quickest way to see what this is. `moy port cart.p8` does the same for
+any cart you have.
+
+Then your own. `moy run` opens the browser, and editing `mygame.moy/main.lua`
+in your own editor restarts the game in under a second. Your art tools already
 work — the sheet round-trips through indexed PNG and the tilemap through CSV.
 `moy export` turns the cart into static files you can host anywhere, itch.io
 included, and `moy check` tells you before you ship what the tightest console
@@ -49,9 +55,6 @@ would refuse.
 [GUIDE.md](GUIDE.md) builds a complete small game from nothing, then covers
 each topic in turn — art, audio, saving, budgets, and the dozen things that
 catch everyone once.
-
-Coming from PICO-8? `moy demo` fetches Celeste Classic, ports it and plays it
-in one command; `moy port cart.p8` does the same for any cart.
 
 ### Building a console → **[PORTING.md](PORTING.md)**
 

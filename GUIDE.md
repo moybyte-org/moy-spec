@@ -584,8 +584,9 @@ says so. Run it before every release; it is instant.
 
 ```
 moy demo                    # fetch Celeste Classic, port it, play it
-moy port cart.p8            # any cart
-moy port cart.p8 --zoom
+moy port cart.p8            # port a cart of your own -> cart.moy
+moy port cart.p8 --zoom     # ... and add the view() hint below
+moy demo --zoom             # the demo takes it too
 ```
 
 Assets come over nearly verbatim, because the sheet format *is* PICO-8's and

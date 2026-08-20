@@ -39,6 +39,13 @@
     <p class="hint">Under 400 KB of player and cart per demo.
       <a id="demofull" href="play/">Open it full screen ↗</a> — and
       <code>python3 moy.py export</code> turns any cart into exactly this.</p>
+    <!-- Celeste is NOT one of the tabs above and must not become one: the
+         ported cart is CC BY-NC-SA (Maddy Thorson & Noel Berry) and .gitignore
+         forbids shipping it from this repo. So the demo is prominent as a
+         COMMAND -- the visitor runs it, we do not host it. -->
+    <p class="hint">Coming from PICO-8? <code>moy demo</code> fetches Celeste
+      Classic, ports it and plays it in this same player &mdash; one command,
+      on your machine, nothing to set up first.</p>
   </div>
   <script>
   // One iframe, swapped: two live wasm VMs would mean two heaps and two frame
