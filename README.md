@@ -35,7 +35,7 @@ also runs as `python3 moy.py …` — Python 3.8+ and nothing else.
 ### Writing a game → **[GUIDE.md](GUIDE.md)**
 
 ```
-moy demo                 # fetch Celeste Classic, port it from PICO-8, play it
+moy demo                 # fetch Celeste Classic, port it, play it natively
 moy new mygame           # scaffold your own cart: manifest, Lua, editor stubs
 moy run mygame.moy       # play it in your browser, restarting as you save
 ```

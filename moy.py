@@ -19,8 +19,11 @@ art tools already work; this CLI supplies the loop around them.
                                  native 128x128 (manifest canvas, SPEC.md 3.1);
                                  --zoom adds the view(128,120) hint so 4:3
                                  hosts fill their height (SPEC.md 6)
-    moy.py demo                  fetch Celeste Classic (PICO-8), port it, run
-                                 it -- the one-command show-off
+    moy.py demo                  fetch Celeste Classic (PICO-8), port it, play
+          [--web]                it in the NATIVE player -- the one-command
+                                 show-off. --web (or a port number) opens the
+                                 browser player instead, which is also the
+                                 fallback where moy-play is not built
 
 Before you ship, and to work with the art tools you already own:
 
@@ -366,7 +369,15 @@ def cmd_port(args):
 
 
 def cmd_demo(args):
-    """Fetch + port + run Celeste Classic -- the one-command demo."""
+    """Fetch + port + play Celeste Classic -- the one-command demo.
+
+    It plays in the NATIVE player when there is one. `run` opens a browser
+    because a browser is where hot reload lives, and that is the dev loop --
+    but `demo` is not a dev loop, it is a game, and a desktop program that
+    answers by opening a browser tab is a surprise nobody asked for. So the
+    window is the default and the tab is the fallback, which is also the only
+    honest order: the fallback is what a checkout without `make play` has.
+    """
     print(CELESTE_NOTE)
     out = cart_dir("celeste")
     # --zoom belongs to the PORT, not the run, so split it out -- and re-port
@@ -383,7 +394,24 @@ def cmd_demo(args):
         cmd_port([CELESTE_URL, "celeste"] + zoom)
     else:
         print("using existing %s" % out)
-    cmd_run(["celeste.moy"] + rest)
+
+    # A port number only means something to the web player, so passing one is
+    # asking for it -- otherwise `demo 8081` would go native and drop the 8081
+    # on the floor.
+    web = "--web" in args or any(a.isdigit() for a in rest)
+    rest = [a for a in rest if a != "--web"]
+    found, looked = _native_player()
+    if web or found is None:
+        if not web:
+            print("no moy-play here (looked for %s)" % ", ".join(looked))
+            print("  playing in the browser instead; %s" % (
+                "it ships beside moy in the release download" if FROZEN
+                else "`make play` in libmoy/ builds the native one"))
+        cmd_run(["celeste.moy"] + rest)
+    else:
+        print("playing in the native player (%s play, --web for the browser)"
+              % PROG)
+        cmd_play(["celeste.moy"])
 
 
 # --- check / pack / assets / conform -----------------------------------------
@@ -735,31 +763,36 @@ def cmd_conform(args):
     sys.exit(_run.main(args))
 
 
-def cmd_play(args):
-    """Run a cart in the native desktop player.
+def _native_player():
+    """(path, where-we-looked) for moy-play, path None when it is not there.
 
     moy-play is the C console (libmoy) with its SDL2 port -- a sibling binary,
     not something this CLI contains. The lookup order is where it actually is:
     beside this executable in a release download, or libmoy's build dir in a
-    checkout."""
+    checkout. It returns rather than dies because `demo` asks a question of it
+    ("is there one?") that `play` does not."""
+    exe = "moy-play.exe" if sys.platform == "win32" else "moy-play"
+    if FROZEN:
+        looked = [os.path.join(
+            os.path.dirname(os.path.abspath(sys.executable)), exe)]
+    else:
+        looked = [os.path.join(HERE, "libmoy", "build", exe)]
+    return next((c for c in looked if os.path.isfile(c)), None), looked
+
+
+def cmd_play(args):
+    """Run a cart in the native desktop player."""
     if not args:
         die("usage: %s play <cart.moy>" % PROG)
     src = cart_dir(args[0])
     if not os.path.isdir(src):
         die("no such cart: " + src)
-    exe = "moy-play.exe" if sys.platform == "win32" else "moy-play"
-    candidates = []
-    if FROZEN:
-        candidates.append(os.path.join(
-            os.path.dirname(os.path.abspath(sys.executable)), exe))
-    else:
-        candidates.append(os.path.join(HERE, "libmoy", "build", exe))
-    found = next((c for c in candidates if os.path.isfile(c)), None)
+    found, looked = _native_player()
     if found is None:
         hint = ("it ships beside moy in the release download" if FROZEN
                 else "`make play` in libmoy/ builds it")
         die("moy-play not found (looked for %s) -- %s"
-            % (", ".join(candidates), hint))
+            % (", ".join(looked), hint))
     import subprocess
     sys.exit(subprocess.call([found, src]))
 

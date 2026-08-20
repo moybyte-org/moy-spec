@@ -49,11 +49,11 @@ moy -- the toy console, bundled for Windows.
 
 moy-play.exe   the native player: drag a .moy cart folder onto it.
                {controls}
-moy.exe        the whole toolchain, no Python needed: `moy new mygame`,
-               `moy run mygame.moy` (browser, hot reload), `moy demo` (fetches
-               and ports Celeste Classic), check, pack, gfx/map PNG+CSV
-               round-trips, conform, push. Run `moy` with no arguments for the
-               full list.
+moy.exe        the whole toolchain, no Python needed: `moy demo` (fetches
+               and ports Celeste Classic, then plays it in moy-play.exe),
+               `moy new mygame`, `moy run mygame.moy` (browser, hot reload),
+               check, pack, gfx/map PNG+CSV round-trips, conform, push. Run
+               `moy` with no arguments for the full list.
 
 Spec and source: {repo}
 """
@@ -61,10 +61,10 @@ Spec and source: {repo}
 UNIX = """\
 moy -- the toy console: the CLI and the native player.
 
+  ./moy demo                fetch Celeste Classic, port it, play it in moy-play
   ./moy-play mygame.moy     play a cart
   ./moy new mygame          scaffold a cart
   ./moy run mygame.moy      play in your browser, hot reload on save
-  ./moy demo                fetch Celeste Classic, port it, play it
   ./moy                     the full command list
 
 {controls}

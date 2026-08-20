@@ -589,6 +589,11 @@ moy port cart.p8 --zoom     # ... and add the view() hint below
 moy demo --zoom             # the demo takes it too
 ```
 
+`moy demo` plays in the native player when you have one — the release download
+ships it beside `moy`, and `make play` in `libmoy/` builds it from a checkout.
+Without one it falls back to the browser, and `moy demo --web` asks for the
+browser on purpose.
+
 Assets come over nearly verbatim, because the sheet format *is* PICO-8's and
 the first sixteen palette entries are PICO-8's. Code is mechanically translated
 to Lua 5.4 and runs under a compatibility shim.
