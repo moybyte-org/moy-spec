@@ -684,6 +684,69 @@ def cmd_map(args):
                                "Tiled gids" if tiled else "tile ids, -1 empty"))
 
 
+# What the wasm player is compiled FROM (libmoy/port/wasm/build.sh). A commit
+# touching any of these makes the checked-in bundle stale, however intact it is.
+# Sources and the build script only -- a README living in one of these
+# directories changes nothing about the bytes, and a check that cries stale
+# over prose is a check people learn to skip.
+WASM_INPUTS = ("libmoy/src/*.c", "libmoy/include/*.h",
+               "libmoy/port/wasm/*.c", "libmoy/port/wasm/build.sh",
+               "libmoy/vendor/lua/*.c", "libmoy/vendor/lua/*.h")
+
+
+# Files build.sh COPIES into runner/ verbatim. These need no toolchain to check
+# and no git either -- just compare the bytes. The stamp cannot: it compares
+# runner/ against its own recorded hashes, so editing the source copy without
+# rebuilding leaves both sides self-consistent and both wrong.
+WASM_COPIED = (("libmoy/port/wasm/page/index.html", "index.html"),
+               ("libmoy/port/wasm/page/player.js", "player.js"))
+
+
+def _player_uncopied():
+    """Page files whose source has moved on without runner/ being rebuilt."""
+    out = []
+    for src, dst in WASM_COPIED:
+        a, b = os.path.join(HERE, src), os.path.join(RUNNER, dst)
+        if not (os.path.isfile(a) and os.path.isfile(b)):
+            continue
+        with open(a, "rb") as f1, open(b, "rb") as f2:
+            if f1.read() != f2.read():
+                out.append(dst)
+    return out
+
+
+def _player_stale(pin):
+    """Commits that landed in libmoy after the shipped player was built.
+
+    The stamp proves runner/ is INTACT. It cannot prove runner/ is CURRENT, and
+    that is the failure that actually shipped: `make_layer` became a core global
+    in libmoy (SPEC.md 6), the checked-in wasm predated it, and the browser
+    player went on answering nil -- on the website, in every `moy export`, and
+    in the build SPEC.md 11 calls the tiebreaker. Conformance did not catch it
+    because no scene uses a layer, and examples/verbs.moy is looked at rather
+    than diffed, so the one thing that exercised it was a person.
+
+    Returns [] when current, None when unknowable (a release binary, a shallow
+    clone, no git) -- never a guess.
+    """
+    built = (pin.get("source") or {}).get("commit")
+    if FROZEN or not built:
+        return None
+    import subprocess
+    try:
+        run = lambda *a: subprocess.run(a, cwd=HERE, capture_output=True,
+                                        text=True, timeout=20)
+        if run("git", "cat-file", "-e", built + "^{commit}").returncode != 0:
+            return None          # not in this clone -- shallow, or a fork
+        out = run("git", "log", "--format=%h %s", built + "..HEAD", "--",
+                  *WASM_INPUTS)
+        if out.returncode != 0:
+            return None
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return [ln for ln in out.stdout.splitlines() if ln.strip()]
+
+
 def _pin():
     """The pinned player (runner/VERSION), or None if this checkout has none."""
     path = os.path.join(RUNNER, VERSION_FILE)
@@ -798,7 +861,31 @@ def cmd_player(args):
         print("  MISMATCH %s" % b)
     print("  %d files, %s" % (len(pin.get("files", {})),
                               "all match the stamp" if not bad else "SEE ABOVE"))
-    if bad:
+
+    # Intact is not the same as current, and only one of those was ever checked.
+    uncopied = _player_uncopied()
+    for f in uncopied:
+        print("  BEHIND SOURCE  %s differs from libmoy/port/wasm/page/%s" % (f, f))
+    stale = _player_stale(pin)
+    if stale is None:
+        print("  currency    not checkable here (no git, or a release build)")
+    elif stale:
+        print("")
+        print("  STALE: %d libmoy commit%s landed after this bundle was built."
+              % (len(stale), "" if len(stale) == 1 else "s"))
+        for ln in stale[:8]:
+            print("    %s" % ln)
+        if len(stale) > 8:
+            print("    ... and %d more" % (len(stale) - 8))
+        print("  The browser player is missing whatever they changed -- and it"
+              " is what")
+        print("  the website serves, what `%s export` ships, and SPEC.md 11's"
+              " tiebreaker." % PROG)
+        print("  Rebuild it: `%s player --build` (needs emscripten), then"
+              " commit the diff." % PROG)
+    else:
+        print("  currency    up to date with libmoy")
+    if bad or stale or uncopied:
         sys.exit(1)
 
 

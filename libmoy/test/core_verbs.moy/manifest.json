@@ -1,0 +1,7 @@
+{
+  "format": "moy-1",
+  "title": "core verbs",
+  "main": "main.lua",
+  "fps": 30,
+  "input": ["buttons"]
+}

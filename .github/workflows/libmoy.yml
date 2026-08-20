@@ -108,6 +108,19 @@ jobs:
       - name: Conformance (the web player)
         run: python3 conformance/run.py --player "node libmoy/port/wasm/conform.mjs {cart} {out}"
 
+      # 2b. The goldens cannot see a MISSING verb. Every scene is a recorded
+      # raster, and no scene uses a layer, a background or a view -- so a player
+      # whose verb table has holes renders all ten perfectly and then kills any
+      # cart that calls one. That is not hypothetical: the committed wasm went
+      # twelve commits without `background`, `view`, `make_layer` or
+      # `draw_layer`, passed every check here, and shipped to the website.
+      - name: The committed player has every core verb
+        run: node libmoy/port/wasm/conform.mjs libmoy/test/core_verbs.moy /tmp/cv.bin
+
+      - name: ... and so does the native build
+        run: ./build/run_cart test/core_verbs.moy /tmp/cv-native.bin --frames 1
+        working-directory: libmoy
+
       # 3. And that bundle is what this source builds. emcc is not
       # byte-reproducible across versions, so the wasm is not compared -- step 2
       # judged the committed one directly. The page and the shim are pure
