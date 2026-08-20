@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""moy -- the cart developer CLI: scaffold, live-run, publish.
+"""moy -- the cart developer CLI: scaffold, play, publish.
 
 A moy cart is a folder of text files, so your own editor, git and your own
 art tools already work; this CLI supplies the loop around them.
@@ -7,9 +7,13 @@ art tools already work; this CLI supplies the loop around them.
     moy.py new <name>            scaffold a Lua cart (manifest + main.lua +
                                  moy-api.lua editor stubs -- the Lua language
                                  server reads those for autocomplete + docs)
-    moy.py run <cart.moy>        play the cart in your browser with HOT
-                                 RELOAD: save a file, the game restarts in
-                                 under a second
+    moy.py play <cart.moy>       play the cart in a window, with HOT RELOAD:
+                                 save a file, the game restarts in under a
+                                 second (moy-play, the C console -- it ships
+                                 beside moy in the release download)
+    moy.py web <cart.moy> [port] the same cart in the BROWSER player instead:
+                                 same hot reload, plus devtools, and it needs
+                                 no moy-play built
     moy.py export <cart.moy>     the publishable web bundle: ~300KB of static
                                  files that boot straight into the game --
                                  host anywhere (itch.io HTML5 uploads work)
@@ -44,10 +48,6 @@ Before you ship, and to work with the art tools you already own:
           [--build]              its files still match; --build recompiles it
                                  from libmoy (needs emscripten -- nothing else
                                  here does)
-    moy.py play <cart.moy>       run the cart in the NATIVE desktop player
-                                 (moy-play, the C console -- ships beside moy
-                                 in the release download). `run` is the dev
-                                 loop in the browser; `play` is just playing
     moy.py push <cart.moy>       copy the cart onto a connected console --
           [--to <where>]         a volume with a moy-console.json marker, a
           [--list]               serial port, or http://<console>. Probes per
@@ -207,7 +207,7 @@ def cmd_new(args):
     if os.path.isfile(stubs):
         shutil.copy(stubs, os.path.join(dst, "moy-api.lua"))
     print("created %s" % dst)
-    print("  next: %s run %s" % (sys.argv[0], os.path.relpath(dst)))
+    print("  next: %s play %s" % (sys.argv[0], os.path.relpath(dst)))
 
 
 # --- run (the hot-reload dev loop) -------------------------------------------
@@ -248,9 +248,9 @@ def cart_stamp(src):
     return "%f" % latest
 
 
-def cmd_run(args):
+def cmd_web(args):
     if not args:
-        die("usage: moy.py run <cart.moy> [port]")
+        die("usage: %s web <cart.moy> [port]" % PROG)
     src = cart_dir(args[0])
     if not os.path.isdir(src):
         die("no such cart: " + src)
@@ -291,7 +291,7 @@ def cmd_run(args):
                 super().do_GET()
 
     url = "http://127.0.0.1:%d/?dev=1" % port
-    print("moy run: %s" % src)
+    print("moy web: %s" % src)
     print("  %s   (save a file -> the game restarts)" % url)
     with http.server.ThreadingHTTPServer(("0.0.0.0", port), Handler) as srv:
         webbrowser.open(url)
@@ -365,18 +365,16 @@ def cmd_port(args):
     print("ported -> %s" % out)
     print("  PICO-8 carts carry their own licenses (BBS default CC BY-NC-SA")
     print("  4.0) -- ported carts are dev/personal material unless stated.")
-    print("  next: %s run %s" % (sys.argv[0], os.path.relpath(out)))
+    print("  next: %s play %s" % (sys.argv[0], os.path.relpath(out)))
 
 
 def cmd_demo(args):
     """Fetch + port + play Celeste Classic -- the one-command demo.
 
-    It plays in the NATIVE player when there is one. `run` opens a browser
-    because a browser is where hot reload lives, and that is the dev loop --
-    but `demo` is not a dev loop, it is a game, and a desktop program that
-    answers by opening a browser tab is a surprise nobody asked for. So the
-    window is the default and the tab is the fallback, which is also the only
-    honest order: the fallback is what a checkout without `make play` has.
+    It plays in the NATIVE player when there is one: a desktop program that
+    answers by opening a browser tab is a surprise nobody asked for. The tab
+    is the fallback, which is also the honest order -- the fallback is what a
+    checkout without `make play` has.
     """
     print(CELESTE_NOTE)
     out = cart_dir("celeste")
@@ -407,17 +405,16 @@ def cmd_demo(args):
             print("  playing in the browser instead; %s" % (
                 "it ships beside moy in the release download" if FROZEN
                 else "`make play` in libmoy/ builds the native one"))
-        cmd_run(["celeste.moy"] + rest)
+        cmd_web(["celeste.moy"] + rest)
     else:
-        print("playing in the native player (%s play, --web for the browser)"
-              % PROG)
-        cmd_play(["celeste.moy"])
+        print("playing in the native player (--web for the browser)")
+        _run_native(out)
 
 
 # --- check / pack / assets / conform -----------------------------------------
 #
 # These four lean on moycore/ -- the console as a library. They are here rather
-# than as separate scripts because they belong to the same loop as `run`: you
+# than as separate scripts because they belong to the same loop as `play`: you
 # scaffold, you run, you check before you ship. A tool you have to remember the
 # name of is a tool nobody runs.
 
@@ -709,7 +706,7 @@ def cmd_player(args):
     """Show, verify, or rebuild the web player.
 
     runner/ is a BUILD -- libmoy plus Lua plus port/wasm/main.c through
-    emscripten -- and it is checked in so that `run` needs nothing but Python
+    emscripten -- and it is checked in so that `web` needs nothing but Python
     and a browser, which is what the README promises. VERSION records which
     build it is (the commit, and a sha256 per file), so "which player is this?"
     has an answer in the tree and a rebuild is an ordinary reviewable diff.
@@ -780,13 +777,8 @@ def _native_player():
     return next((c for c in looked if os.path.isfile(c)), None), looked
 
 
-def cmd_play(args):
-    """Run a cart in the native desktop player."""
-    if not args:
-        die("usage: %s play <cart.moy>" % PROG)
-    src = cart_dir(args[0])
-    if not os.path.isdir(src):
-        die("no such cart: " + src)
+def _run_native(cart, extra=()):
+    """Hand a cart to moy-play, or die saying where we looked for it."""
     found, looked = _native_player()
     if found is None:
         hint = ("it ships beside moy in the release download" if FROZEN
@@ -794,7 +786,26 @@ def cmd_play(args):
         die("moy-play not found (looked for %s) -- %s"
             % (", ".join(looked), hint))
     import subprocess
-    sys.exit(subprocess.call([found, src]))
+    sys.exit(subprocess.call([found, cart] + list(extra)))
+
+
+def cmd_play(args):
+    """Play a cart in the native desktop player, hot reload and all.
+
+    --watch is passed for you: moy-play can watch the cart folder and rebuild
+    the Lua state when a file changes (port/sdl2/main.c), and this is the
+    command a cart author lives in, so it should. The player itself defaults
+    the other way -- a console that reloads while somebody is playing a game
+    is a dev tool leaking into a product.
+
+    `web` is the same loop through the browser player, for devtools or for a
+    machine with no moy-play built."""
+    if not args:
+        die("usage: %s play <cart.moy>" % PROG)
+    src = cart_dir(args[0])
+    if not os.path.isdir(src):
+        die("no such cart: " + src)
+    _run_native(src, ["--watch"] + [a for a in args[1:] if a != "--watch"])
 
 
 def cmd_push(args):
@@ -855,11 +866,20 @@ def cmd_push(args):
 
 
 def main():
-    cmds = {"new": cmd_new, "run": cmd_run, "export": cmd_export,
-            "port": cmd_port, "demo": cmd_demo,
+    cmds = {"new": cmd_new, "play": cmd_play, "web": cmd_web,
+            "export": cmd_export, "port": cmd_port, "demo": cmd_demo,
             "check": cmd_check, "pack": cmd_pack, "unpack": cmd_unpack,
             "gfx": cmd_gfx, "map": cmd_map, "conform": cmd_conform,
-            "player": cmd_player, "push": cmd_push, "play": cmd_play}
+            "player": cmd_player, "push": cmd_push}
+    # `run` was the browser and `play` was the window, which nobody could keep
+    # straight -- and now that the window hot-reloads there is nothing left for
+    # two names to mean. Say so rather than printing the whole help.
+    if len(sys.argv) > 1 and sys.argv[1] == "run":
+        die("`run` is gone -- it did what `play` does.\n"
+            "  %s play %s   the console in a window, reloading as you save\n"
+            "  %s web  %s   the same cart in the browser player"
+            % (PROG, " ".join(sys.argv[2:]) or "<cart.moy>",
+               PROG, " ".join(sys.argv[2:]) or "<cart.moy>"))
     if len(sys.argv) < 2 or sys.argv[1] not in cmds:
         print(__doc__.strip().replace("moy.py ", PROG + " "))
         sys.exit(0 if len(sys.argv) < 2 else 1)

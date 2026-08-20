@@ -1,12 +1,20 @@
-/* moy-play -- a desktop moy console, in about 250 lines of SDL2.
+/* moy-play -- a desktop moy console in SDL2, and the porting layer as a
+ * worked example.
  *
- *   moy-play <cart.moy> [--scale N] [--fullscreen]
+ *   moy-play <cart.moy> [--scale N] [--fullscreen] [--watch]
  *
- * This is the porting layer as a WORKED EXAMPLE rather than a description. The
- * claim libmoy makes is that adopting moy costs a platform shim, not a project;
- * this file is that shim for one platform, and it is the whole of it. Read it
- * before writing yours -- the ESP-IDF one is the same shape with different
- * names, and there is nothing else to implement.
+ * READ TO THE "hot reload" COMMENT AND STOP. Everything above it -- under
+ * three hundred lines -- is the whole of what this platform owes the console,
+ * and is the part worth copying. Everything below it watches the cart folder
+ * and rebuilds the Lua state when a file changes, which is a convenience for
+ * whoever is WRITING the cart and no part of running one. It is off unless
+ * --watch asks for it, which is why a cart that errors still ends the way
+ * SPEC.md 4.3 says it must: the player exits. `moy play` passes the flag.
+ *
+ * The claim libmoy makes is that adopting moy costs a platform shim, not a
+ * project; this file is that shim for one platform, and it is the whole of it.
+ * Read it before writing yours -- the ESP-IDF one is the same shape with
+ * different names, and there is nothing else to implement.
  *
  * What a platform actually owes the console (SPEC.md 0 is emphatic that the
  * rest is not the spec's business):
@@ -283,6 +291,49 @@ static void manifest_str(const char *text, const char *key, char *out, size_t n)
     }
 }
 
+/* -- hot reload ----------------------------------------------------------
+ *
+ * NOT part of what a platform owes the console. Everything above this comment
+ * is the porting shim; an implementer copying this file should read to here
+ * and stop, because a console in somebody's hand does not watch a folder. It
+ * is here because `moy play` is the loop a cart author lives in -- edit
+ * main.lua, see the change -- and that loop used to require a browser.
+ *
+ * It HASHES the cart's files rather than stat-ing their mtimes: no clock, no
+ * platform header, no granularity to get wrong, and a save that rewrites the
+ * same bytes does nothing, which is right. `.pmem` is deliberately not in the
+ * list -- that is the cart's save file, and watching it would reload the cart
+ * every time the game saved.
+ */
+#define WATCH_MS 400
+
+static uint64_t fnv1a(uint64_t h, const void *p, size_t n)
+{
+    const unsigned char *b = (const unsigned char *)p;
+    while (n--) { h ^= (uint64_t)*b++; h *= 1099511628211ull; }
+    return h;
+}
+
+static uint64_t cart_stamp(const char *dir, const char *mainfile)
+{
+    static const char *const also[] = {
+        "manifest.json", "sprites.moygfx", "map.moymap",
+        "sounds.json", "config.json"
+    };
+    uint64_t h = 14695981039346656037ull;
+    size_t k;
+    for (k = 0; k <= sizeof also / sizeof *also; k++) {
+        char path[1024];
+        long n = 0;
+        char *t;
+        snprintf(path, sizeof path, "%s/%s", dir, k ? also[k - 1] : mainfile);
+        t = slurp(path, &n);
+        if (t) { h = fnv1a(h, t, (size_t)n); free(t); }
+        h = fnv1a(h, "|", 1);       /* a file appearing or vanishing counts */
+    }
+    return h;
+}
+
 int main(int argc, char **argv)
 {
     moy_canvas canvas;
@@ -299,14 +350,21 @@ int main(int argc, char **argv)
     char *manifest, *source;
     const char *cart = NULL;
     int i, scale = 3, fullscreen = 0, fps, frame_ms, cw, ch;
-    uint32_t last;
+    int watch = 0, live = 1, arate = 0;
+    uint64_t stamp;
+    uint32_t last, checked;
 
     for (i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--scale") && i + 1 < argc) scale = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--fullscreen")) fullscreen = 1;
+        else if (!strcmp(argv[i], "--watch")) watch = 1;
         else cart = argv[i];
     }
-    if (!cart) { fprintf(stderr, "usage: moy-play <cart.moy> [--scale N] [--fullscreen]\n"); return 2; }
+    if (!cart) {
+        fprintf(stderr, "usage: moy-play <cart.moy> [--scale N] [--fullscreen]"
+                        " [--watch]\n");
+        return 2;
+    }
 
     snprintf(path, sizeof path, "%s/manifest.json", cart);
     manifest = slurp(path, NULL);
@@ -407,7 +465,8 @@ int main(int argc, char **argv)
         adev = SDL_OpenAudioDevice(NULL, 0, &want, &have,
                                    SDL_AUDIO_ALLOW_FREQUENCY_CHANGE);
         if (adev) {
-            moy_audio_init(&audio, &bank, have.freq);
+            arate = have.freq;
+            moy_audio_init(&audio, &bank, arate);
             con.host.sfx        = h_sfx;
             con.host.beep       = h_beep;
             con.host.music      = h_music;
@@ -443,7 +502,10 @@ int main(int argc, char **argv)
 
     host.t0 = SDL_GetTicks();
     if (moy_lua_init(L, err, sizeof err)) { fprintf(stderr, "moy-play: _init: %s\n", err); return 1; }
-    last = SDL_GetTicks();
+    last = checked = SDL_GetTicks();
+    stamp = watch ? cart_stamp(cart, mainfile) : 0;
+    if (watch)
+        fprintf(stderr, "moy-play: watching %s -- save a file and it reloads\n", cart);
 
     while (host.running) {
         SDL_Event ev;
@@ -457,6 +519,113 @@ int main(int argc, char **argv)
              * console's input model and the cart never sees this key. */
             if (ev.type == SDL_KEYDOWN && ev.key.keysym.sym == SDLK_ESCAPE) host.running = 0;
         }
+        /* hot reload: poll, and rebuild the cart when the bytes on disk stop
+         * matching the ones being run. A failed reload leaves the PREVIOUS
+         * cart stopped rather than closing the window -- you fix the file and
+         * the next save brings it back, which is the whole point of the loop. */
+        if (watch && SDL_GetTicks() - checked >= WATCH_MS) {
+            uint64_t now_stamp = cart_stamp(cart, mainfile);
+            checked = SDL_GetTicks();
+            if (now_stamp != stamp) {
+                char nmain[256], ntitle[256], ncanvas[16];
+                int ncw, nch;
+                char *src2;
+
+                stamp = now_stamp;
+                memcpy(nmain, mainfile, sizeof nmain);
+                memcpy(ntitle, title, sizeof ntitle);
+                snprintf(ncanvas, sizeof ncanvas, "%dx%d", cw, ch);
+
+                /* the manifest moves too -- a new title, fps, canvas or main */
+                snprintf(path, sizeof path, "%s/manifest.json", cart);
+                manifest = slurp(path, NULL);
+                if (manifest) {
+                    const char *fp;
+                    manifest_str(manifest, "main", nmain, sizeof nmain);
+                    manifest_str(manifest, "title", ntitle, sizeof ntitle);
+                    manifest_str(manifest, "canvas", ncanvas, sizeof ncanvas);
+                    fp = strstr(manifest, "\"fps\"");
+                    if (fp && (fp = strchr(fp, ':')) != NULL)
+                        frame_ms = 1000 / (atoi(fp + 1) == 60 ? 60 : 30);
+                    free(manifest);
+                }
+                if (sscanf(ncanvas, "%dx%d", &ncw, &nch) != 2 ||
+                    !((ncw == 320 && nch == 240) || (ncw == 160 && nch == 120) ||
+                      (ncw == 128 && nch == 128))) {
+                    fprintf(stderr, "moy-play: reload: no \"%s\" canvas "
+                                    "(SPEC.md 3.1); keeping %dx%d\n", ncanvas, cw, ch);
+                    ncw = cw; nch = ch;
+                }
+
+                snprintf(path, sizeof path, "%s/%s", cart, nmain);
+                src2 = slurp(path, NULL);
+                if (!src2) {
+                    fprintf(stderr, "moy-play: reload: cannot read %s\n", path);
+                    live = 0;
+                } else {
+                    lua_State *nl = luaL_newstate();
+                    moy_lua_open(nl, &con);
+                    if (luaL_loadbuffer(nl, src2, strlen(src2), nmain) != LUA_OK ||
+                        lua_pcall(nl, 0, 0, 0) != LUA_OK) {
+                        /* the common case: a syntax error mid-edit. Say it and
+                         * wait; nothing has been torn down yet. */
+                        fprintf(stderr, "moy-play: reload: %s\n", lua_tostring(nl, -1));
+                        lua_close(nl);
+                        live = 0;
+                    } else {
+                        lua_close(L);           /* committed from here */
+                        L = nl;
+                        memcpy(mainfile, nmain, sizeof mainfile);
+                        if (strcmp(title, ntitle)) {
+                            memcpy(title, ntitle, sizeof title);
+                            SDL_SetWindowTitle(win, title);
+                        }
+                        if (ncw != cw || nch != ch) {
+                            cw = ncw; ch = nch;
+                            moy_canvas_init(&canvas, frame, cw, ch);
+                            SDL_DestroyTexture(tex);
+                            tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888,
+                                                    SDL_TEXTUREACCESS_STREAMING, cw, ch);
+                            SDL_RenderSetLogicalSize(ren, cw, ch);
+                        }
+                        memset(sheet_pix, 0, sizeof sheet_pix);
+                        load_sheet(cart);
+                        memset(map_cells, 0, sizeof map_cells);
+                        moy_map_init(&map, map_cells, 20, 15);
+                        load_map(cart, &map);
+                        {   char *snd;
+                            snprintf(path, sizeof path, "%s/sounds.json", cart);
+                            snd = slurp(path, NULL);
+                            if (adev) SDL_LockAudioDevice(adev);
+                            if (moy_bank_parse(&bank, snd))
+                                fprintf(stderr, "moy-play: reload: sounds.json is "
+                                                "malformed; playing silent\n");
+                            if (adev) {
+                                moy_audio_init(&audio, &bank, arate);
+                                SDL_UnlockAudioDevice(adev);
+                            }
+                            free(snd);
+                        }
+                        /* pmem is NOT reloaded: it is the player's save, and a
+                         * reload is an edit to the game, not a new machine. */
+                        memset(host.held, 0, sizeof host.held);
+                        memset(host.prev, 0, sizeof host.prev);
+                        host.view_w = host.view_h = 0;
+                        host.has_bg = 0;
+                        host.t0 = SDL_GetTicks();
+                        moy_reset_state(&canvas);
+                        live = !moy_lua_init(L, err, sizeof err);
+                        if (!live)
+                            fprintf(stderr, "moy-play: reload: _init: %s\n", err);
+                        else
+                            fprintf(stderr, "moy-play: reloaded\n");
+                        last = SDL_GetTicks();
+                    }
+                    free(src2);
+                }
+            }
+        }
+
         host.keys = SDL_GetKeyboardState(NULL);
         for (b = 0; b < MOY_BTN_COUNT; b++) {
             host.prev[b] = host.held[b];
@@ -471,14 +640,30 @@ int main(int argc, char **argv)
          * teleport everything across the screen on the next frame. */
         if (dt > 0.25f) dt = 0.25f;
 
-        moy_reset_state(&canvas);
-        if (moy_lua_update(L, dt, err, sizeof err)) { fprintf(stderr, "moy-play: _update: %s\n", err); break; }
-        /* SPEC.md 6: background(x) declares a backdrop the host
-         * repaints automatically each frame, so a cart that has one need not
-         * cls() itself. Between _update and _draw, which is where the cart
-         * would have done it. */
-        if (host.has_bg) moy_cls(&canvas, host.bg);
-        if (moy_lua_draw(L, err, sizeof err))       { fprintf(stderr, "moy-play: _draw: %s\n", err); break; }
+        /* SPEC.md 4.3: a Lua error terminates the CART. Whether the window
+         * goes with it is the player's business, not the spec's -- when we are
+         * watching, the cart stops and the next save restarts it, because
+         * closing the window on a typo is the opposite of a dev loop. */
+        if (live) {
+            moy_reset_state(&canvas);
+            if (moy_lua_update(L, dt, err, sizeof err)) {
+                fprintf(stderr, "moy-play: _update: %s\n", err);
+                live = 0;
+                if (!watch) break;
+            }
+            /* SPEC.md 6: background(x) declares a backdrop the host
+             * repaints automatically each frame, so a cart that has one need not
+             * cls() itself. Between _update and _draw, which is where the cart
+             * would have done it. */
+            if (live && host.has_bg) moy_cls(&canvas, host.bg);
+            if (live && moy_lua_draw(L, err, sizeof err)) {
+                fprintf(stderr, "moy-play: _draw: %s\n", err);
+                live = 0;
+                if (!watch) break;
+            }
+            if (!live && watch)
+                fprintf(stderr, "moy-play: cart stopped -- fix it and save\n");
+        }
 
         {   /* pixels out: the one place the console's colours become anyone's */
             const uint8_t *pal = moy_palette_default;

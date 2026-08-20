@@ -30,7 +30,7 @@ MDNS_SERVICE = "_moy-console._tcp.local"
 SERIAL_BAUD = 115200
 DEFAULT_CART_ROOT = "carts"
 
-# Never part of the pushed cart -- same exclusions as `run` and `pack`.
+# Never part of the pushed cart -- same exclusions as `web` and `pack`.
 SKIP_FILES = ("moy-api.lua",)
 SKIP_DIRS = ("thumbs", "__pycache__", ".git")
 

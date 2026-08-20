@@ -37,12 +37,14 @@ and hover documentation.
 
 ```
 moy new star
-moy run star.moy
+moy play star.moy
 ```
 
-Your browser opens on a moving circle. `moy run` is a local server plus the
-web player; leave it running. Every time you save a file in the cart folder,
-the game restarts — under a second, no rebuild, no refresh.
+A window opens on a moving circle. Leave it up: `moy play` watches the cart
+folder, so every time you save a file the game restarts — under a second, no
+rebuild, nothing to click. (`moy web` runs the same loop in the browser player
+instead, which is what you want for devtools, or on a machine with no
+`moy-play` built.)
 
 What `moy new` made:
 
@@ -646,7 +648,7 @@ The short list of things that catch everyone exactly once.
 
 - `examples/brick_siege.moy` — a complete game in core only, heavily commented,
   written to be read.
-- `examples/verbs.moy` — one screen per verb group. `moy run examples/verbs.moy`
+- `examples/verbs.moy` — one screen per verb group. `moy play examples/verbs.moy`
   is the fastest way to see what each verb actually draws.
 - `moy-api.lua` — every verb with its signature, in your editor.
 - **SPEC.md** — the exact answer to anything above. §6, §7 and §9 are the verb

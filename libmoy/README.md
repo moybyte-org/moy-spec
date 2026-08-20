@@ -124,9 +124,13 @@ make lowres         # a declared 160x120 canvas really is 19,200 bytes
 make test           # all of the above that does not need SDL2
 ```
 
-`moy-play mygame.moy` is a playable console in about 250 lines
-(`port/sdl2/main.c`), and that file is the porting layer as a worked example
-rather than a description. What a platform owes libmoy is four things:
+`moy-play mygame.moy` is a playable console in under three hundred lines
+(`port/sdl2/main.c`, down to the "hot reload" comment), and that file is the
+porting layer as a worked example rather than a description. Everything past
+that comment is dev-loop convenience: `moy-play --watch mygame.moy` rebuilds
+the Lua state whenever the cart's bytes change, which is what `moy play` runs.
+It is opt-in, so the default is still a console -- and a platform owes the
+console none of it. What a platform owes libmoy is four things:
 
 | | |
 |---|---|
@@ -147,7 +151,7 @@ about what has and has not been run on hardware.
 
 `port/wasm/` is the third one, and it is the spec's own web player: libmoy plus
 Lua through emscripten, under 350 KB of static files, built into `runner/` and
-served by `moy.py run`. It replaced a MicroPython-WASM build of the reference console that
+served by `moy.py web`. It replaced a MicroPython-WASM build of the reference console that
 was three times the size and had to carry a second raster in JavaScript, because
 a Python VM cannot fill 76,800 pixels a frame and this can.
 

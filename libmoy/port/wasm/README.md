@@ -6,7 +6,7 @@ supplying a canvas, a keyboard, an AudioContext and localStorage. Same shape as
 console underneath, byte for byte, as an ESP32 links.
 
 ```
-./build.sh                 # -> ../../../runner (what moy.py run serves)
+./build.sh                 # -> ../../../runner (what moy.py web serves)
 ./build.sh /tmp/out        # somewhere else
 EMSDK=~/emsdk ./build.sh   # if emcc is not on PATH
 ```

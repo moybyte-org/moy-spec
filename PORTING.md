@@ -31,7 +31,9 @@ verb table, the Lua binding with §4.1's sandbox already enforced, and the §8
 synthesizer as an optional module. Three ports ship with it — SDL2 desktop,
 ESP-IDF component, WebAssembly — and `port/sdl2/main.c` is a complete playable
 console in a couple of hundred lines, written to be read as the worked example
-of a porting layer.
+of a porting layer. Read it down to its `hot reload` comment and stop there:
+above that line is what a platform owes the console, and below it is an opt-in
+file watcher for whoever is writing the cart, which yours will not want.
 
 This is the recommended route, and adopting moy this way should cost you a shim
 rather than a project. `libmoy/README.md` is its own documentation.

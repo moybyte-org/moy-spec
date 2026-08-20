@@ -30,7 +30,7 @@ hand rather than the source it came from, which is worth catching: that edit
 survives exactly until the next rebuild silently reverts it.
 
 It is checked in, deliberately. The README promises Python and a browser and
-nothing else, and a `moy.py run` that needed a 1 GB toolchain on first use
+nothing else, and a `moy.py web` that needed a 1 GB toolchain on first use
 would not be that.
 
 ## Why it is not the reference console

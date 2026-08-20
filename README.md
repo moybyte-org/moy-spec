@@ -37,7 +37,7 @@ also runs as `python3 moy.py …` — Python 3.8+ and nothing else.
 ```
 moy demo                 # fetch Celeste Classic, port it, play it natively
 moy new mygame           # scaffold your own cart: manifest, Lua, editor stubs
-moy run mygame.moy       # play it in your browser, restarting as you save
+moy play mygame.moy      # play it in a window, restarting as you save
 ```
 
 **Start with `moy demo`.** There is nothing to set up first, and what it hands
@@ -45,8 +45,9 @@ back is a real PICO-8 game running as a moy cart seconds after you asked for
 it — the quickest way to see what this is. `moy port cart.p8` does the same for
 any cart you have.
 
-Then your own. `moy run` opens the browser, and editing `mygame.moy/main.lua`
-in your own editor restarts the game in under a second. Your art tools already
+Then your own. `moy play` opens a window, and editing `mygame.moy/main.lua`
+in your own editor restarts the game in under a second — `moy web` is the same
+loop through the browser player, when you want devtools. Your art tools already
 work — the sheet round-trips through indexed PNG and the tilemap through CSV.
 `moy export` turns the cart into static files you can host anywhere, itch.io
 included, and `moy check` tells you before you ship what the tightest console

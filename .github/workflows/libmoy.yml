@@ -92,7 +92,7 @@ jobs:
           make play
         working-directory: libmoy
 
-      # runner/ is a build artifact that is CHECKED IN, so `moy.py run` needs
+      # runner/ is a build artifact that is CHECKED IN, so `moy.py web` needs
       # only Python and a browser. A checked-in artifact drifts from its source
       # silently -- someone edits player.js inside runner/ to try something, it
       # works, it ships, and the next rebuild reverts it without a word. These
