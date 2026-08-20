@@ -10,7 +10,7 @@ no per-device binary.
 
 - **[SPEC.md](SPEC.md)** — the console: raster, palette, verb table, cart format
 - **[GUIDE.md](GUIDE.md)** — writing games: a first cart, then a handbook
-- **[PORTING.md](PORTING.md)** — running carts on your own hardware, in the order to build it
+- **[PORTING.md](PORTING.md)** — running carts on your own hardware, in order
 - **[RATIONALE.md](RATIONALE.md)** — why each number is what it is
 
 Status: **draft 0.2, unstable.** Names and values will still move.
@@ -116,10 +116,9 @@ is what CI runs on them: it holds the prose to the things that generate its fact
 — because each of those had gone stale in three or four files at once. Its
 docstring is also where the rule lives for when a number belongs in prose at all.
 
-If you are building a console, the last section of [PORTING.md](PORTING.md)
-names the values most likely to be wrong for hardware this project has not
-seen. Saying so in an issue is worth more than a patch: a spec only one device
-can implement has failed.
+If you are building a console, [PORTING.md](PORTING.md) ends by naming the
+three numbers most likely not to fit your board. Telling us in an issue is
+worth more than any patch you could send.
 
 If you have shipped games: everything in §6.1, and anything that made you
 think "that would be annoying to write against."

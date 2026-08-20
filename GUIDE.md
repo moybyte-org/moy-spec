@@ -378,8 +378,8 @@ closed at those three (§1), so a host can pick its scaler ahead of time.
 `view(w, h)` is the runtime cousin: it declares that you only use a centred
 region, which lets a console with a bigger screen blow that region up instead of
 letterboxing it. `background(c)` declares a backdrop rather than clearing to one
-every frame. Both always work; what varies is how much a given console can do
-with them, which is why neither needs a `~= nil` guard (§6).
+every frame. Both always work everywhere; consoles differ only in how much they
+make of them, which is §6's reason for keeping them core and ungarded.
 
 Your cart never learns the physical resolution of the glass, and should never
 try to.
@@ -405,7 +405,8 @@ it at draw time.
 ### Sprites
 
 The sheet is 512 tiles of 8 × 8, sixteen to a row, and it is a text file of hex
-nibbles. Tile `n` sits at `((n % 16) * 8, (n // 16) * 8)`.
+nibbles. §3.2 has the arithmetic that turns a tile id into a position on it —
+worth knowing if you generate art, and ignorable if you draw it.
 
 Use your own art tool:
 
@@ -535,8 +536,8 @@ One full-screen layer is guaranteed by the memory floor (§1.1), so the first
 ordinary allocation failure to test for — not a missing verb to guard against.
 Draw a wide level once, window-copy it per frame.
 
-A layer's draw state is its own; setting `camera` on a layer does not move the
-screen's.
+A layer carries its own draw state, so whatever you point its camera at, the
+screen's stays where you left it.
 
 ### Staying inside the console
 
@@ -615,8 +616,14 @@ The short list of things that catch everyone exactly once.
    own sheet (§6).
 5. **`W` and `H`, never 320 and 240.** The moment a cart declares a canvas, the
    constants are wrong and the reads still work.
-6. **`camera` returns the previous offset**, so save and restore is
-   `local px, py = camera(x, y)` … `camera(px, py)` — no shadow variable needed.
+6. **`camera` returns the previous offset**, so save-and-restore needs no
+   variable of your own:
+
+   ```lua
+   local ox, oy = camera(x, y)
+   -- draw in world space
+   camera(ox, oy)
+   ```
 7. **`clip` is screen space and applies after `camera`.** Clipping in world
    coordinates is a bug that passes both features tested separately.
 8. **Reset `pal` and `palt` before your HUD.** They are global draw state and

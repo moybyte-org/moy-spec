@@ -47,12 +47,12 @@ for you. Route A implementers should still read **the conformance section**,
 **[PURR OS](https://github.com/PastorCatto/PURR-OS-ESP32) took this route**, and
 it is worth reading before you start. It runs moy as an app on ESP32 hardware
 with its own raster, its own cart loader and its own Lua binding — none of it
-libmoy — written against core 0.1. Its platform binding is around two hundred
-lines, which is the claim this document keeps making, made by somebody who did
-not write the spec: **the console is the part you link or copy, and the platform
-is a shim.** It is also the only host this project knows of that shares no code
-with this repository, which makes anything it agrees with worth more than
-another agreement from inside.
+libmoy, and written against the spec as it stood at 0.1. Its platform binding
+is around two hundred lines, which is the claim this document keeps making,
+made by somebody who did not write the spec: **the console is the part you link
+or copy, and the platform is a shim.** It is also the only host this project
+knows of that shares no code with this repository, which makes anything it
+agrees with worth more than another agreement from inside.
 
 ---
 
@@ -114,10 +114,10 @@ they are not symmetric:
 | an `"icon"` out of range or past the sheet | **ignore it** and choose your own (§3.4) |
 | a map larger than the format allows | **reject it** rather than allocating past your budget (§3.3) |
 
-The line: **capability fields refuse, cosmetic fields degrade.** A cart with a
-bad icon is still a good cart. A cart needing a radio you do not have is not
-one you can run, and finding that out halfway through a frame is the failure
-this format exists to prevent.
+The line, in §3.4's words, is that capability fields refuse and cosmetic ones
+degrade. An icon you cannot draw costs the player nothing; a capability you do
+not have costs them a crash halfway through a frame, which is the failure this
+format exists to prevent.
 
 Refuse *cleanly* — tell the user which cart, and which requirement. A crash is
 not a refusal.
@@ -141,9 +141,9 @@ it vendors Lua privately for the cart app and leaves `liolib.c`, `loslib.c` and
 `loadlib.c` out of the build, so a bug in its sandbox setup has nothing to
 reach.
 
-Build Lua with `LUA_32BITS` (§4.2). A 64-bit build still conforms — it is
-strictly more precise — but it drifts from the reference in the last digits of
-any float, so its frames are not golden.
+Build Lua with `LUA_32BITS` (§4.2). Nothing stops you shipping a 64-bit build,
+and §4.2 says why it still conforms — but its floats diverge from the
+reference's in the last digits, so frames captured from it are not golden.
 
 Then write a must-fail test: a cart that reaches for `io` has to fail to load,
 on every conforming host. The suite does not check this for you (see below), so
@@ -206,9 +206,9 @@ error.
 §1.1 states the floor as a table of allocations and a total, and it is a
 **floor, not a target**. Three things about it are worth reading twice:
 
-- **The kind of RAM is unspecified.** Internal SRAM, PSRAM, any mix. If your
-  update and drawing verbs hold the tick rate against it, it counts. That makes
-  the floor trivial on a board with PSRAM and binding only on single-die parts.
+- **The kind of RAM is unspecified.** Internal SRAM, PSRAM, any mix; §1.1's only
+  test is whether your tick survives it. That makes the floor trivial on a board
+  with PSRAM and binding only on single-die parts.
 - **"However you like" includes shutting things down.** A game mode that
   suspends other subsystems while a cart runs is a perfectly good way to free
   the budget.
@@ -247,13 +247,14 @@ python3 conformance/run.py --player "./build/yourplayer --headless --dump {out} 
 ```
 
 The runner substitutes `{cart}` and `{out}` and invokes your command once per
-scene. Write **either** a raw 76800-byte framebuffer dump (one byte per pixel,
-row-major from the top-left) **or** an 8-bit indexed PNG. The raw form exists so
-that a firmware implementation needs no image library at all — a single `fwrite`
-of your framebuffer is a conforming adapter.
+scene. `conformance/README.md` specifies the two frame formats it will accept
+and the exact byte layout of each; the thing to know before you read it is that
+one of them is your framebuffer written out verbatim, so a firmware port owes
+the suite a single `fwrite` and no image codec whatsoever.
 
-Every scene is a static frame, so it does not matter which frame you capture.
-No scene uses `rnd`, `time` or input.
+Nothing in a scene moves, and nothing reads a clock, a random number or a
+button — so your capture can be any frame you like, and a headless build with a
+frame counter is a perfectly good adapter.
 
 There are **two** suites and you need both:
 
@@ -265,20 +266,20 @@ There are **two** suites and you need both:
 `conformance/run.py --diff out/` writes difference frames for whatever failed,
 which is how you find the one row you are wrapping.
 
-The §6.1 verbs (`tri`, `trib`, `sspr`, `tline`) appear in provisional scenes
-that are reported but not counted. They are not part of core 0.2 and you are
-not required to implement them — but they are where a real board was caught
-disagreeing by thousands of pixels, so if you do implement them, run those
-scenes.
+The §6.1 verbs (`tri`, `trib`, `sspr`, `tline`) get scenes of their own, printed
+with a verdict but left out of the count (§11). They are not part of core 0.2
+and nobody is asking you for them — but that is where a real board was caught
+disagreeing by thousands of pixels, so run them if you implement them.
 
 ### What the suite does not cover
 
 Three gaps, stated plainly so you do not mistake a green run for a full one:
 
 1. **The §4.1 sandbox.** No scene reaches for `io`, so a player passes
-   everything with its sandbox wide open. Testing it means asserting that a
-   cart *fails*, which is a different protocol from "write me a frame". Write
-   that test yourself; this repository does it for its C core in CI.
+   everything here with its sandbox wide open. The suite asks players for
+   frames, and a correctly refused cart produces none — so checking the ceiling
+   needs a runner that can demand a failure, which has not been designed.
+   Write that test yourself; this repository does it for its C core in CI.
 2. **Audio**, by design (§8.3).
 3. **Anything about your device** — thermals, battery, how it behaves when the
    SD card is pulled. Nobody else can test those.
@@ -294,22 +295,21 @@ evidence nobody here can generate.**
 
 ## Extensions: adding your own without forking core
 
-Consoles will do more than core, and that is expected. A scripting layer, a
-document format, a radio, a second cart language, a windowing shell — none of
-those cost you anything, provided they are **extensions** (§10) rather than
-edits.
+Consoles will do more than core, and that is expected — a shell, a radio, an
+authoring format, a second cart language. None of that costs you anything,
+provided it arrives as an **extension** (§10) rather than as an edit.
 
-The one rule: an extension must not redefine anything core already covers.
-Where your implementation and core disagree about something core specifies,
-your implementation is what changes. Core is a subset of every conforming
-console, never a dialect of one.
+§10 states the single rule, and it is worth reading there rather than
+paraphrased here: your additions may not reach into territory core has already
+settled, and when the two disagree it is your console that gives way. That is
+what lets a cart author treat core as a floor everywhere instead of as your
+console's particular dialect.
 
-The mechanism is a manifest declaration, and it is currently **empty** — every
-candidate so far turned out to be something a console could either afford or
-fake convincingly, and both of those belong in core. What is left for an
-extension is hardware a cart cannot paper over. §10 has the test; apply it
-before you reach for the mechanism, because a verb whose absence can be hidden
-from a cart should not be declared at all.
+The mechanism is a manifest declaration, and the register of standard
+extensions is **empty** — the README explains why every candidate so far
+collapsed back into core. Apply §10's test before you reach for the mechanism:
+if a cart can be shielded from the absence of your feature, declaring it buys
+the author nothing and costs them every console that lacks it.
 
 A cart may also use your extension *opportunistically* — check the verb exists,
 declare nothing — which means your extra capabilities can light up on your
@@ -372,10 +372,10 @@ Before you claim conformance:
 
 Say so, in an issue, with the board.
 
-The values most likely to be wrong for hardware this project has not seen are
+Three numbers are the likeliest to be wrong on a board nobody here has held:
 the **memory floor** (§1.1), the **button set** (§7.3) and the **raster** (§1).
-They were chosen from a small sample of ESP32-class devices, and a spec only
-one device can implement has failed at the only thing it was for.
+All three were picked from a small sample of ESP32-class devices, and a spec
+that only its author's hardware can implement has failed at the one job it had.
 
 That is the most valuable thing a second implementer can contribute, and it is
 worth more than a patch.
