@@ -716,7 +716,7 @@ def _player_uncopied():
 
 
 def _player_stale(pin):
-    """Commits that landed in libmoy after the shipped player was built.
+    """Is the committed bundle built from the source in this tree?
 
     The stamp proves runner/ is INTACT. It cannot prove runner/ is CURRENT, and
     that is the failure that actually shipped: `make_layer` became a core global
@@ -726,24 +726,50 @@ def _player_stale(pin):
     because no scene uses a layer, and examples/verbs.moy is looked at rather
     than diffed, so the one thing that exercised it was a person.
 
-    Returns [] when current, None when unknowable (a release binary, a shallow
-    clone, no git) -- never a guess.
+    The verdict comes from a DIGEST of the compiled inputs, not from the stamp's
+    commit. Two reasons, both of them things that already happened here: the
+    commit can be written without a build (three commits refreshed it while the
+    wasm stayed byte-identical), and reading it needs history that CI does not
+    have -- checkout is shallow, so a commit-based check could not see far
+    enough to fire in the one place it mattered most.
+
+    Returns False when current, a reason when stale, None when unknowable (a
+    release binary, or a tree with no libmoy sources) -- never a guess.
     """
+    want = pin.get("inputs_sha256")
+    try:
+        sys.path.insert(0, os.path.join(HERE, "libmoy", "port", "wasm"))
+        import inputs as _inputs
+        have = _inputs.digest(HERE)
+    except (ImportError, OSError):
+        return None                     # no sources here: a release binary
+    if not want:
+        return ("this bundle predates the inputs digest, so it cannot say what "
+                "it was built from")
+    if want != have:
+        return ("built from different sources (stamp %s, this tree %s)"
+                % (want[:12], have[:12]))
+    return False
+
+
+def _player_since(pin):
+    """Commits touching the player's sources since the stamp -- colour, not the
+    verdict. Absent in a shallow clone, which is why it is not the verdict."""
     built = (pin.get("source") or {}).get("commit")
     if FROZEN or not built:
-        return None
+        return []
     import subprocess
     try:
         run = lambda *a: subprocess.run(a, cwd=HERE, capture_output=True,
                                         text=True, timeout=20)
         if run("git", "cat-file", "-e", built + "^{commit}").returncode != 0:
-            return None          # not in this clone -- shallow, or a fork
+            return []
         out = run("git", "log", "--format=%h %s", built + "..HEAD", "--",
                   *WASM_INPUTS)
         if out.returncode != 0:
-            return None
+            return []
     except (OSError, subprocess.SubprocessError):
-        return None
+        return []
     return [ln for ln in out.stdout.splitlines() if ln.strip()]
 
 
@@ -868,23 +894,20 @@ def cmd_player(args):
         print("  BEHIND SOURCE  %s differs from libmoy/port/wasm/page/%s" % (f, f))
     stale = _player_stale(pin)
     if stale is None:
-        print("  currency    not checkable here (no git, or a release build)")
+        print("  currency    not checkable (no libmoy sources beside this)")
     elif stale:
         print("")
-        print("  STALE: %d libmoy commit%s landed after this bundle was built."
-              % (len(stale), "" if len(stale) == 1 else "s"))
-        for ln in stale[:8]:
+        print("  STALE: %s." % stale)
+        for ln in _player_since(pin)[:8]:
             print("    %s" % ln)
-        if len(stale) > 8:
-            print("    ... and %d more" % (len(stale) - 8))
-        print("  The browser player is missing whatever they changed -- and it"
-              " is what")
-        print("  the website serves, what `%s export` ships, and SPEC.md 11's"
+        print("  The browser player is missing whatever changed -- and it is"
+              " what the")
+        print("  website serves, what `%s export` ships, and SPEC.md 11's"
               " tiebreaker." % PROG)
         print("  Rebuild it: `%s player --build` (needs emscripten), then"
               " commit the diff." % PROG)
     else:
-        print("  currency    up to date with libmoy")
+        print("  currency    built from the source in this tree")
     if bad or stale or uncopied:
         sys.exit(1)
 

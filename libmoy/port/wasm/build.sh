@@ -79,12 +79,17 @@ cp "${HERE}/page/player.js"  "${OUT}/player.js"
 # reads it, and a mismatch means someone edited the bundle by hand instead of
 # the source it came from -- which is the failure worth catching, because the
 # edit would survive right up until the next rebuild silently reverted it.
+# The dirty flag excludes OUT, because OUT is what this script just wrote: asking
+# git about the whole tree here made every stamp ever produced say "dirty", which
+# is the same as saying nothing.
+REL_OUT="$(python3 -c 'import os,sys; print(os.path.relpath(sys.argv[1], sys.argv[2]))' "${OUT}" "${SPEC}")"
 python3 - "${OUT}" "$(cd "${SPEC}" && git rev-parse HEAD 2>/dev/null || echo '')" \
           "$(cd "${SPEC}" && git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '')" \
-          "$(cd "${SPEC}" && git status --porcelain 2>/dev/null | head -c1)" \
-          "$(emcc -dumpversion 2>/dev/null || echo '?')" <<'PY'
+          "$(cd "${SPEC}" && git status --porcelain -- . ":(exclude)${REL_OUT}" 2>/dev/null | head -c1)" \
+          "$(emcc -dumpversion 2>/dev/null || echo '?')" \
+          "$(python3 "${HERE}/inputs.py" "${SPEC}")" <<'PY'
 import hashlib, json, os, sys
-out, commit, branch, dirty, emcc = sys.argv[1:6]
+out, commit, branch, dirty, emcc, inputs = sys.argv[1:7]
 skip = {"VERSION", "BUILD.md", "THIRD_PARTY.md", "LICENSE.txt"}
 files = {}
 for name in sorted(os.listdir(out)):
@@ -98,6 +103,8 @@ stamp = {
     "bundle": "moy web player (libmoy/port/wasm)",
     "source": {"commit": commit, "branch": branch, "dirty": bool(dirty)},
     "toolchain": "emscripten " + emcc,
+    # What it was compiled FROM, recomputable without git (inputs.py).
+    "inputs_sha256": inputs,
     "files": files,
 }
 with open(os.path.join(out, "VERSION"), "w", encoding="utf-8", newline="\n") as f:
