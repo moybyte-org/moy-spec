@@ -99,13 +99,15 @@ tiers 1–2 serve it):
   "transports": ["msc", "serial", "http"],
   "cart_root": "carts",
   "free_kb": 1932,
-  "extensions": ["layers"]
+  "extensions": ["espnow"]
 }
 ```
 
 `transports` lets `moy push` say what it found and pick the fastest;
 `extensions` lets it warn before pushing a cart the console will refuse
-(SPEC.md 10).
+(SPEC.md 10). Core declares no standard extensions, so every name in that
+list is a vendor one — the example is a radio, which is the shape of thing
+SPEC.md 10 keeps the mechanism for.
 
 ## The tool
 
