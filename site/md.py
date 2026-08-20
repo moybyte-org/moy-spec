@@ -173,6 +173,22 @@ def cells(row):
     return [c.strip() for c in out]
 
 
+TASK = re.compile(r"^\[([ xX])\]\s+")
+
+
+def list_item(text, ctx):
+    """One <li>, honouring GitHub's task-list syntax.
+
+    A checklist is a checklist wherever it is read, and rendering it as the
+    literal characters "[ ]" reads as a typo rather than as a box."""
+    m = TASK.match(text)
+    if not m:
+        return "<li>%s</li>" % inline(text, ctx)
+    checked = " checked" if m.group(1) != " " else ""
+    return ('<li class="task"><input type="checkbox" disabled%s> %s</li>'
+            % (checked, inline(text[m.end():], ctx)))
+
+
 def render(text, ctx):
     lines = text.replace("\r\n", "\n").expandtabs(4).split("\n")
     out, toc, sections, title = [], [], {}, ""
@@ -300,8 +316,7 @@ def render(text, ctx):
             tag = "ol" if ordered else "ul"
             attr = ' start="%s"' % start if ordered and start != "1" else ""
             out.append("<%s%s>%s</%s>"
-                       % (tag, attr,
-                          "".join("<li>%s</li>" % inline(it, ctx) for it in items),
+                       % (tag, attr, "".join(list_item(it, ctx) for it in items),
                           tag))
             continue
 

@@ -9,6 +9,8 @@ sound bank. You hand it to a console and it plays. No install, no build step,
 no per-device binary.
 
 - **[SPEC.md](SPEC.md)** — the console: raster, palette, verb table, cart format
+- **[GUIDE.md](GUIDE.md)** — writing games: a first cart, then a handbook
+- **[PORTING.md](PORTING.md)** — running carts on your own hardware, in the order to build it
 - **[RATIONALE.md](RATIONALE.md)** — why each number is what it is
 
 Status: **draft 0.2, unstable.** Names and values will still move.
@@ -25,71 +27,43 @@ Status: **draft 0.2, unstable.** Names and values will still move.
   same pair, `moy` and `moy-play`. The macOS build is Apple Silicon and
   unsigned — first run is right-click → Open.
 
-`moy play mygame.moy` runs a cart in the native player (`moy-play`, found
-beside `moy`, sound and all); `moy run mygame.moy` is the dev loop — the
-browser player, with hot reload.
-
 No Python, no install. From a checkout of this repository, every command below
 also runs as `python3 moy.py …` — Python 3.8+ and nothing else.
 
-## Write a game
+## Which are you?
+
+### Writing a game → **[GUIDE.md](GUIDE.md)**
 
 ```
 moy new mygame
 moy run mygame.moy
 ```
 
-Your browser opens with the game running. Edit `mygame.moy/main.lua` in your
-own editor and save — the game restarts in under a second. The scaffold
-includes `moy-api.lua`, which Lua language servers (VS Code's Lua extension)
-read for autocomplete and hover docs on every verb.
+Your browser opens with the game running; edit `mygame.moy/main.lua` in your
+own editor and save, and it restarts in under a second. Your art tools already
+work — the sheet round-trips through indexed PNG and the tilemap through CSV.
+`moy export` turns the cart into static files you can host anywhere, itch.io
+included, and `moy check` tells you before you ship what the tightest console
+would refuse.
 
-Your own art tools already work: `moy gfx mygame.moy` round-trips the sprite
-sheet through an indexed PNG (Aseprite, GIMP, Piskel), and `moy map` does the
-same for the tilemap through CSV (Tiled). Before you ship, `moy check
-mygame.moy` tells you what the *strictest* console would say — a sandbox
-reach, an extension no host implements, a blown budget — before it surfaces on
-somebody else's handheld.
+[GUIDE.md](GUIDE.md) builds a complete small game from nothing, then covers
+each topic in turn — art, audio, saving, budgets, and the dozen things that
+catch everyone once.
 
-```
-moy export mygame.moy
-```
+Coming from PICO-8? `moy demo` fetches Celeste Classic, ports it and plays it
+in one command; `moy port cart.p8` does the same for any cart.
 
-turns the cart into a folder of static files that boots straight into your
-game. Host it anywhere — zipped and uploaded to itch.io as an HTML5 game, it
-works as-is.
+### Building a console → **[PORTING.md](PORTING.md)**
 
-[examples/verbs.moy](examples/verbs.moy) walks every verb, one screen per
-group: `moy run examples/verbs.moy`.
+Link [`libmoy/`](libmoy/) — the console as dependency-free C99, sandboxed Lua
+binding included — or implement the spec yourself in whatever language your
+firmware speaks. Either way `conformance/` proves it, and it is reachable on
+your first day: every scene ships as a flat verb trace, so a rasterizer can be
+checked long before there is a cart loader or a VM.
 
-## Put it on a console
-
-```
-moy push mygame.moy
-```
-
-finds a connected console and copies the cart over;
-[proposals/sideload.md](proposals/sideload.md) is how a console makes itself
-findable. An SD card in a reader works today:
-`moy push mygame.moy --to /path/to/card`.
-
-## Coming from PICO-8
-
-```
-moy demo
-```
-
-fetches Celeste Classic, ports it, and runs it in your browser. One command,
-nothing to set up first — the quickest way to see what this is.
-
-`moy port cart.p8` does that for any cart: assets near-verbatim (the palette's
-first 16 colours are PICO-8's), code mechanically ported to Lua 5.4 under a
-compat shim. A port declares `"canvas": "128x128"` (SPEC.md 3.1) and draws
-native p8 pixels — the host owns the scaling; `--zoom` adds the
-`view(128, 120)` hint (`moy demo --zoom` as well) so a 4:3 host fills its
-height at 2×, at the cost of the eight centered edge rows on hosts that honor
-it. Ports of BBS carts are personal/dev material — their default license is
-CC BY-NC-SA.
+[PORTING.md](PORTING.md) is the order to build things in, what to refuse
+versus ignore versus degrade, how to run the suite against your build, and the
+conformance checklist.
 
 ## Why this exists
 
@@ -122,7 +96,9 @@ never fire. What is left for an extension is hardware a cart cannot paper over
 | [libmoy/](libmoy/) | the console as a C99 library — no dependencies, no allocation, §4.1-sandboxed Lua binding, and three ports: SDL2 desktop, ESP-IDF component, WebAssembly |
 | [runner/](runner/) | the web player: libmoy compiled to WebAssembly, under 350 KB of static files, built by `libmoy/port/wasm` |
 | [conformance/](conformance/) | the suite that keeps them honest — one scene per area, each a real cart with a golden frame, and a runner that takes any player. Five builds render every scene pixel-identically, an ESP32-P4 over serial among them — but all five descend from one raster, and its README is candid about what that costs |
+| [examples/](examples/) | `brick_siege.moy`, a complete game in core only, written to be read; `verbs.moy`, one screen per verb group |
 | [moybyte](https://github.com/moybyte-org/moybyte) | the reference implementation: a PC simulator and two ESP32 handhelds |
+| [PURR OS](https://github.com/PastorCatto/PURR-OS-ESP32) | an ESP32 operating system that runs carts from a hand-written console — its own raster, cart loader and Lua binding, no libmoy. The first host outside this repository, and the only one that shares no code with it |
 | [proposals/](proposals/) | drafts on top of core: single-file carts (`moy pack`), compiled carts (WASM), sideload, the p8/TIC-80 verb gaps |
 | [THIRD_PARTY.md](THIRD_PARTY.md) | attribution that travels with the normative data files |
 
@@ -140,11 +116,10 @@ is what CI runs on them: it holds the prose to the things that generate its fact
 — because each of those had gone stale in three or four files at once. Its
 docstring is also where the rule lives for when a number belongs in prose at all.
 
-If you are building a console: the numbers most likely to be wrong for you
-are the **memory floor** (§1.1), the **button set** (§7.3) and the **raster**
-(§1). They were chosen from a small sample of ESP32-class hardware — say so
-in an issue if they do not fit yours; a spec only one device can implement
-has failed.
+If you are building a console, the last section of [PORTING.md](PORTING.md)
+names the values most likely to be wrong for hardware this project has not
+seen. Saying so in an issue is worth more than a patch: a spec only one device
+can implement has failed.
 
 If you have shipped games: everything in §6.1, and anything that made you
 think "that would be annoying to write against."

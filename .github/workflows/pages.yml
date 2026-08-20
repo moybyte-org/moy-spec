@@ -45,7 +45,8 @@ jobs:
       - name: Check what was built
         run: |
           set -eu
-          for f in index.html spec.html rationale.html third-party.html \
+          for f in index.html guide.html porting.html spec.html \
+                   rationale.html third-party.html \
                    style.css palette.json font.bin \
                    play/index.html play/carts.json \
                    verbs/index.html verbs/carts.json \

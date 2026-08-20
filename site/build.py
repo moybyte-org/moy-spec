@@ -57,6 +57,12 @@ PAGES = {
     "SPEC.md": ("spec.html", "Spec",
                 "moy {core} -- the portable console spec: raster, palette, "
                 "verb table and cart format."),
+    "GUIDE.md": ("guide.html", "Guide",
+                 "Writing games for moy: a first cart, then a handbook -- art, "
+                 "audio, saving, budgets and the gotchas."),
+    "PORTING.md": ("porting.html", "Porting",
+                   "Running moy carts on your own hardware: what to build, in "
+                   "what order, what to refuse, and how to prove it."),
     "RATIONALE.md": ("rationale.html", "Rationale",
                      "Why each fixed number in the moy console spec is what it is."),
     "THIRD_PARTY.md": ("third-party.html", "Third party",
@@ -67,7 +73,8 @@ PAGES = {
                               "Third-party components inside the compiled moy web player."),
 }
 
-NAV = [("index.html", "Home"), ("spec.html", "Spec"),
+NAV = [("index.html", "Home"), ("guide.html", "Guide"),
+       ("porting.html", "Porting"), ("spec.html", "Spec"),
        ("rationale.html", "Rationale"), ("index.html#play", "Play")]
 
 

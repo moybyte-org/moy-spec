@@ -243,6 +243,9 @@ ol.swatches li:hover b { opacity: 1; }
 .doc p { margin: 0 0 1.05rem; }
 .doc ul, .doc ol { margin: 0 0 1.05rem; padding-left: 1.4rem; }
 .doc li { margin: .35rem 0; }
+/* Task lists (PORTING.md's conformance checklist) carry their own marker. */
+.doc li.task { list-style: none; margin-left: -1.4rem; }
+.doc li.task input { margin-right: .45rem; accent-color: var(--accent); }
 .doc li::marker { color: var(--muted); }
 .doc hr { margin: 2.4rem 0; border: 0; border-top: 1px solid var(--line); }
 /* the documents put a rule before most h2s; one line, not two */
