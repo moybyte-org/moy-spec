@@ -349,8 +349,9 @@ int main(int argc, char **argv)
     char fps_s[16] = "30", canvas_s[16] = "320x240", err[512];
     char *manifest, *source;
     const char *cart = NULL;
-    int i, scale = 3, fullscreen = 0, fps, frame_ms, cw, ch;
+    int i, scale = 0, fullscreen = 0, fps, frame_ms, cw, ch;
     int watch = 0, live = 1, arate = 0;
+    int lw, lh;              /* the renderer's logical size, as last set */
     uint64_t stamp;
     uint32_t last, checked;
 
@@ -477,6 +478,22 @@ int main(int argc, char **argv)
         }
     }
 
+    if (scale < 1) {
+        /* A fixed default scales the CANVAS and not the window, which means a
+         * 320x240 cart opens at a sensible size and a 128x128 one opens tiny
+         * -- the smaller the console a cart asked for, the smaller its window,
+         * which is backwards. Aim at about two thirds of the desktop height
+         * instead, so every canvas arrives about the same size on the glass.
+         * Integer, because SPEC.md 1 asks for integer scaling and this is a
+         * pixel console. */
+        SDL_DisplayMode dm;
+        scale = 3;
+        if (SDL_GetDesktopDisplayMode(0, &dm) == 0 && dm.h > 0) {
+            int s = (dm.h * 2 / 3) / ch;
+            scale = s < 2 ? 2 : (s > 8 ? 8 : s);
+        }
+    }
+
     win = SDL_CreateWindow(title, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                            cw * scale, ch * scale,
                            fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
@@ -494,7 +511,8 @@ int main(int argc, char **argv)
     }
     /* SPEC.md 1: a host whose glass does not match the canvas scales and/or
      * letterboxes, and integer scaling is recommended. SDL does both for us. */
-    SDL_RenderSetLogicalSize(ren, cw, ch);
+    lw = cw; lh = ch;
+    SDL_RenderSetLogicalSize(ren, lw, lh);
     SDL_RenderSetIntegerScale(ren, SDL_TRUE);
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "nearest");
     tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888,
@@ -586,7 +604,8 @@ int main(int argc, char **argv)
                             SDL_DestroyTexture(tex);
                             tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888,
                                                     SDL_TEXTUREACCESS_STREAMING, cw, ch);
-                            SDL_RenderSetLogicalSize(ren, cw, ch);
+                            lw = cw; lh = ch;
+                            SDL_RenderSetLogicalSize(ren, lw, lh);
                         }
                         memset(sheet_pix, 0, sizeof sheet_pix);
                         load_sheet(cart);
@@ -678,27 +697,34 @@ int main(int argc, char **argv)
         if (host.view_w > 0 && host.view_h > 0
             && (host.view_w < cw || host.view_h < ch)) {
             /* SPEC.md 6 view: present the CENTERED region the cart declared,
-             * at the largest integer scale that fits -- which is how
-             * a converted 128x128 cart fills the window instead of sitting in
-             * a letterbox. The scale is integer on purpose: this is a pixel
-             * console, and a fractional one would resample its art. */
-            SDL_Rect src, dst;
-            int ww, wh, sx, sy, sc;
-            SDL_GetRendererOutputSize(ren, &ww, &wh);
-            sx = ww / host.view_w;
-            sy = wh / host.view_h;
-            sc = sx < sy ? sx : sy;
-            if (sc < 1) sc = 1;
+             * at the largest integer scale that fits -- which is how a
+             * converted 128x128 cart fills the glass instead of sitting in a
+             * letterbox.
+             *
+             * The region becomes the renderer's LOGICAL SIZE, and SDL does the
+             * scaling it is already doing for the canvas. The arithmetic that
+             * used to be here built a destination rect out of
+             * SDL_GetRendererOutputSize -- window pixels -- and handed it to
+             * SDL_RenderCopy, whose rects are in LOGICAL units whenever a
+             * logical size is set. So the destination was multiplied by the
+             * canvas scale a second time and the window showed the top-left
+             * corner of the game, magnified. Integer scaling is already on
+             * (below), which is the property that arithmetic was for. */
+            SDL_Rect src;
             src.x = (cw - host.view_w) / 2;
             src.y = (ch - host.view_h) / 2;
             src.w = host.view_w;
             src.h = host.view_h;
-            dst.w = host.view_w * sc;
-            dst.h = host.view_h * sc;
-            dst.x = (ww - dst.w) / 2;
-            dst.y = (wh - dst.h) / 2;
-            SDL_RenderCopy(ren, tex, &src, &dst);
+            if (lw != host.view_w || lh != host.view_h) {
+                lw = host.view_w; lh = host.view_h;
+                SDL_RenderSetLogicalSize(ren, lw, lh);
+            }
+            SDL_RenderCopy(ren, tex, &src, NULL);
         } else {
+            if (lw != cw || lh != ch) {
+                lw = cw; lh = ch;
+                SDL_RenderSetLogicalSize(ren, lw, lh);
+            }
             SDL_RenderCopy(ren, tex, NULL, NULL);
         }
         SDL_RenderPresent(ren);

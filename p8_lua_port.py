@@ -753,10 +753,14 @@ def parse_zoom(argv):
     if "--zoom" not in argv:
         return (0, 0)
     i = argv.index("--zoom")
-    spec = argv[i + 1] if i + 1 < len(argv) and not argv[i + 1].startswith("--") else ""
-    if "," not in spec:
+    nxt = argv[i + 1] if i + 1 < len(argv) else ""
+    # Only a literal T,B counts as the spec. Anything else after --zoom is
+    # somebody else's argument -- `port --zoom cart.p8` puts the cart there --
+    # and consuming it because it happened to follow the flag is how a stray
+    # token ends up interpreted as something it is not.
+    if not re.match(r"^\d+,\d+$", nxt):
         return (4, 4)
-    t, b = spec.split(",", 1)
+    t, b = nxt.split(",", 1)
     return (max(0, int(t)), max(0, int(b)))
 
 

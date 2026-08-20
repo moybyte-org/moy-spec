@@ -24,10 +24,13 @@ art tools already work; this CLI supplies the loop around them.
                                  --zoom adds the view(128,120) hint so 4:3
                                  hosts fill their height (SPEC.md 6)
     moy.py demo                  fetch Celeste Classic (PICO-8), port it, play
-          [--web]                it in the NATIVE player -- the one-command
-                                 show-off. --web (or a port number) opens the
-                                 browser player instead, which is also the
-                                 fallback where moy-play is not built
+          [--web [port]]         it in the NATIVE player -- the one-command
+          [--zoom] [--scale N]   show-off. --web opens the browser player
+                                 instead, which is also the fallback where
+                                 moy-play is not built; --zoom crops 8 p8 rows
+                                 so a 4:3 HANDHELD fills its height (it does
+                                 not enlarge a desktop window -- --scale does,
+                                 and the default already fits your display)
 
 Before you ship, and to work with the art tools you already own:
 
@@ -63,6 +66,7 @@ SPEC.md; the console as a library is moycore/.
 import http.server
 import json
 import os
+import re
 import shutil
 import sys
 import webbrowser
@@ -291,9 +295,20 @@ def cmd_web(args):
                 super().do_GET()
 
     url = "http://127.0.0.1:%d/?dev=1" % port
+    # Bind BEFORE announcing the URL: printing an address we then fail to
+    # listen on tells the reader the opposite of what happened.
+    try:
+        srv = http.server.ThreadingHTTPServer(("0.0.0.0", port), Handler)
+    except PermissionError:
+        die("port %d needs root -- pick one above 1023: `%s web %s 8080`"
+            % (port, PROG, args[0]))
+    except OSError as exc:
+        die("cannot serve on port %d: %s\n"
+            "  something else is probably using it; try another: "
+            "`%s web %s 8080`" % (port, exc.strerror or exc, PROG, args[0]))
     print("moy web: %s" % src)
     print("  %s   (save a file -> the game restarts)" % url)
-    with http.server.ThreadingHTTPServer(("0.0.0.0", port), Handler) as srv:
+    with srv:
         webbrowser.open(url)
         try:
             srv.serve_forever()
@@ -326,6 +341,10 @@ def cmd_export(args):
 # --- port / demo (PICO-8) ----------------------------------------------------
 
 CELESTE_URL = "https://www.lexaloffle.com/bbs/cposts/1/15133.p8.png"
+# The only shape --zoom accepts as its argument. Anything else after the
+# flag belongs to somebody else (p8_lua_port.parse_zoom agrees).
+ZOOM_SPEC = re.compile(r"^\d+,\d+$")
+
 CELESTE_NOTE = """\
   Celeste Classic (PICO-8, 2016) by Maddy Thorson & Noel Berry
   https://www.lexaloffle.com/bbs/?tid=2145 / https://celesteclassic.github.io/
@@ -375,29 +394,59 @@ def cmd_demo(args):
     answers by opening a browser tab is a surprise nobody asked for. The tab
     is the fallback, which is also the honest order -- the fallback is what a
     checkout without `make play` has.
+
+    Arguments are matched BY NAME and anything else is an error. They used to
+    be matched by shape -- --zoom was split off and whatever remained was
+    forwarded -- so `demo --zoom 2`, a mistyping of the T,B form, left a bare
+    "2" that the browser player took for a PORT number and died on, privileged
+    and with a traceback. A guess about what an argument meant is how that
+    happens; there are five of them, so name them.
     """
+    PLAYER_FLAGS = {"--scale": 1, "--fullscreen": 0}
+    web, zoom, player, port = False, [], [], []
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == "--web":
+            web = True
+            if i + 1 < len(args) and args[i + 1].isdigit():
+                i += 1
+                port = [args[i]]
+        elif a == "--zoom":
+            zoom = [a]
+            if i + 1 < len(args) and ZOOM_SPEC.match(args[i + 1]):
+                i += 1
+                zoom.append(args[i])
+        elif a in PLAYER_FLAGS:
+            player.append(a)
+            for _ in range(PLAYER_FLAGS[a]):
+                i += 1
+                if i >= len(args):
+                    die("%s wants a value: `%s demo %s 5`" % (a, PROG, a))
+                player.append(args[i])
+        else:
+            die("demo: don't know what to do with %r.\n"
+                "  --zoom [T,B]   crop 8 p8 rows so a 4:3 HANDHELD fills its "
+                "height\n"
+                "                 (it does not enlarge a desktop window -- "
+                "--scale does)\n"
+                "  --scale N      a bigger window; the default already fits "
+                "your display\n"
+                "  --fullscreen\n"
+                "  --web [port]   the browser player instead of the window"
+                % a)
+        i += 1
+
     print(CELESTE_NOTE)
     out = cart_dir("celeste")
-    # --zoom belongs to the PORT, not the run, so split it out -- and re-port
-    # when it is asked for, or the flag would silently do nothing on the second
-    # `demo` (the cart is already on disk, ported at the other scale).
-    zoom = []
-    if "--zoom" in args:
-        i = args.index("--zoom")
-        zoom = [args[i]]
-        if i + 1 < len(args) and "," in args[i + 1]:
-            zoom.append(args[i + 1])
-    rest = [a for a in args if a not in zoom]
+    # --zoom belongs to the PORT, not to the playing, so it is split out here --
+    # and it re-ports when asked for, or the flag would silently do nothing on
+    # a second `demo` (the cart is already on disk, ported at the other scale).
     if zoom or not os.path.isdir(out):
         cmd_port([CELESTE_URL, "celeste"] + zoom)
     else:
         print("using existing %s" % out)
 
-    # A port number only means something to the web player, so passing one is
-    # asking for it -- otherwise `demo 8081` would go native and drop the 8081
-    # on the floor.
-    web = "--web" in args or any(a.isdigit() for a in rest)
-    rest = [a for a in rest if a != "--web"]
     found, looked = _native_player()
     if web or found is None:
         if not web:
@@ -405,10 +454,10 @@ def cmd_demo(args):
             print("  playing in the browser instead; %s" % (
                 "it ships beside moy in the release download" if FROZEN
                 else "`make play` in libmoy/ builds the native one"))
-        cmd_web(["celeste.moy"] + rest)
+        cmd_web(["celeste.moy"] + port)
     else:
         print("playing in the native player (--web for the browser)")
-        _run_native(out)
+        _run_native(out, player)
 
 
 # --- check / pack / assets / conform -----------------------------------------

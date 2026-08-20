@@ -601,8 +601,11 @@ the first sixteen palette entries are PICO-8's. Code is mechanically translated
 to Lua 5.4 and runs under a compatibility shim.
 
 A port declares `"canvas": "128x128"` and draws native PICO-8 pixels; the host
-scales. `--zoom` adds a `view(128, 120)` hint so a 4:3 console fills its height
-at 2×, trading away eight centred rows top and bottom on hosts that honour it.
+scales. `--zoom` adds a `view(128, 120)` hint so a **4:3 handheld** fills its
+height at 2×, trading away eight centred rows top and bottom on hosts that
+honour it. It is not a way to get a bigger window on a desktop — there the
+window already sizes itself to your display, and `--scale N` overrides that;
+all `--zoom` costs you on a desktop is the eight rows.
 
 Things that will not carry over unchanged: anything reaching for `peek`/`poke`
 or the PICO-8 memory map, `pget`, and code depending on 60 Hz. And note the
