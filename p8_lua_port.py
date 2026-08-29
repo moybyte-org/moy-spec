@@ -36,7 +36,18 @@ The emitted cart is only as faithful as doubles-instead-of-16.16-fixed-point
 allows (fine for most carts; Celeste Classic community ports do the same).
 LICENSING NOTE: PICO-8 BBS carts default to CC BY-NC-SA 4.0 -- ported carts are
 dev/test material unless the license says otherwise; keep them out of
-system_carts/ and ship an attribution note next to the cart.
+system_carts/ and ship an attribution note next to the cart. The manifest says
+so too (`safe_to_share: false`), so a host's share paths never have to infer it.
+
+THIS FILE RUNS ON MICROPYTHON, and that is a CONSTRAINT rather than an
+observation: a console can port a dropped cart in the browser (or on a board) by
+running THIS code inside its own VM, which is the only arrangement in which the
+desktop and the console cannot disagree about what a `.p8` becomes. So: no
+`os.path`, no `os.makedirs`, no f-strings, no `json` `indent=`, no `str.isalnum`,
+and NOTHING in `re` beyond MicroPython's subset -- no lookarounds, no `(?:...)`,
+no inline `(?m)` flags, which its engine rejects at COMPILE time with "regex too
+complex". `port_sections()` exists for the same reason: a caller that was handed
+the bytes should not have to find them on a filesystem again.
 """
 
 import json
@@ -55,6 +66,19 @@ from p8_import import (  # the asset converters, vendored beside this file
 
 _ASSIGN_OPS = ("+", "-", "*", "/", "%")
 _LIFECYCLE = ("_init", "_update", "_update60", "_draw")
+
+
+def _isword(ch):
+    """`ch.isalnum()`, spelled for a stdlib that does not have it.
+
+    MicroPython's `str` carries isalpha/isdigit and no isalnum, and this file
+    runs there (see the module header). Identifier chars are the only thing
+    isalnum was ever asked here, so the two agree on every input this sees."""
+    return ch.isalpha() or ch.isdigit()
+
+
+def _ident_char(ch):
+    return ch == "_" or _isword(ch)
 
 
 def _split_comment(code):
@@ -112,7 +136,7 @@ def _lvalue_start(code, opi):
             if depth == 0:
                 break
             depth -= 1
-        elif depth == 0 and not (ch.isalnum() or ch in "._"):
+        elif depth == 0 and not (_isword(ch) or ch in "._"):
             break
         j -= 1
     return j
@@ -140,12 +164,12 @@ def _rhs_end(code, start):
             depth -= 1
         elif depth == 0 and ch.isalpha():
             j = i
-            while j < n and (code[j].isalnum() or code[j] == "_"):
+            while j < n and _ident_char(code[j]):
                 j += 1
             word = code[i:j]
             prev = code[i - 1] if i > 0 else " "
             if word in ("return", "end", "else", "elseif", "then") \
-                    and not (prev.isalnum() or prev in "._"):
+                    and not (_isword(prev) or prev in "._"):
                 return i
             i = j
             continue
@@ -632,6 +656,59 @@ P8_API = ("btn btnp camera sin cos flr abs min max sqrt atan2 spr rectfill "
           "add del all foreach count sub tostr sgn mid rnd mget fget map").split()
 
 
+def _defines_function(body, name):
+    """`function NAME(` anywhere in `body`, at a keyword/identifier boundary."""
+    i = 0
+    n = len(body)
+    while True:
+        j = body.find("function", i)
+        if j < 0:
+            return False
+        i = j + 8
+        if j > 0 and (_ident_char(body[j - 1]) or body[j - 1] in ".:"):
+            continue                      # the tail of a longer word
+        k = j + 8
+        while k < n and body[k] in " \t\r\n":
+            k += 1
+        if k == j + 8:                    # `function` and the name must part
+            continue
+        if not body.startswith(name, k):
+            continue
+        k += len(name)
+        if k < n and _ident_char(body[k]):
+            continue                      # a LONGER name that starts with ours
+        while k < n and body[k] in " \t\r\n":
+            k += 1
+        if body[k:k + 1] == "(":
+            return True
+
+
+def _assigns_global(body, name):
+    """`NAME =` (not `==`) or `NAME,` where NAME opens a line."""
+    n = len(body)
+    ln = len(name)
+    i = 0
+    while True:
+        j = body.find(name, i)
+        if j < 0:
+            return False
+        i = j + ln
+        k = j
+        while k > 0 and body[k - 1] in " \t":
+            k -= 1
+        if k != 0 and body[k - 1] != "\n":
+            continue                      # something else opened this line
+        e = j + ln
+        if e < n and _ident_char(body[e]):
+            continue                      # a LONGER name that starts with ours
+        while e < n and body[e] in " \t\r\n":
+            e += 1
+        if body[e:e + 1] == ",":
+            return True
+        if body[e:e + 1] == "=" and body[e + 1:e + 2] != "=":
+            return True
+
+
 def localization_lua(body):
     """`local NAME = NAME` aliases at file scope, between shim and game code.
 
@@ -640,12 +717,17 @@ def localization_lua(body):
     interpreter-bound boards the hashes were measurable frame time (#67).
     A name the cart itself reassigns at global scope stays global: an alias
     would freeze the pre-assignment value for every later caller. The scan is
-    conservative -- a false positive only loses that one name's speedup."""
+    conservative -- a false positive only loses that one name's speedup.
+
+    The two predicates are hand-walked rather than regexes because both of the
+    regexes they replaced needed constructs MicroPython's `re` refuses to
+    COMPILE -- a lookbehind, a non-capturing group, an inline `(?m)` and a
+    negative lookahead -- and this file has to run there (module header)."""
     keep = []
     for name in P8_API:
-        if re.search(r"(?<![\w.:])function\s+%s\s*\(" % name, body):
+        if _defines_function(body, name):
             continue                      # cart defines its own
-        if re.search(r"(?m)^\s*%s\s*(?:=(?!=)|,)" % name, body):
+        if _assigns_global(body, name):
             continue                      # cart assigns the global
         keep.append(name)
     if not keep:
@@ -673,6 +755,11 @@ def build_manifest(title, icon=None):
         # fill the old draw-2x-yourself shim paid.
         "canvas": "128x128",
         "input": ["buttons"],
+        # A ported cart is SOMEBODY ELSE'S cart. PICO-8 BBS carts default to
+        # CC BY-NC-SA 4.0 (module header), so playing and studying one is fine
+        # and republishing it is not -- stated in the manifest so a host's share
+        # paths read the answer instead of inferring it from `ported_from`.
+        "safe_to_share": False,
         "ported_from": "pico-8",
     }
     if icon is not None:
@@ -684,10 +771,69 @@ def build_manifest(title, icon=None):
     return man
 
 
-def port(p8_path, out_dir, title=None, crop=(0, 0)):
-    sections = read_p8(p8_path)      # text .p8 OR the BBS .p8.png
-    title = title or _title_from(sections, p8_path)
-    os.makedirs(out_dir, exist_ok=True)
+# The order a manifest's fields are WRITTEN in. Declared rather than taken from
+# the dict because MicroPython's dicts are not insertion-ordered: without this
+# the same cart ported on two tiers differs by field order alone, which is both
+# an unreadable diff and the end of any byte-for-byte check between them.
+MANIFEST_KEYS = ("format", "title", "version", "main", "fps", "canvas",
+                 "input", "safe_to_share", "ported_from", "icon")
+
+
+def manifest_text(man):
+    """`json.dump(man, indent=2)` for a `json` with no `indent=` (the header).
+
+    A LAYOUT, not an encoder: every value still goes through `json.dumps`. The
+    manifest is one flat object of scalars and scalar lists, which is the only
+    shape this lays out -- anything nested would need a real pretty-printer, and
+    the answer to that is to not put it in a manifest."""
+    out = []
+    for key in MANIFEST_KEYS:
+        if key not in man:
+            continue
+        v = man[key]
+        if isinstance(v, list):
+            body = ("[\n" + ",\n".join("    " + json.dumps(x) for x in v)
+                    + "\n  ]")
+        else:
+            body = json.dumps(v)
+        out.append("  " + json.dumps(key) + ": " + body)
+    return "{\n" + ",\n".join(out) + "\n}\n"
+
+
+def _mkdirs(path):
+    """`os.makedirs(path, exist_ok=True)` for an `os` that stops at mkdir."""
+    at = "/" if path.startswith("/") else ""
+    for seg in path.replace("\\", "/").split("/"):
+        if not seg:
+            continue
+        at = at + seg if at in ("", "/") else at + "/" + seg
+        try:
+            os.mkdir(at)
+        except OSError:
+            pass                 # exists, or a parent we cannot make -- the
+                                 # write below is what actually reports
+
+
+def _write(out_dir, name, text):
+    # `encoding=` is load-bearing on CPython (a non-UTF-8 locale would mangle an
+    # accented title) and simply ignored by MicroPython's `open`.
+    f = open(out_dir + "/" + name, "w", encoding="utf-8")
+    try:
+        f.write(text)
+    finally:
+        f.close()
+
+
+def port_sections(sections, out_dir, title, crop=(0, 0)):
+    """Already-parsed `sections` -> a `.moy` folder at `out_dir`.
+
+    Returns the facts only the writer knows: `{"files": [...], "sfx": n,
+    "music": m}`. Takes SECTIONS rather than a path because a console was handed
+    the dropped bytes and has already had to parse them to decide the file was a
+    cart at all -- reading it a second time here is 40ms of a `.p8.png` inflate
+    spent to learn nothing."""
+    _mkdirs(out_dir)
+    written = []
 
     body = p8_lua_to_lua54(sections.get("lua", []))
     header = ("-- %s -- ported from PICO-8 by tools/p8_lua_port.py (#11/#67).\n"
@@ -704,8 +850,8 @@ def port(p8_path, out_dir, title=None, crop=(0, 0)):
     # Data tables BEFORE the shim, so the shim captures them as upvalues.
     main_lua = (header + data_tables_lua(sections) + "\n" + shim + "\n"
                 + localization_lua(body) + body)
-    with open(os.path.join(out_dir, "main.lua"), "w", encoding="utf-8") as f:
-        f.write(main_lua)
+    _write(out_dir, "main.lua", main_lua)
+    written.append("main.lua")
 
     # map.moymap -- the console's own tilemap format (cells store tile+1,
     # 0 = empty), so the map is REAL data other tools/editors/native map()
@@ -721,23 +867,32 @@ def port(p8_path, out_dir, title=None, crop=(0, 0)):
                 v = int(r[i:i + 2], 16)
                 cells.append("%02x" % (0 if v == 255 else (v + 1) & 0xFF if v else 0))
             out_rows.append("".join(cells))
-        with open(os.path.join(out_dir, "map.moymap"), "w", encoding="utf-8") as f:
-            f.write("128 64\n" + "\n".join(out_rows) + "\n")
+        _write(out_dir, "map.moymap", "128 64\n" + "\n".join(out_rows) + "\n")
+        written.append("map.moymap")
 
     kgfx = gfx_to_kgfx(sections.get("gfx", []))
     if kgfx:
-        with open(os.path.join(out_dir, "sprites.moygfx"), "w", encoding="utf-8") as f:
-            f.write(kgfx)
+        _write(out_dir, "sprites.moygfx", kgfx)
+        written.append("sprites.moygfx")
 
-    sounds, _n_sfx, _n_music = sfx_music_to_sounds(
+    sounds, n_sfx, n_music = sfx_music_to_sounds(
         sections.get("sfx", []), sections.get("music", []))
     if sounds:
-        with open(os.path.join(out_dir, "sounds.json"), "w", encoding="utf-8") as f:
-            json.dump(sounds, f)
+        _write(out_dir, "sounds.json", json.dumps(sounds))
+        written.append("sounds.json")
+    else:
+        n_sfx = n_music = 0          # nothing was written, so nothing counted
 
-    with open(os.path.join(out_dir, "manifest.json"), "w", encoding="utf-8") as f:
-        json.dump(build_manifest(title, icon_tile(kgfx)), f, indent=2)
-        f.write("\n")
+    _write(out_dir, "manifest.json",
+           manifest_text(build_manifest(title, icon_tile(kgfx))))
+    written.append("manifest.json")
+    return {"files": sorted(written), "sfx": n_sfx, "music": n_music}
+
+
+def port(p8_path, out_dir, title=None, crop=(0, 0)):
+    sections = read_p8(p8_path)      # text .p8 OR the BBS .p8.png
+    title = title or _title_from(sections, p8_path)
+    port_sections(sections, out_dir, title, crop)
     return out_dir
 
 
