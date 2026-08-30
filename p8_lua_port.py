@@ -608,12 +608,13 @@ do
     return out
   end
 
-  -- COROUTINES. This runs on real Lua 5.4, so PICO-8's four names are the
-  -- stdlib's under different spellings -- nothing to implement.
-  cocreate = coroutine.create
-  coresume = coroutine.resume
-  costatus = coroutine.status
-  yield = coroutine.yield
+  -- NO COROUTINES, and the reason is worth stating where somebody will next
+  -- reach for them: this IS real Lua 5.4, but the console opens only base,
+  -- math, string and table (libmoy/moy_lua.c), so `coroutine` is not a global
+  -- here. A shim of `cocreate = coroutine.create` therefore does not fall back
+  -- to anything -- it fails while the shim itself is loading, taking the whole
+  -- cart with it, which is how this was found. Opening the library is a
+  -- one-line spec decision, not a porter one.
 
   -- sspr: the first eight arguments agree, and then they do not. PICO-8 takes
   -- two flip BOOLEANS where the console takes a colorkey and a flip BITMASK
@@ -783,8 +784,7 @@ P8_API = ("btn btnp camera sin cos flr abs min max sqrt atan2 spr rectfill "
           "rect circfill circ print pal pset pget line sfx music menuitem "
           "add del all foreach count sub tostr sgn mid rnd mget fget map "
           # 2026-08-30: the gaps that were only ever a naming difference.
-          "t time chr ord tonum split cocreate coresume costatus yield "
-          "mset sspr").split()
+          "t time chr ord tonum split mset sspr").split()
 
 
 def _defines_function(body, name):
