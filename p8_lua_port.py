@@ -142,13 +142,39 @@ def _lvalue_start(code, opi):
     return j
 
 
+# The operator keywords -- the only words that can follow a complete term and
+# CONTINUE the same expression. Everything else that starts a term after one has
+# finished is the next statement.
+_RHS_CONTINUES = ("and", "or", "not")
+_RHS_STOPS = ("return", "end", "else", "elseif", "then", "do", "until")
+
+
 def _rhs_end(code, start):
-    """The statement boundary after a compound-assign RHS: end of code, or a
-    depth-0 keyword that starts the NEXT statement (`freeze-=1 return end`)."""
+    """The statement boundary after a compound-assign RHS.
+
+    Three ways an RHS ends: the code does, a keyword starts the next statement
+    (`freeze-=1 return end`), or -- the one this missed -- A NEW TERM BEGINS
+    where an expression cannot have one. PICO-8 lets statements share a line
+    with no separator, so `dx/=l dy/=l` is two of them, and reading to the next
+    KEYWORD swallowed the second into the first's right-hand side:
+
+        dx/=l dy/=l        became   dx = dx / (l dy = dy / (l))
+        x+=1 y+=2          became   x = x + (1 y = y + (2))
+
+    which is a syntax error, from an idiom every other cart uses. Found by
+    importing a real BBS cart once the pxa compression stopped refusing them.
+
+    The rule that fixes it is a fact about Lua rather than a heuristic about
+    carts: after a complete term (an identifier, a number, a string, a closing
+    bracket) an expression can only go on via an OPERATOR -- symbolic, or one of
+    `and`/`or`/`not`. An identifier, number, string or `{` there cannot be part
+    of the same expression, so it is the next statement.
+    """
     q = None
     depth = 0
     i = start
     n = len(code)
+    term = False          # did we just finish a term?
     while i < n:
         ch = code[i]
         if q:
@@ -156,23 +182,45 @@ def _rhs_end(code, start):
                 i += 1
             elif ch == q:
                 q = None
+                term = True
         elif ch in "'\"":
+            if depth == 0 and term:
+                return i
             q = ch
         elif ch in "([{":
+            if depth == 0 and term and ch == "{":
+                return i          # a table constructor cannot follow a term
             depth += 1
         elif ch in ")]}":
             depth -= 1
-        elif depth == 0 and ch.isalpha():
+            if depth == 0:
+                term = True
+        elif depth == 0 and (ch.isalpha() or ch == "_"):
             j = i
             while j < n and _ident_char(code[j]):
                 j += 1
             word = code[i:j]
             prev = code[i - 1] if i > 0 else " "
-            if word in ("return", "end", "else", "elseif", "then") \
-                    and not (_isword(prev) or prev in "._"):
+            atomic = not (_isword(prev) or prev in "._:")
+            if word in _RHS_STOPS and atomic:
                 return i
+            if term and atomic and word not in _RHS_CONTINUES:
+                return i          # a new term where an expression cannot have one
+            term = word not in _RHS_CONTINUES
             i = j
             continue
+        elif depth == 0 and ch.isdigit():
+            if term and not (i and code[i - 1] in "._" ) and not _isword(
+                    code[i - 1] if i else " "):
+                return i
+            j = i
+            while j < n and (code[j].isalnum() or code[j] in "._"):
+                j += 1
+            term = True
+            i = j
+            continue
+        elif depth == 0 and not ch.isspace():
+            term = False          # an operator: the expression goes on
         i += 1
     return n
 
@@ -511,11 +559,80 @@ do
   function mid(a, b, c) return max(min(a, b), min(max(a, b), c)) end
   function rnd(n) return mrandom() * (n or 1) end
 
+  -- THE CLOCK. PICO-8 counts SECONDS since the cart started; the console's
+  -- time() counts MILLISECONDS. Both p8 names, because carts use either, and
+  -- `time` shadows the console's deliberately -- inside a ported cart, p8
+  -- semantics are the correct ones. Getting this wrong does not crash, it runs
+  -- everything time-based a thousand times too fast, which is why it was
+  -- reported as "differs" rather than "missing".
+  local m_time = time
+  function t() return m_time() / 1000 end
+  time = t
+
+  -- STRING HELPERS. Real Lua 5.4 has every one of these under another name, so
+  -- these are renames rather than implementations -- except split(), which is
+  -- PICO-8's own and has no stdlib twin.
+  chr = string.char
+  function ord(s, i, n)
+    if s == nil or s == "" then return nil end
+    if n then return string.byte(s, i or 1, (i or 1) + n - 1) end
+    return string.byte(s, i or 1)
+  end
+  function tonum(v)
+    if type(v) == "number" then return v end
+    return tonumber(v)
+  end
+  -- split(s, [sep], [convert]) -- sep defaults to ",", a NUMBER sep cuts fixed
+  -- width chunks, and numeric-looking parts become numbers unless told not to.
+  function split(s, sep, num)
+    local out = {}
+    if s == nil then return out end
+    s = tostring(s)
+    if num == nil then num = true end
+    local function keep(part)
+      out[#out + 1] = num and (tonumber(part) or part) or part
+    end
+    if type(sep) == "number" then
+      local step = sep < 1 and 1 or sep
+      for i = 1, #s, step do keep(string.sub(s, i, i + step - 1)) end
+      return out
+    end
+    sep = sep or ","
+    if sep == "" then sep = "," end
+    local i = 1
+    while true do
+      local j = string.find(s, sep, i, true)
+      if j then keep(string.sub(s, i, j - 1)) else keep(string.sub(s, i)) break end
+      i = j + #sep
+    end
+    return out
+  end
+
+  -- COROUTINES. This runs on real Lua 5.4, so PICO-8's four names are the
+  -- stdlib's under different spellings -- nothing to implement.
+  cocreate = coroutine.create
+  coresume = coroutine.resume
+  costatus = coroutine.status
+  yield = coroutine.yield
+
+  -- sspr: the first eight arguments agree, and then they do not. PICO-8 takes
+  -- two flip BOOLEANS where the console takes a colorkey and a flip BITMASK
+  -- (1=h, 2=v), so a cart asking for a mirrored blit was passing `true` as a
+  -- colour. dw/dh default to the source size, as PICO-8 lets them; colour 0 is
+  -- transparent, the same convention spr() uses above.
+  local m_sspr = sspr
+  function sspr(sx, sy, sw, sh, dx, dy, dw, dh, fx, fy)
+    local f = 0
+    if fx then f = f + 1 end
+    if fy then f = f + 2 end
+    m_sspr(sx, sy, sw, sh, dx, dy, dw or sw, dh or sh, 0, f)
+  end
+
   -- map + flags: the map DATA now ships as map.moymap (the console's own
   -- format -- editable, native-map()-able); build the fast Lua-side lookup
   -- from it ONCE at start via the console mget (captured before the p8 mget
   -- shadows it). __gff__ stays baked below the shim (flags have no moy home).
-  local m_mget = mget
+  local m_mget, m_mset = mget, mset
   local p8map = {}
   __p8_map = p8map                     -- the global name stays for tooling
   for y = 0, 63 do
@@ -524,6 +641,17 @@ do
       local v = m_mget(x, y)
       p8map[base + x + 1] = (v and v >= 0) and v or 0
     end
+  end
+
+  -- mset writes BOTH stores. The console has mset, but map() above draws from
+  -- the p8map copy built just now -- so a cart that wrote a cell and expected
+  -- to see it drew the old one. Silent and wrong, which is the worse kind.
+  function mset(x, y, v)
+    x, y, v = flr(x or 0), flr(y or 0), v or 0
+    if x >= 0 and x < 128 and y >= 0 and y < 64 then
+      p8map[y * 128 + x + 1] = v
+    end
+    m_mset(x, y, v)
   end
   function mget(x, y)
     x = mfloor(x or 0)
@@ -653,7 +781,10 @@ def data_tables_lua(sections):
 # emitted block groups them a line at a time.
 P8_API = ("btn btnp camera sin cos flr abs min max sqrt atan2 spr rectfill "
           "rect circfill circ print pal pset pget line sfx music menuitem "
-          "add del all foreach count sub tostr sgn mid rnd mget fget map").split()
+          "add del all foreach count sub tostr sgn mid rnd mget fget map "
+          # 2026-08-30: the gaps that were only ever a naming difference.
+          "t time chr ord tonum split cocreate coresume costatus yield "
+          "mset sspr").split()
 
 
 def _defines_function(body, name):
