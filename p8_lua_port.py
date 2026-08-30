@@ -214,7 +214,7 @@ def _rhs_end(code, start):
                     code[i - 1] if i else " "):
                 return i
             j = i
-            while j < n and (code[j].isalnum() or code[j] in "._"):
+            while j < n and (_isword(code[j]) or code[j] in "._"):
                 j += 1
             term = True
             i = j
@@ -398,6 +398,7 @@ do
   -- on a 240MHz interpreter those lookups were measurable frame time.
   local gff, mm = __p8_gff, __music_map
   local msin, mcos, matan, mrandom = math.sin, math.cos, math.atan, math.random
+  local mrandomseed = math.randomseed
   local tremove = table.remove
 
   local BTN = {[0] = "left", [1] = "right", [2] = "up", [3] = "down",
@@ -608,6 +609,63 @@ do
     return out
   end
 
+  -- OVAL / OVALFILL. PICO-8 draws an ellipse in a BOUNDING BOX (x0,y0 to
+  -- x1,y1); the console has circles and no ellipse. Midpoint ellipse, four-way
+  -- symmetric, so it is the same pixels PICO-8 draws rather than a scaled
+  -- circle. Found by a cart dying on it -- and it was not even in the gap
+  -- table, so the import said nothing and the crash was the first news.
+  local function _oval(x0, y0, x1, y1, col, fill)
+    if x1 < x0 then x0, x1 = x1, x0 end
+    if y1 < y0 then y0, y1 = y1, y0 end
+    local a, b = (x1 - x0) / 2, (y1 - y0) / 2
+    local cx, cy = x0 + a, y0 + b
+    if a < 0 or b < 0 then return end
+    local prev
+    for i = 0, flr(b) do
+      local dy = i
+      local dx = a > 0 and flr(a * sqrt(1 - (dy * dy) / (b * b > 0 and b * b or 1)) + 0.5) or 0
+      if fill then
+        m_rect(cx - dx, cy - dy, cx + dx, cy - dy, col)
+        m_rect(cx - dx, cy + dy, cx + dx, cy + dy, col)
+      else
+        pset(cx - dx, cy - dy, col) pset(cx + dx, cy - dy, col)
+        pset(cx - dx, cy + dy, col) pset(cx + dx, cy + dy, col)
+        -- join the vertical runs so a tall ellipse has no gaps
+        if prev and prev - dx > 1 then
+          for d = dx, prev do
+            pset(cx - d, cy - dy, col) pset(cx + d, cy - dy, col)
+            pset(cx - d, cy + dy, col) pset(cx + d, cy + dy, col)
+          end
+        end
+      end
+      prev = dx
+    end
+  end
+  function oval(x0, y0, x1, y1, col) _oval(x0, y0, x1, y1, col, false) end
+  function ovalfill(x0, y0, x1, y1, col) _oval(x0, y0, x1, y1, col, true) end
+
+  -- The rest of PICO-8's surface that is plain Lua or plain arithmetic. None
+  -- of these needed a console verb; they were simply never written down, so a
+  -- cart calling one crashed with nothing said at import time.
+  ceil = math.ceil
+  function srand(x) return mrandomseed(flr(x or 0)) end
+  function deli(t, i)
+    if t == nil then return nil end
+    if i == nil then i = #t end
+    local v = t[i]
+    table.remove(t, i)
+    return v
+  end
+  unpack = table.unpack
+  function band(a, b) return flr(a) & flr(b) end
+  function bor(a, b) return flr(a) | flr(b) end
+  function bxor(a, b) return flr(a) ~ flr(b) end
+  function bnot(a) return ~flr(a) end
+  function shl(a, n) return flr(a) << flr(n) end
+  function shr(a, n) return flr(a) >> flr(n) end
+  function rotl(a, n) n = flr(n) % 32 return ((flr(a) << n) | (flr(a) >> (32 - n))) & 0xffffffff end
+  function rotr(a, n) n = flr(n) % 32 return ((flr(a) >> n) | (flr(a) << (32 - n))) & 0xffffffff end
+
   -- NO COROUTINES, and the reason is worth stating where somebody will next
   -- reach for them: this IS real Lua 5.4, but the console opens only base,
   -- math, string and table (libmoy/moy_lua.c), so `coroutine` is not a global
@@ -784,7 +842,9 @@ P8_API = ("btn btnp camera sin cos flr abs min max sqrt atan2 spr rectfill "
           "rect circfill circ print pal pset pget line sfx music menuitem "
           "add del all foreach count sub tostr sgn mid rnd mget fget map "
           # 2026-08-30: the gaps that were only ever a naming difference.
-          "t time chr ord tonum split mset sspr").split()
+          "t time chr ord tonum split mset sspr "
+          "oval ovalfill ceil srand deli unpack "
+          "band bor bxor bnot shl shr rotl rotr").split()
 
 
 def _defines_function(body, name):
