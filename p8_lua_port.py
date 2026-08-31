@@ -615,22 +615,28 @@ do
   -- circle. Found by a cart dying on it -- and it was not even in the gap
   -- table, so the import said nothing and the crash was the first news.
   local function _oval(x0, y0, x1, y1, col, fill)
+    x0, y0, x1, y1 = flr(x0), flr(y0), flr(x1), flr(y1)
     if x1 < x0 then x0, x1 = x1, x0 end
     if y1 < y0 then y0, y1 = y1, y0 end
     local a, b = (x1 - x0) / 2, (y1 - y0) / 2
     local cx, cy = x0 + a, y0 + b
-    if a < 0 or b < 0 then return end
     local prev
-    for i = 0, flr(b) do
-      local dy = i
-      local dx = a > 0 and flr(a * sqrt(1 - (dy * dy) / (b * b > 0 and b * b or 1)) + 0.5) or 0
+    for dy = 0, flr(b) do
+      local dx = a
+      if b > 0 then dx = a * sqrt(1 - (dy * dy) / (b * b)) end
+      dx = flr(dx + 0.5)
       if fill then
-        m_rect(cx - dx, cy - dy, cx + dx, cy - dy, col)
-        m_rect(cx - dx, cy + dy, cx + dx, cy + dy, col)
+        -- ONE SPAN PER ROW. The console's rect is (x, y, W, H) and FILLED --
+        -- not PICO-8's two corners, which is what the shim's own rect() above
+        -- converts for. Passing corners here drew a rectangle with a rounded
+        -- top instead of an ellipse, on a cart, visibly.
+        local w = dx * 2 + 1
+        m_rect(flr(cx - dx), flr(cy - dy), w, 1, col)
+        if dy > 0 then m_rect(flr(cx - dx), flr(cy + dy), w, 1, col) end
       else
         pset(cx - dx, cy - dy, col) pset(cx + dx, cy - dy, col)
         pset(cx - dx, cy + dy, col) pset(cx + dx, cy + dy, col)
-        -- join the vertical runs so a tall ellipse has no gaps
+        -- join the runs so a wide ellipse's flanks have no gaps
         if prev and prev - dx > 1 then
           for d = dx, prev do
             pset(cx - d, cy - dy, col) pset(cx + d, cy - dy, col)
