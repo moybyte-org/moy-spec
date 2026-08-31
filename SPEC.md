@@ -745,6 +745,23 @@ A looping SFX may carry an optional `"loop_start"` (default 0): the whole list
 plays once, then `loop_start … end` repeats — a riff with a pickup, PICO-8's
 loop range.
 
+An SFX may also carry an optional `"filters"` (default 0), **one byte holding
+five independent settings**, in PICO-8's own packing — the same
+carried-verbatim policy as a step's effect nibble:
+
+| field | read as | values |
+|---|---|---|
+| `noiz` | `f & 2` | shapes the NOISE instrument with a sawtooth; no effect on the other seven |
+| `buzz` | `f & 4` | selects each instrument's harsher twin — a different waveform, not a post-effect. Noise has no twin and ignores it |
+| `detune` | `(f / 8) % 3` | 1 or 2: a second oscillator beside the note at a per-instrument ratio, mixed at half. Noise is exempt |
+| `reverb` | `(f / 24) % 3` | 1 or 2: a delay line fed back at half — 16.6 ms or 33.2 ms |
+| `dampen` | `(f / 72) % 3` | 1 or 2: a high shelf, −6 dB above 2400 Hz or −12 dB above 1000 Hz |
+
+`noiz`, `buzz` and `detune` change the OSCILLATOR and so apply per note;
+`reverb` and `dampen` are per-CHANNEL post-processing and keep sounding after
+the note that started them has ended. `0` is the dry sound every SFX written
+before this had, so the field is additive and absent means unchanged.
+
 A **music track** is an ordered list of pattern **rows**. A row is one SFX id
 — or a list of **up to 4** ids, one per channel in order, `-1` for a channel
 silent that row:
