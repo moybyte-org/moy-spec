@@ -64,7 +64,11 @@ from p8_import import (  # the asset converters, vendored beside this file
 # p8-Lua -> Lua 5.4 (the mechanical dialect transforms)
 # --------------------------------------------------------------------------
 
-_ASSIGN_OPS = ("+", "-", "*", "/", "%")
+# `//` FIRST is not cosmetic: `_expand_compound` takes the earliest match, and
+# in `i //= w` the one-char `/` also matches -- one character later, against an
+# lvalue that is a slash. Longest-first is what makes the earliest-wins rule
+# pick the real operator.
+_ASSIGN_OPS = ("//", "..", "+", "-", "*", "/", "%", "^")
 _LIFECYCLE = ("_init", "_update", "_update60", "_draw")
 
 
@@ -79,6 +83,107 @@ def _isword(ch):
 
 def _ident_char(ch):
     return ch == "_" or _isword(ch)
+
+
+_LUA_ESCAPES = 'abfnrtvxzu\\\'"\n'
+_LONG_MASK = "__p8lstr%d__"
+
+
+def _long_open(line, i):
+    """The level of a long bracket opening at `i` (`[[` is 0, `[=[` is 1), or -1."""
+    if i >= len(line) or line[i] != "[":
+        return -1                            # a line that ends in `--`
+    j = i + 1
+    while j < len(line) and line[j] == "=":
+        j += 1
+    if j < len(line) and line[j] == "[":
+        return j - i - 1
+    return -1
+
+
+def _scan_line(line, state, spans):
+    """One pass over a source line -> (code, comment, state).
+
+    Every dialect transform below scans for operators "outside strings", and
+    every one of them means QUOTED strings. A `[[...]]` long string is neither
+    quoted nor one line, so `+=` inside a cart's DATA blob got expanded as if it
+    were code -- `bqc+>qo` became `bqc = bqc + (>qo`, in the middle of a track
+    table, and the cart died a thousand lines away with `unexpected symbol near
+    ')'`. Nothing about that error names the damage or where it happened.
+
+    So long strings are masked behind an opaque identifier (a complete term, the
+    way a string is, so `_rhs_end` reads the line the same) and put back after.
+    The same walk carries a `--[[ ]]` block comment across lines, which the old
+    per-line comment split could not do either: it ended the comment at the
+    newline and handed the prose inside it to the parser as code.
+
+    `code` comes back None for a line that must pass through untouched.
+    """
+    if state is not None:
+        kind, level = state
+        close = "]" + "=" * level + "]"
+        k = line.find(close)
+        if k < 0:
+            if kind == "string":
+                spans.append(line)
+                return _LONG_MASK % (len(spans) - 1), "", state
+            return None, line, state
+        if kind == "comment":
+            return None, line, None
+        spans.append(line[:k + len(close)])
+        head = _LONG_MASK % (len(spans) - 1)
+        rest, comment, state = _scan_line(line[k + len(close):], None, spans)
+        if rest is None:
+            return None, line, state
+        return head + rest, comment, state
+    out = []
+    i = 0
+    n = len(line)
+    q = None
+    while i < n:
+        ch = line[i]
+        if q:
+            out.append(ch)
+            if ch == "\\" and i + 1 < n:
+                i += 1
+                out.append(line[i])
+            elif ch == q:
+                q = None
+            i += 1
+            continue
+        if ch in "'\"":
+            q = ch
+            out.append(ch)
+            i += 1
+            continue
+        if ch == "-" and line[i + 1:i + 2] == "-":
+            lv = _long_open(line, i + 2)
+            if lv >= 0:
+                close = "]" + "=" * lv + "]"
+                if line.find(close, i + 2 + lv + 2) < 0:
+                    return "".join(out), line[i:], ("comment", lv)
+            return "".join(out), line[i:], None
+        lv = _long_open(line, i)
+        if lv >= 0:
+            close = "]" + "=" * lv + "]"
+            k = line.find(close, i + lv + 2)
+            if k < 0:
+                spans.append(line[i:])
+                out.append(_LONG_MASK % (len(spans) - 1))
+                return "".join(out), "", ("string", lv)
+            spans.append(line[i:k + len(close)])
+            out.append(_LONG_MASK % (len(spans) - 1))
+            i = k + len(close)
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out), "", None
+
+
+def _unmask_long_strings(code, spans):
+    for k in range(len(spans) - 1, -1, -1):
+        code = code.replace(_LONG_MASK % k, spans[k])
+    return code
 
 
 def _split_comment(code):
@@ -120,26 +225,243 @@ def _find_outside_strings(code, sub, start=0):
     return -1
 
 
+# p8's six button glyphs, as the button numbers `btn()` actually takes. They
+# are ORDINARY CHARACTERS in cart source -- `if btn(<right>)` -- in two
+# spellings: a P8SCII byte from a .p8.png ROM, and the UTF-8 emoji a text .p8
+# stores. Lua 5.4 will not take either one in an expression, so a cart that
+# reads its d-pad the way the manual shows it would not load at all.
+_GLYPH_BTN = {
+    "\x8b": "0", "\x91": "1", "\x94": "2",
+    "\x83": "3", "\x8e": "4", "\x97": "5",
+    "\u2b05": "0", "\u27a1": "1", "\u2b06": "2",
+    "\u2b07": "3", "\U0001f17e": "4", "\u274e": "5",
+}
+_VARIATION = "\ufe0f"
+
+
+def _read_number(code, i):
+    """Read ONE p8 numeric literal starting at `i`; return (end, Lua spelling).
+
+    Two things Lua 5.4's lexer does differently, both of which stop a real cart
+    at LOAD time, before a single frame runs:
+
+    `0b1010` -- and `0b0000100000000010.1`, a binary literal with a binary
+    FRACTION -- is p8's spelling for a bit pattern. Lua has no `0b` at all, so
+    it becomes a decimal here. (Hex passes through: Lua 5.4 reads `0xff.8`.)
+
+    And p8's lexer ENDS a number at the first character that cannot continue
+    one, which is why carts write `e and 0or 1` and `flip_x and-1or 1`. Lua
+    keeps reading and reports `malformed number near '0o'`. The caller puts the
+    space back; this returns where the number really stopped.
+    """
+    n = len(code)
+    j = i
+    if code[j] == "0" and j + 1 < n and code[j + 1] in "bB":
+        j += 2
+        st = j
+        while j < n and code[j] in "01":
+            j += 1
+        whole = code[st:j]
+        frac = ""
+        if j < n and code[j] == "." and j + 1 < n and code[j + 1] in "01":
+            j += 1
+            st = j
+            while j < n and code[j] in "01":
+                j += 1
+            frac = code[st:j]
+        if not whole and not frac:
+            return i + 1, code[i]            # a bare `0b`: not ours to touch
+        val = int(whole or "0", 2)
+        if frac:
+            return j, str(val + int(frac, 2) / float(1 << len(frac)))
+        return j, str(val)
+    if code[j] == "0" and j + 1 < n and code[j + 1] in "xX":
+        j += 2
+        while j < n and (code[j] in "0123456789abcdefABCDEF." ):
+            j += 1
+        if j < n and code[j] in "pP":
+            k = j + 1
+            if k < n and code[k] in "+-":
+                k += 1
+            if k < n and code[k].isdigit():
+                while k < n and code[k].isdigit():
+                    k += 1
+                j = k
+        return j, code[i:j]
+    while j < n and code[j].isdigit():
+        j += 1
+    if j < n and code[j] == ".":
+        j += 1
+        while j < n and code[j].isdigit():
+            j += 1
+    if j < n and code[j] in "eE":
+        k = j + 1
+        if k < n and code[k] in "+-":
+            k += 1
+        if k < n and code[k].isdigit():
+            while k < n and code[k].isdigit():
+                k += 1
+            j = k
+    return j, code[i:j]
+
+
+def _fix_p8_tokens(code):
+    """The p8 lexer's extensions, spelled the way Lua 5.4 reads them.
+
+    Three of them, all outside strings: `\\` is p8's integer division and Lua
+    spells that `//`; `0b...` literals become decimals; and a number butted
+    straight against a word gets its space back (see `_read_number`).
+
+    These are LOAD-time failures, not wrong pixels -- four of five carts pulled
+    off the BBS died here, each on a different one, with the cart's own line
+    number pointing at code that is perfectly good p8.
+    """
+    out = []
+    i = 0
+    n = len(code)
+    q = None
+    prev = " "
+    while i < n:
+        ch = code[i]
+        if q:
+            if ch == "\\" and i + 1 < n:
+                nxt = code[i + 1]
+                if nxt not in _LUA_ESCAPES and not nxt.isdigit():
+                    # P8SCII: `"\^i"` is p8 telling its own print to invert.
+                    # Lua reads `\^` as an invalid escape and refuses to LOAD
+                    # the cart, so the backslash becomes a literal one -- the
+                    # code shows up as text instead of stopping the cart.
+                    out.append("\\")
+                out.append(ch)
+                out.append(nxt)
+                i += 2
+                continue
+            out.append(ch)
+            if ch == q:
+                q = None
+            i += 1
+            continue
+        if ch in "'\"":
+            q = ch
+            out.append(ch)
+            prev = ch
+            i += 1
+            continue
+        starts = ch.isdigit() and not (_ident_char(prev) or prev == ".")
+        if not starts and ch == "." and i + 1 < n and code[i + 1].isdigit():
+            # Only a preceding `.` blocks this, and it blocks the one case that
+            # matters: `a..5` is a concatenation. `and.5or 2` is not a field
+            # access -- no Lua field name starts with a digit -- so an
+            # identifier char in front is p8's lexer again, not an index.
+            starts = prev != "."
+        if starts:
+            j, text = _read_number(code, i)
+            out.append(text)
+            if j < n and _ident_char(code[j]):
+                out.append(" ")              # `0or 1` -> `0 or 1`
+            prev = code[j - 1]
+            i = j
+            continue
+        if ch == "^" and code[i + 1:i + 2] == "^":
+            out.append("~")                  # p8 spells bitwise xor `^^`
+            prev = "~"
+            i += 2
+            continue
+        if code.startswith(">>>", i):
+            # p8's LOGICAL right shift. Lua 5.4's `>>` already is one (it is
+            # defined on the integer, not the sign), so this is the same op.
+            out.append(">>")
+            prev = ">"
+            i += 3
+            continue
+        if ch == "\\":
+            out.append("//")                 # p8's integer division
+            prev = ch
+            i += 1
+            continue
+        if ch in _GLYPH_BTN:
+            out.append(_GLYPH_BTN[ch])
+            prev = "0"
+            i += 1
+            if i < n and code[i] == _VARIATION:
+                i += 1                       # the emoji's variation selector
+            continue
+        out.append(ch)
+        prev = ch
+        i += 1
+    return "".join(out)
+
+
+def _expand_print_shorthand(code):
+    """p8's `?x` -> `print(x)`, at a STATEMENT START only.
+
+    `?` prints the rest of the LINE, so the arguments run to the end -- which is
+    why this cannot be a plain textual swap for `print(`: there would be no
+    closing paren to write, and the paren has to go somewhere a statement ends.
+
+    "Statement start" is the whole rule, and it is narrow ON PURPOSE. Firing
+    after a `then` closes the paren past the line's own `end` -- which is what
+    it did, turning `if(x) ?"hi"` into `if x then print("hi" end)`. The one
+    place a `?` legitimately follows something is a p8 one-line `if`, and
+    `_expand_oneline_if` expands its inner statement through here itself, where
+    that statement is a line of its own and the boundary is real.
+    """
+    i = _find_outside_strings(code, "?")
+    if i < 0:
+        return code
+    before = code[:i].rstrip()
+    if before and before[-1] != ";":
+        return code                          # a `?` mid-expression is not ours
+    rest = code[i + 1:].strip()
+    if not rest:
+        return code
+    return code[:i] + "print(" + rest + ")"
+
+
 def _lvalue_start(code, opi):
-    """Walk back from the operator over an lvalue: identifier chars, dots and
-    balanced [...] index chains (`this.dash_target.y`, `got_fruit[1+n]`).
-    p8 allows space before the operator (`this.dash_effect_time -=1`)."""
+    """Walk back from the operator over an lvalue.
+
+    An lvalue is a NAME plus any run of `.name` / `:name` / `[expr]` postfixes,
+    and the walk has to respect that SHAPE rather than eating "identifier chars,
+    dots and brackets" as one blob. p8 packs statements onto a line with no
+    separator, so `local _ENV=n[o] phase+=speed` arrives as `n[o]phase+=speed`
+    -- and the blob walk took `n[o]phase` as the lvalue, assigning to a name
+    that does not exist and losing the real one. A bare name after `]` belongs
+    to the previous statement; only `.` and `:` link segments together.
+    """
     j = opi
     while j > 0 and code[j - 1] in " \t":
         j -= 1
-    depth = 0
+    end = j
     while j > 0:
         ch = code[j - 1]
         if ch == "]":
-            depth += 1
-        elif ch == "[":
-            if depth == 0:
-                break
-            depth -= 1
-        elif depth == 0 and not (_isword(ch) or ch in "._"):
-            break
-        j -= 1
-    return j
+            depth = 0
+            k = j
+            while k > 0:
+                c = code[k - 1]
+                if c == "]":
+                    depth += 1
+                elif c == "[":
+                    depth -= 1
+                    if depth == 0:
+                        break
+                k -= 1
+            if depth != 0:
+                return end               # unbalanced: not an lvalue
+            j = k - 1
+            continue
+        if _ident_char(ch):
+            k = j
+            while k > 0 and _ident_char(code[k - 1]):
+                k -= 1
+            if k > 0 and code[k - 1] in ".:":
+                j = k - 1
+                continue
+            return k
+        break
+    # A postfix with no name in front of it (`)[1] += x`) is not an lvalue.
+    return end if j < end and code[j] == "[" else j
 
 
 # The operator keywords -- the only words that can follow a complete term and
@@ -227,38 +549,133 @@ def _rhs_end(code, start):
 
 def _expand_compound(code):
     """`X op= RHS` -> `X = X op (RHS)`, statement-bounded, outside strings."""
-    for _ in range(8):                       # a line holds few of these
+    # NOT a fixed budget. "A line holds few of these" was the old comment and
+    # the old cap was 8; a minified cart puts its whole draw loop on one line,
+    # and the ninth `-=` came out unexpanded -- a syntax error reported 700
+    # columns away from the operator that caused it. The bound below is only a
+    # runaway guard: each pass consumes one operator, so it cannot be reached.
+    for _ in range(len(code) + 1):
         found = None
         for op in _ASSIGN_OPS:
+            end = len(op) + 1                # past the trailing '='
             i = _find_outside_strings(code, op + "=")
             # skip ==, <=, >=, ~= lookalikes: the char after must not be '='
-            while i >= 0 and i + 2 <= len(code) and code[i + 2:i + 3] == "=":
-                i = _find_outside_strings(code, op + "=", i + 2)
+            while i >= 0 and code[i + end:i + end + 1] == "=":
+                i = _find_outside_strings(code, op + "=", i + end)
             if i >= 0 and (found is None or i < found[0]):
                 found = (i, op)
         if found is None:
             return code
         i, op = found
+        end = len(op) + 1
         lo = _lvalue_start(code, i)
         lhs = code[lo:i].strip()
         if not lhs:                          # not actually an assignment
             return code
-        re_ = _rhs_end(code, i + 2)
-        rhs = code[i + 2:re_].strip()
+        re_ = _rhs_end(code, i + end)
+        rhs = code[i + end:re_].strip()
         code = (code[:lo] + lhs + " = " + lhs + " " + op + " (" + rhs + ")"
                 + (" " if re_ < len(code) else "") + code[re_:])
     return code
 
 
-def _expand_oneline_if(code):
-    """p8's `if (cond) stmt` one-liner -> `if cond then stmt end`."""
-    stripped = code.lstrip()
-    if not stripped.startswith("if"):
+# Words that can only START a statement -- so an `if` still waiting for its
+# `then` was a short-if and has already ended. Without this, `if(k==9)mset(x)
+# for i=1,3 do` would hand the FOR's `do` to the if.
+_IF_CLOSERS = ("for", "while", "function", "repeat", "end", "return", "local",
+               "else", "elseif")
+
+
+def _if_do_to_then(code):
+    """p8 accepts `do` wherever Lua wants `then`.
+
+    Not one cart's typo: `moss moss` writes `if cond do` twenty-two times and
+    the word `then` zero times, so this is the dialect, not a slip. Lua 5.4
+    stops at the first one with `'then' expected near 'do'`.
+    """
+    out = []
+    i = 0
+    n = len(code)
+    q = None
+    depth = 0
+    pending = 0
+    while i < n:
+        ch = code[i]
+        if q:
+            out.append(ch)
+            if ch == "\\" and i + 1 < n:
+                i += 1
+                out.append(code[i])
+            elif ch == q:
+                q = None
+            i += 1
+            continue
+        if ch in "'\"":
+            q = ch
+            out.append(ch)
+            i += 1
+            continue
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth -= 1
+        elif ch.isalpha() or ch == "_":
+            j = i
+            while j < n and _ident_char(code[j]):
+                j += 1
+            word = code[i:j]
+            prev = code[i - 1] if i else " "
+            if depth == 0 and not (_ident_char(prev) or prev in "._:"):
+                if word == "if" or word == "elseif":
+                    pending = 1
+                elif pending and word == "do":
+                    out.append("then")
+                    i = j
+                    pending = 0
+                    continue
+                elif pending and (word == "then" or word in _IF_CLOSERS):
+                    pending = 0
+            out.append(word)
+            i = j
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+def _oneline_if_at(code, start=0):
+    """Where a p8 short-`if` starts on this line at or after `start`, or -1.
+
+    NOT just the start of the line. p8 lets statements share a line with no
+    separator and carts lean on it hard -- `key=mget(e,n) if(key==9)mset(...)`
+    is one line of a real cart, and anchoring on the first token left the `if(`
+    in the middle of it as a syntax error (`'then' expected near 'mset'`).
+    """
+    i = _find_outside_strings(code, "if", start)
+    while i >= 0:
+        prev = code[i - 1] if i else " "
+        after = code[i + 2:]
+        if not _ident_char(prev) and prev != "." \
+                and after.lstrip().startswith("("):
+            return i
+        i = _find_outside_strings(code, "if", i + 2)
+    return -1
+
+
+def _expand_oneline_if(code, start=0):
+    """p8's `if (cond) stmt` one-liner -> `if cond then stmt end`.
+
+    `start` is what makes this try EVERY candidate on the line instead of
+    giving up at the first. `if(a or b)and c then` opens with an `if(` that is
+    not a short-if at all -- the parens are a sub-expression and the condition
+    goes on -- and bailing there left the real short-if further down the same
+    line unexpanded, which is where the parser stopped.
+    """
+    at = _oneline_if_at(code, start)
+    if at < 0:
         return code
-    after_if = stripped[2:]
-    if not after_if.lstrip().startswith("("):
-        return code
-    indent = code[:len(code) - len(stripped)]
+    indent = code[:at]
+    code = code[at:]
     p = code.index("(")
     depth = 0
     q = None
@@ -280,12 +697,16 @@ def _expand_oneline_if(code):
                 break
         i += 1
     if depth != 0:
-        return code
+        return _expand_oneline_if(indent + code, len(indent) + 2)
     cond = code[p + 1:i]
     rest = code[i + 1:].strip()
-    if not rest or rest.split(None, 1)[0] in ("then", "and", "or", "not") \
+    if not rest or rest.split(None, 1)[0] in ("then", "do", "and", "or", "not") \
             or rest[0] in "+-*/%<>=~.([{":
-        return code                          # a normal if / a continued condition
+        # a normal if, or a condition that goes on: try the next candidate
+        return _expand_oneline_if(indent + code, len(indent) + 2)
+    # `rest` may itself be another short-if (`if(a) if(b) x=1`), and it is a
+    # statement of its own now, so both expansions run on it here.
+    rest = _expand_oneline_if(_expand_print_shorthand(rest))
     return indent + "if " + cond + " then " + rest + " end"
 
 
@@ -300,9 +721,14 @@ _EMPTY_MUSIC_STUB = re.compile(r"^\s*function\s+music\s*\([^)]*\)\s*end\s*$")
 
 def p8_lua_to_lua54(lines):
     out = []
+    state = None
     for line in lines:
         line = line.replace("\t", "  ").rstrip()
-        code, comment = _split_comment(line)
+        spans = []
+        code, comment, state = _scan_line(line, state, spans)
+        if code is None:                     # inside a `--[[ ]]` block comment
+            out.append(line)
+            continue
         if _EMPTY_MUSIC_STUB.match(code):
             # The cart silenced ITSELF with an empty music() override (the
             # celeste-maker mirror ships one). The port imports __music__ as
@@ -315,10 +741,15 @@ def p8_lua_to_lua54(lines):
         while i >= 0:
             code = code[:i] + "~=" + code[i + 2:]
             i = _find_outside_strings(code, "!=")
+        # The LEXER first: everything below reads the line as tokens, and
+        # `0or`, `i\\w` and `0b1010` are not the tokens they look like.
+        code = _fix_p8_tokens(code)
+        code = _if_do_to_then(code)
+        code = _expand_print_shorthand(code)
         code = _expand_oneline_if(code)
         code = _expand_compound(code)
         code = _rename_lifecycle(code)
-        out.append(code + comment)
+        out.append(_unmask_long_strings(code, spans) + comment)
     return "\n".join(out) + "\n"
 
 
