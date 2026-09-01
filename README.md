@@ -11,6 +11,7 @@ no per-device binary.
 - **[SPEC.md](SPEC.md)** — the console: raster, palette, verb table, cart format
 - **[GUIDE.md](GUIDE.md)** — writing games: a first cart, then a handbook
 - **[PORTING.md](PORTING.md)** — running carts on your own hardware, in order
+- **[PICO8.md](PICO8.md)** — importing a PICO-8 cart: what converts, what does not
 - **[RATIONALE.md](RATIONALE.md)** — why each number is what it is
 
 Status: **draft 0.2, unstable.** Names and values will still move.
@@ -68,6 +69,19 @@ checked long before there is a cart loader or a VM.
 [PORTING.md](PORTING.md) is the order to build things in, what to refuse
 versus ignore versus degrade, how to run the suite against your build, and the
 conformance checklist.
+
+### Importing a PICO-8 cart → **[PICO8.md](PICO8.md)**
+
+`p8_lua_port.py` turns a `.p8` or a BBS `.p8.png` into a Lua cart: assets, the
+map, the sfx, and the cart's own code converted token by token, over a shim
+that implements PICO-8's verbs on the moy API. Most carts boot and play.
+
+It is a converter, not an emulator, and the line falls where a cart stops using
+the API and starts using the *machine* — poking video memory, reading sheet
+pixels back, driving scenes with coroutines. [PICO8.md](PICO8.md) lists what
+comes across, what is approximated, what cannot, and the corpus of twelve real
+carts with what each one actually does. Note the licensing section: BBS carts
+default to CC BY-NC-SA 4.0.
 
 ## Why this exists
 
