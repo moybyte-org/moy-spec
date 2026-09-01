@@ -1,0 +1,65 @@
+{
+  "_": "Which corpus carts run and ANIMATE under libmoy. A RATCHET: a cart that stops doing either fails the build, and one that starts asks for this file to be raised. The carts are not in this repository -- see conformance/p8_carts.py.",
+  "carts": {
+    "bunnysurvivor-9": {
+      "animates": true,
+      "note": "runs and animates",
+      "runs": true
+    },
+    "celeste_classic_2-5": {
+      "animates": true,
+      "note": "runs and animates",
+      "runs": true
+    },
+    "crimson_night-5": {
+      "animates": false,
+      "note": "runs, but the frame never changed",
+      "runs": true
+    },
+    "dank_tomb-0": {
+      "animates": false,
+      "note": "run_cart: _init: [string \"main.lua\"]:2264: attempt to index a nil value (global 'hf')",
+      "runs": false
+    },
+    "dungeons_and_diagrams-5": {
+      "animates": true,
+      "note": "runs and animates",
+      "runs": true
+    },
+    "lowmemsky-1": {
+      "animates": true,
+      "note": "runs and animates",
+      "runs": true
+    },
+    "mossmoss-17": {
+      "animates": true,
+      "note": "runs and animates",
+      "runs": true
+    },
+    "nimudazus-27": {
+      "animates": false,
+      "note": "run_cart: [string \"main.lua\"]:869: attempt to call a nil value (for iterator 'for iterator')",
+      "runs": false
+    },
+    "petal_quest-12": {
+      "animates": true,
+      "note": "runs and animates",
+      "runs": true
+    },
+    "picooffroad-5": {
+      "animates": false,
+      "note": "runs, but the frame never changed",
+      "runs": true
+    },
+    "poom_0-9": {
+      "animates": false,
+      "note": "runs, but the frame never changed",
+      "runs": true
+    },
+    "terra_1cart-44": {
+      "animates": false,
+      "note": "HUNG (no frame in 120s)",
+      "runs": false
+    }
+  }
+}

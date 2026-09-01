@@ -35,7 +35,7 @@ LUA_OBJ  := $(LUA_SRC:.c=.o)
 LUA_CFLAGS := -std=c99 -O2 -w -I$(LUA_DIR)
 RUNCART  := build/run_cart
 
-.PHONY: all clean data conform conform-lua test lua play audio-test
+.PHONY: all clean data conform conform-lua test lua play audio-test p8-carts
 
 all: $(LIB) $(REPLAY)
 
@@ -115,6 +115,17 @@ conform-lua: $(RUNCART)
 	cd $(SPEC) && python3 conformance/run.py --player \
 	  "$(CURDIR)/build/run_cart {cart} {out}"
 
+# The PORTER, against real PICO-8 carts, on THIS VM. p8_lua_port.py lives in
+# this repository and hosts vendor it, so a bug introduced here is otherwise
+# only noticed at the next re-vendor -- the same delay this Makefile's
+# conform-lua target exists to close for the C. And the VM matters: LUA_32BITS
+# makes lua_Number a single-precision float, so a desktop Lua cannot stand in.
+#
+# Skips without a corpus: the carts are their authors' work and are not
+# redistributed. Point MOY_P8_CORPUS at a directory of .p8 / .p8.png files.
+p8-carts: $(RUNCART)
+	cd $(SPEC) && python3 conformance/p8_carts.py
+
 play: $(PLAY)
 
 # SPEC.md 8's semantics, asserted numerically (8.3 exempts audio from pixel
@@ -161,7 +172,7 @@ $(SPRSWEEP): test/spr_scale_sweep.c $(LIB)
 spr-sweep: $(SPRSWEEP)
 	./$(SPRSWEEP)
 
-test: conform conform-lua ext-test audio-test lowres spr-sweep
+test: conform conform-lua ext-test audio-test lowres spr-sweep p8-carts
 
 clean:
 	rm -f $(OBJ) $(LUA_OBJ) src/moy_lua.o $(LIB)
