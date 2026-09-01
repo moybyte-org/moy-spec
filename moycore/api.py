@@ -374,6 +374,11 @@ def make_api(canvas, cart=None, input=None, audio=None, pmem=None,
     def rnd(n=1.0):
         return r.random() * n
 
+    def srand(seed=0):
+        # SPEC.md 9: the same seed on this host replays the same sequence. The
+        # sequence is _Rng's and nobody else's; see its note.
+        r.seed(seed)
+
     def flr(x):
         return int(x // 1)
 
@@ -419,6 +424,7 @@ def make_api(canvas, cart=None, input=None, audio=None, pmem=None,
         "pmem": pmem_,
         "cfg": cfg,
         "rnd": rnd,
+        "srand": srand,
         "flr": flr,
         "quit": quit_,
         "W": canvas.w,

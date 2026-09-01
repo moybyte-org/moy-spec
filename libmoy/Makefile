@@ -27,7 +27,7 @@ AUDIOT  := build/audio_test
 # lua_State you hand it, so the VM is a build-time choice, not a dependency.
 # vendor/lua is upstream Lua 5.4.7 with LUA_32BITS already set -- which SPEC.md
 # 4.2 requires and SPEC.md 11 assumes of the build that generates goldens -- and
-# with io/os/debug/package/coroutine SOURCES removed, so the SPEC.md 4.1 sandbox
+# with io/os/debug/package SOURCES removed, so the SPEC.md 4.1 sandbox
 # has no reachable implementation to be re-exposed by accident.
 LUA_DIR  := vendor/lua
 LUA_SRC  := $(wildcard $(LUA_DIR)/*.c)

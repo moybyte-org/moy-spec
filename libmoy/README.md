@@ -157,10 +157,10 @@ a Python VM cannot fill 76,800 pixels a frame and this can.
 
 ## The sandbox is real, not documentation
 
-SPEC.md 4.1's ceiling is enforced by `io`, `os`, `debug`, `package` and
-`coroutine` **not being compiled in at all** — their sources are removed from
-`vendor/lua`, and the binding opens only `base`, `math`, `string` and `table`
-by hand rather than calling `luaL_openlibs` (which would pull all of them in
+SPEC.md 4.1's ceiling is enforced by `io`, `os`, `debug` and `package` **not
+being compiled in at all** — their sources are removed from `vendor/lua`, and
+the binding opens only `base`, `math`, `string`, `table` and `coroutine` by hand
+rather than calling `luaL_openlibs` (which would pull all of them in
 and leave the sandbox depending on nil-ing them out afterwards). A cart
 reaching for any of them fails, as SPEC.md 11 requires of every conforming host.
 

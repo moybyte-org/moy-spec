@@ -37,10 +37,12 @@ H = 240
 ---@param c? integer palette index 0-63
 function cls(c) end
 
----Set one pixel.
+---Set one pixel -- or, with two arguments, READ one: the palette index at
+---(x, y), camera-relative like the write, 0 off the canvas.
 ---@param x integer
 ---@param y integer
----@param c integer palette index 0-63
+---@param c? integer palette index 0-63; omit to read
+---@return integer? the index, only when reading
 function pix(x, y, c) end
 
 ---Line from (x0,y0) to (x1,y1).
@@ -252,6 +254,12 @@ function time() end
 ---@param n? number
 ---@return number
 function rnd(n) end
+
+---Seed rnd(): the same seed replays the same sequence on the same host. The
+---sequence is the host's own -- two consoles may differ -- so seed for replays
+---and daily puzzles, never for a frame a golden has to match.
+---@param seed integer
+function srand(seed) end
 
 ---Floor to an integer.
 ---@param x number

@@ -53,9 +53,10 @@ you reach early, not only at the end.
 requires of a conforming host. No scene reaches for `io` and `verbs.moy` does not
 either, so a player can pass everything here with its sandbox wide open. The one
 place that check exists is a CI step over libmoy
-(`.github/workflows/libmoy.yml`, "The SPEC.md 4.1 sandbox holds": eight reaches
-— `io`, `os`, `require`, `load`, `debug`, `coroutine`, `collectgarbage`,
-`package` — each of which must make `run_cart` fail). That covers this
+(`.github/workflows/libmoy.yml`, "The SPEC.md 4.1 sandbox holds": seven reaches
+— `io`, `os`, `require`, `load`, `debug`, `collectgarbage`, `package` — each of
+which must make `run_cart` fail; `coroutine` is inside the sandbox since
+2026-09-02 and is asserted PRESENT by `libmoy/test/core_verbs.moy` instead). That covers this
 repository's C core and nothing else. Putting it in the suite means teaching the
 runner to assert that a cart *fails*, which is a different protocol from "write
 me a frame" and has not been designed.

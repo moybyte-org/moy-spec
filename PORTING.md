@@ -127,8 +127,8 @@ not a refusal.
 ### 4. The Lua sandbox
 
 §4.1 fixes the standard library at exactly `base` (minus a handful of escape
-hatches), `math`, `string` and `table`. Absent entirely: `io`, `os`, `debug`,
-`package`, `coroutine`.
+hatches), `math`, `string`, `table` and `coroutine`. Absent entirely: `io`,
+`os`, `debug`, `package`.
 
 **This is a ceiling, not a floor.** A host that exposes more does not fail
 today; it accumulates carts that run only on it, and that breaks the format for

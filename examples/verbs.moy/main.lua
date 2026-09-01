@@ -134,6 +134,8 @@ local function s_system()
   print("rnd()  scatter:", 20, 60, 7)
   for _ = 1, 40 do pix(150 + flr(rnd(140)), 55 + flr(rnd(14)), 10) end
   print("flr(3.7) = " .. flr(3.7), 20, 80, 7)
+  srand(7) local r1 = flr(rnd(1000)) srand(7) local r2 = flr(rnd(1000))
+  print("srand(7) twice: " .. r1 .. " " .. r2, 160, 80, 7)
   print("cfg(\"spin\") = " .. tostring(cfg("spin")), 20, 100, 7)
   print("pmem(0) runs of this cart: " .. pmem(0), 20, 120, 7)
   print("quit() ends a cart; textmode(true)", 20, 150, 5)

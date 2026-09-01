@@ -22,6 +22,7 @@ function _update(dt)
   if flr(1.5) ~= 1 then error("flr") end
   if players() < 1 then error("players") end
   local r = rnd(1)
+  srand(n)
   local ms = time()
   cfg("smoke", "default")
   btnp("a")

@@ -1722,6 +1722,14 @@ do
   -- cart calling one crashed with nothing said at import time.
   ceil = math.ceil
   function srand(x) return mrandomseed(flr(x or 0)) end
+  -- COROUTINES: p8's names for Lua's own library, which SPEC.md 4.1 admits
+  -- (2026-09-02). Guarded, because a host on an older binding still nils it,
+  -- and a nil-guarded alias is a nil call at the site instead of at load.
+  if coroutine ~= nil then
+    cocreate, coresume, costatus, yield = coroutine.create, coroutine.resume,
+                                          coroutine.status, coroutine.yield
+    coclose = coroutine.close
+  end
   function deli(t, i)
     if t == nil then return nil end
     if i == nil then i = #t end
@@ -2214,6 +2222,7 @@ P8_API = ("btn btnp camera sin cos flr abs min max sqrt atan2 spr rectfill "
           # 2026-08-30: the gaps that were only ever a naming difference.
           "t time chr ord tonum split mset sspr "
           "oval ovalfill ceil srand deli unpack pack run "
+          "cocreate coresume costatus yield coclose "
           # 2026-09-01: the compatibility layer -- these answer rather than
           # stopping the cart, and the report calls them approximations.
           "peek peek2 peek4 poke poke2 poke4 memcpy memset "

@@ -160,18 +160,20 @@ built around a low-latency mesh does not become a working cart on a browser sock
 becomes a broken one. Extensions are for capabilities whose absence a cart cannot
 paper over.
 
-## Sandbox — base, math, string, table
+## Sandbox — base, math, string, table, coroutine
 
 The smallest set that supports ordinary game code. Everything excluded (`io`, `os`,
-`debug`, `package`, `coroutine`) either reaches the host system or lets a cart load
-code the sandbox never inspected.
+`debug`, `package`) either reaches the host system or lets a cart load code the
+sandbox never inspected.
 
 Stated as a **maximum** because the failure mode is asymmetric: a host that exposes
 less breaks some carts loudly, while a host that exposes more silently accumulates
 carts that run nowhere else. Only the second kind of divergence kills a format.
 
-`coroutine` is the most defensible omission to revisit — it is pure computation and
-some game structures want it.
+`coroutine` was the one omission that failed that test — it is pure computation,
+and cutscene and animation code in both source consoles is written with it — so
+it was admitted on 2026-09-02. The excluded set is now exactly the libraries
+that reach outside the VM.
 
 ## Numbers — 32-bit
 

@@ -26,8 +26,13 @@ local CORE = {
   -- with no audio hardware implements these as no-ops and still conforms).
   "sfx", "beep", "music", "music_stop", "sound_stop", "volume",
   -- SPEC.md 9, state and utility
-  "time", "pmem", "cfg", "rnd", "flr", "quit",
+  "time", "pmem", "cfg", "rnd", "srand", "flr", "quit",
 }
+
+-- SPEC.md 4.1's LIBRARIES, which the sandbox check in CI can only prove
+-- absent, never present: a host that forgot to open one passes every golden
+-- and kills the first cart that reaches for a coroutine.
+local LIBS = { "math", "string", "table", "coroutine" }
 
 -- SPEC.md 6.1 is PROVISIONAL and not part of core 0.2, so its verbs are not
 -- required and their absence is not a failure: tri, trib, sspr, tline.
@@ -38,12 +43,29 @@ function _init()
   for i = 1, #CORE do
     if _G[CORE[i]] == nil then missing[#missing + 1] = CORE[i] end
   end
+  for i = 1, #LIBS do
+    if type(_G[LIBS[i]]) ~= "table" then missing[#missing + 1] = LIBS[i] end
+  end
   -- W and H are values, not functions (SPEC.md 9)
   if type(W) ~= "number" then missing[#missing + 1] = "W" end
   if type(H) ~= "number" then missing[#missing + 1] = "H" end
   if #missing > 0 then
     error("missing core verbs: " .. table.concat(missing, " "), 0)
   end
+  -- Behaviour a golden cannot see either: the READ form of pix (SPEC.md 6)
+  -- and a coroutine that actually yields.
+  pix(1, 1, 7)
+  if pix(1, 1) ~= 7 then error("pix(x, y) does not read back the index", 0) end
+  local co = coroutine.create(function(a) local b = coroutine.yield(a + 1) return b * 2 end)
+  local ok1, v1 = coroutine.resume(co, 1)
+  local ok2, v2 = coroutine.resume(co, 5)
+  if not (ok1 and v1 == 2 and ok2 and v2 == 10 and coroutine.status(co) == "dead") then
+    error("coroutine does not run", 0)
+  end
+  srand(7)
+  local r1 = rnd(1000)
+  srand(7)
+  if rnd(1000) ~= r1 then error("srand does not replay the sequence", 0) end
 end
 
 function _draw()

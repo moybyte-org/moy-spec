@@ -360,9 +360,16 @@ All three hooks are optional. `dt` is **seconds since the last update**, a float
 The available Lua standard library is exactly:
 
 **`base`** (minus `load`, `loadstring`, `dofile`, `require`, `collectgarbage`),
-**`math`**, **`string`**, **`table`**.
+**`math`**, **`string`**, **`table`**, **`coroutine`**.
 
-Absent entirely: `io`, `os`, `debug`, `package`, `coroutine`.
+Absent entirely: `io`, `os`, `debug`, `package`.
+
+`coroutine` sat on the excluded list until 2026-09-02. It came in because it
+never reaches outside the interpreter — it schedules Lua functions and nothing
+else — while every library still excluded touches the host: files, the clock,
+the debugger, the loader. Cutscene and animation code written for the source
+consoles leans on it, and a state machine rewrite was the tax every port paid.
+A cart may rely on it unguarded on every conforming host.
 
 This is a **maximum, not a suggestion.** A host that exposes more accumulates carts
 that run nowhere else, which breaks the format for everyone. Conformance tests it.
@@ -413,7 +420,7 @@ canvas and honours the current `camera`, `clip` and `pal` state.
 | `cls(c)` | clear the screen to color `c` (default 0) |
 | `background(c)` | declare a backdrop repainted before every `_draw` — `cls` you say once |
 | `view(w, h)` | declare a logical viewport smaller than the canvas |
-| `pix(x, y, c)` | set one pixel |
+| `pix(x, y, c)` · `pix(x, y)` | set one pixel · with two arguments, **read** one: the index at `x, y`, camera-relative like the write, `0` off the canvas |
 | `line(x0, y0, x1, y1, c)` | line |
 | `rect(x, y, w, h, c)` | **filled** rectangle |
 | `rectb(x, y, w, h, c)` | rectangle **outline** |
@@ -835,6 +842,7 @@ musically.
 | `pmem(i)` / `pmem(i, v)` | persistent save slots — read / write an integer |
 | `cfg(key, default)` | read a value from the cart's `config.json` |
 | `rnd(n)` | random float in `[0, n)`, default `n = 1.0` |
+| `srand(seed)` | seed `rnd`: the same seed replays the same sequence **on the same host** |
 | `flr(x)` | floor to integer |
 | `quit()` | end this cart; the host returns to wherever it was launched from |
 | `W`, `H` | canvas dimensions — read these, do not assume 320 × 240 |
@@ -842,6 +850,13 @@ musically.
 `quit()` does not replace the host-owned exit (§7.3) — the player can always leave
 a cart without it. It exists so a cart can end *itself* (a menu's EXIT entry, a
 game-over screen), and it is the required exit for a `textmode(true)` cart.
+
+`srand` is what makes a cart's randomness reproducible — replays, a daily-seed
+puzzle, a bug report that says "seed 42". It pins the sequence **per host**, not
+across hosts: this spec defines `rnd`'s range and not its generator, so two
+conforming hosts may still disagree on every number, and a conformance scene
+still may not call either (§11). `seed` is taken as an integer; the same seed
+on the same host is the same sequence, every time.
 
 `pmem` has **256 slots**, each holding one **signed 32-bit integer** (−2 147 483 648
 to 2 147 483 647), persisted per cart. That is exactly what §4.2 makes a Lua integer,

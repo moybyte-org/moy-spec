@@ -11,8 +11,8 @@
  * offered for convenience and is not required.
  *
  * THE SANDBOX IS A CEILING, NOT A SUGGESTION (SPEC.md 4.1). base minus load,
- * loadstring, dofile, require and collectgarbage; math, string and table; and
- * nothing else. io, os, debug, package and coroutine are absent -- and not
+ * loadstring, dofile, require and collectgarbage; math, string, table and
+ * coroutine; and nothing else. io, os, debug and package are absent -- and not
  * merely unregistered here: their SOURCES are not compiled into vendor/lua at
  * all, so there is no reachable implementation to be re-exposed by accident.
  * A host that hands out more accumulates carts that run nowhere else, which
@@ -359,6 +359,16 @@ static int l_rnd(lua_State *L)
     return 1;
 }
 
+/* SPEC.md 9: the same seed on the same host replays the same sequence. The
+ * sequence itself is this library's (xorshift32, see moy_rnd) and no other
+ * host's, which is why no conformance scene may call rnd() even seeded. */
+static int l_srand(lua_State *L)
+{
+    lua_Number v = lua_tonumber(L, 1);
+    moy_srand(con_of(L), (uint32_t)(int64_t)v);
+    return 0;
+}
+
 static int l_flr(lua_State *L)
 {
     lua_Number v = lua_tonumber(L, 1);
@@ -641,7 +651,7 @@ static const luaL_Reg VERBS[] = {
     {"spr", l_spr}, {"map", l_map}, {"mget", l_mget}, {"mset", l_mset},
     {"btn", l_btn}, {"btnp", l_btnp}, {"players", l_players},
     {"time", l_time}, {"pmem", l_pmem}, {"cfg", l_cfg},
-    {"rnd", l_rnd}, {"flr", l_flr}, {"quit", l_quit},
+    {"rnd", l_rnd}, {"srand", l_srand}, {"flr", l_flr}, {"quit", l_quit},
     {"sfx", l_sfx}, {"music", l_music}, {"beep", l_beep},
     {"music_stop", l_music_stop}, {"sound_stop", l_sound_stop},
     {"volume", l_volume},
@@ -658,23 +668,25 @@ static const luaL_Reg VERBS[] = {
  * -- see the requiref list below. */
 static const char *const BANNED[] = {
     "load", "loadstring", "dofile", "loadfile", "require", "collectgarbage",
-    "io", "os", "debug", "package", "coroutine", NULL
+    "io", "os", "debug", "package", NULL
 };
 
 /* Exactly SPEC.md 4.1's list, and no luaL_openlibs anywhere near it.
  *
  * This is not a stylistic choice. luaL_openlibs lives in linit.c, which
- * references every standard library including the five the spec forbids -- so
- * calling it would pull io, os, debug, package and coroutine into the binary
- * and leave the sandbox depending on nil-ing them out afterwards. Opening the
- * four permitted libraries by hand means linit.c is not compiled, those five
- * have no reachable implementation, and "absent entirely" is true of the
- * machine code rather than only of the global table. */
+ * references every standard library including the four the spec forbids -- so
+ * calling it would pull io, os, debug and package into the binary and leave
+ * the sandbox depending on nil-ing them out afterwards. Opening the five
+ * permitted libraries by hand means linit.c is not compiled, those four have
+ * no reachable implementation, and "absent entirely" is true of the machine
+ * code rather than only of the global table. coroutine joined the permitted
+ * set on 2026-09-02 (SPEC.md 4.1): pure VM, no reach outside it. */
 static const luaL_Reg SANDBOX_LIBS[] = {
     {LUA_GNAME,      luaopen_base},
     {LUA_MATHLIBNAME, luaopen_math},
     {LUA_STRLIBNAME,  luaopen_string},
     {LUA_TABLIBNAME,  luaopen_table},
+    {LUA_COLIBNAME,   luaopen_coroutine},
     {NULL, NULL}
 };
 
