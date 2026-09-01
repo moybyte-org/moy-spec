@@ -161,6 +161,33 @@ separately:
   imported sound instead.
 - GPIO/serial `0x5f80+`, `extcmd`.
 
+## The double-float route, measured and closed (2026-09-02)
+
+The cheap way to PICO-8's 16.16 bit tricks would be `lua_Number` as a double:
+53 bits of mantissa hold a 16.16 value exactly, so the fixed-point bitwise
+shim reverted in moybyte cb08e59 becomes correct with a one-line
+`luaconf.h` change. Both reference boards have single-precision FPUs, so
+every double op is soft-float. Same firmware otherwise, 32-bit integers kept,
+Mem Bench Lua's arithmetic rows and pico off road's race, before and after:
+
+| | P4 float → double | T-Deck float → double |
+|---|---|---|
+| `x * k` | 205 → 465 ns (2.3×) | 381 → 839 ns (2.2×) |
+| `x / k` | 190 → 1,037 ns (5.5×) | 587 → 2,685 ns (4.6×) |
+| `x + k` | 209 → 465 ns | 381 → 610 ns |
+| `sin` + `cos` | 3.3 → 18.1 µs (5.5×) | 5.9 → 20.5 µs (3.5×) |
+| 2D rotate (4 mul, 2 add) | 854 → 2,624 ns (3.1×) | 1,647 → 3,967 ns (2.4×) |
+| `pix()` through the binding | 2.1 → 3.4 µs | 3.7 → 4.6 µs |
+| pico off road, four cars on the grid | 14.5 → 12.5 fps, render 48 → 61 ms (+27%) | 7 → 6 fps, render 95 → 130 ms (+37%) |
+| pico off road, title | 23 → 19 fps | 12.5 → 11 fps |
+
+A quarter to a third of a float-heavy cart's frame, on a tier that is already
+the bottleneck, and every moy cart would pay it too, since it is one VM. The
+route is closed. What remains for the 16.16 class is a fixed-point VM for
+imported carts (z8lua: Lua 5.2.4, MIT, fix32 with PICO-8's overflow
+semantics, the dialect built in), which is integer arithmetic and would not
+carry this tax -- but it is a second VM in the image and its own project.
+
 ## What landing it would take
 
 1. **The host twin.** The desktop simulator runs Lua through
