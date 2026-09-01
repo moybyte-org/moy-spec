@@ -122,8 +122,11 @@ encoding. (Routing only `0x2000` to the console map through the sparse table
 was tried the same morning and reverted; the failure was the seam between two
 stores, not the address.)
 
-In the shim, `peek`/`poke`/`peek2`/`poke2`/`peek4`/`poke4`/`memcpy`/`memset`
-go straight to the C verbs when the host has them, probed nil-safe like
+In the shim, `peek`/`poke`/`peek2`/`poke2`/`peek4`/`poke4`/`memcpy`/`memset`,
+and `reload`/`cstore` against a ROM snapshot of the seeded image (`pico off
+road` streams its tracks out of map ROM with partial `reload`s, which is why
+its race drew over the title before), go straight to the C verbs when the host
+has them, probed nil-safe like
 `__moy_map_masked`; `sget`/`sset` become sheet-memory reads and writes (so an
 `sset` is what `spr()` draws next frame — the old "approximation" is gone), and
 `mget`/`mset` read and write the map bytes. A host without the extension keeps

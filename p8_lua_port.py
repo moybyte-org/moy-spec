@@ -1969,8 +1969,19 @@ do
   end
   function fset(n, f, v) end
   -- There is no ROM to re-read, and no terminal behind a cart.
-  function reload(...) end
-  function cstore(...) end
+  if __moy_reload ~= nil then
+    -- The cart ROM is the seeded memory image on a host with the C map, so
+    -- reload() really does bring the art, the map and the flags back (and
+    -- a partial reload(dst, src, len) fetches a slice, which is how a cart
+    -- streams tracks or levels out of its own map data). cstore() writes the
+    -- snapshot only; nothing persists to the cart file.
+    local creload, ccstore = __moy_reload, __moy_cstore
+    function reload(dst, src, len) creload(dst or 0, src or 0, len) end
+    function cstore(dst, src, len) ccstore(dst or 0, src or 0, len) end
+  else
+    function reload(...) end
+    function cstore(...) end
+  end
   function printh(...) end
   function extcmd(...) end
   -- The console calls _draw() for you, so there is nothing to wait for.
