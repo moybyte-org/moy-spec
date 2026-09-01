@@ -30,15 +30,15 @@ are what a full PICO-8 screen of bytes (8,192) costs per frame.
 | Lua table store (`mem[a] = v`) | 396 | 701 | 3.2 ms | 5.7 ms |
 | Lua → Lua function call | 732 | 1,220 | 6.0 ms | 10.0 ms |
 | **C byte poke, purpose-built binding** | **915** | **1,495** | **7.5 ms** | **12.2 ms** |
-| same, with region dispatch (screen/sheet/map/pal) | 991 | 1,586 | 8.1 ms | 13.0 ms |
-| C byte peek | 930 | 1,525 | 7.6 ms | 12.5 ms |
+| same, with region dispatch (screen/sheet/map/pal/camera) | 1,037 | 1,586 | 8.5 ms | 13.0 ms |
+| C byte peek (raw / with dispatch) | 930 / 1,113 | 1,525 / 1,739 | 7.6 / 9.1 ms | 12.5 / 14.2 ms |
 | `pmem(i, v)` (libmoy's own C-array verb) | 1,708 | 2,807 | 14.0 ms | 23.0 ms |
 | `pix(x, y, c)` through libmoy's binding | 2,136 | 3,601 | 17.5 ms | 29.5 ms |
 | the shim's `poke` today (sparse table + `fl()` + `select`) | 7,934 | 12,451 | 65 ms | 102 ms |
 | the shim's `peek` today | 3,417 | 5,493 | 28 ms | 45 ms |
 | the shim's `pset` today | 6,591 | 10,498 | 54 ms | 86 ms |
-| `memcpy` of 8 KB into the screen, one call (with the resolve) | 820 µs | 1,098 µs | 0.8 ms | 1.1 ms |
-| `memcpy` of 16 bytes (a palette fade) | 1.3 µs | 2.5 µs | — | — |
+| `memcpy` of 8 KB into the screen, one call (resolved per byte) | 1.7 ms | ~2.3 ms (est.) | 1.7 ms | ~2.3 ms |
+| `memcpy` of 16 bytes into the draw palette (16 `pal`+`palt` write-throughs) | 4.1 µs | ~7 µs (est.) | — | — |
 | `rect` 128×128 fill, one call | 49 µs | 61 µs | — | — |
 
 Three readings, each load-bearing:
@@ -54,7 +54,9 @@ Three readings, each load-bearing:
   moves blocks (`memcpy`, `memset`, `reload`) is cheap on this side.
 
 The 64 KB array lives in PSRAM on all three boards (`__moy_mem_region` reports
-it), so these are the pessimistic placement.
+it), so these are the pessimistic placement. The dispatch rows are the final
+design re-measured on the P4; the S3 dispatch rows for peek and the bulk verbs
+are the earlier screen-only build's, scaled where marked.
 
 ## What real carts do with it
 
@@ -76,8 +78,8 @@ At the measured floor, the busiest carts' memory traffic per frame:
 
 | cart | P4 | S3 | today's shim, P4 |
 |---|---|---|---|
-| poom title (8,963 pokes + one 768 B copy) | 8.2 ms | 13.4 ms | 71 ms (and the image never appears) |
-| pico off road (3,209 ops) | 2.9 ms | 4.8 ms | 15.9 ms (and the shadow never appears) |
+| poom title (8,963 pokes + one 768 B copy) | 9.5 ms | 14.5 ms | 71 ms (and the image never appears) |
+| pico off road (3,209 ops) | 3.4 ms | 5.3 ms | 15.9 ms (and the shadow never appears) |
 | celeste 2 (249 peeks) | 0.2 ms | 0.4 ms | 0.9 ms |
 
 A PICO-8 frame at 30 fps is 33 ms. Nothing in the corpus spends more than a
