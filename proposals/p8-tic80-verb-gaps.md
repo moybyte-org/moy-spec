@@ -101,10 +101,15 @@ graduates with the tier's usual evidence.
 
 ## By design, never — written down so they stop being re-asked
 
-- **`peek`/`poke`/`memcpy`/`memset`** — there is no memory-mapped hardware
-  model and there never will be; it is the one permanent hole in p8 porting,
-  and papering over it with a fake address space would be a lie that
-  conformance can't cover.
+- **`peek`/`poke`/`memcpy`/`memset`** — this entry said "there is no
+  memory-mapped hardware model and there never will be" until 2026-09-01,
+  when it was measured instead of argued: a C byte behind PICO-8's addresses
+  costs 0.9 µs on the P4 and 1.5 µs on the S3 boards, the busiest cart in the
+  corpus spends a quarter of a frame there, and a flat 64 KB array with the
+  console's objects following it has no seam for conformance to miss. The
+  measurement, the design and what it still does not give are
+  `p8-memory-map.md`. It stays a *port-shim* extension, not a spec verb: new
+  carts get the verb table.
 - **`flip()`** — §5's tick model owns cadence; a busy-loop cart is a ported
   cart, and the shim's frame-quantized pacing is the answer.
 - **`menuitem`** — the console owns its menus (and its exit gesture).

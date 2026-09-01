@@ -1795,36 +1795,64 @@ do
   -- harmless no-op where we cannot. The import report says which is which, so
   -- a cart that comes out looking wrong says so on the way in.
 
-  -- 64K of SCRATCH memory, sparse. It is not the console's memory and cannot
-  -- be: nothing here is mapped to the screen, the sheet or the map. A cart
-  -- using peek/poke for its OWN bookkeeping (most of them, most of the time)
-  -- works exactly; a cart poking a hardware register gets a register that
-  -- remembers what it was told and affects nothing.
-  local p8mem = {}
-  -- SCRATCH, and deliberately not mapped to the map or the sheet.
-  --
-  -- Routing 0x2000..0x2fff to the real map was tried on 2026-09-01 and
-  -- REVERTED, measured: it is p8's map region, but a cart that does not use
-  -- the tilemap uses those bytes as free memory, and `picooffroad` does --
-  -- reading real tiles where it expected its own scratch turned its track
-  -- into garbage. It bought nothing either; `dank_tomb`, the cart it was for,
-  -- only moved to a different error. Guessing at memory SEMANTICS from an
-  -- address is what that mapping was, and the address does not carry them.
-  local function _mrd(a) return p8mem[a] or 0 end
-  local function _mwr(a, v)
-    if a >= 0 and a < 0x8000 then p8mem[a] = v & 0xff end
-  end
-  function peek(a, n)
-    a = fl(a)
-    if n == nil or n <= 1 then return _mrd(a) end
-    local out = {}
-    for i = 0, fl(n) - 1 do out[i + 1] = _mrd(a + i) end
-    return table.unpack(out)
-  end
-  function poke(a, ...)
-    a = fl(a)
-    local n = select("#", ...)
-    for i = 1, n do _mwr(a + i - 1, fl(select(i, ...) or 0)) end
+  -- MEMORY. A host carrying PICO-8's memory map in C (`__moy_poke` and its
+  -- siblings: sheet, map, flags, draw palette, camera/clip and the SCREEN
+  -- behind their PICO-8 addresses) gets every memory verb routed to it, one
+  -- binding call per byte -- ~0.9us on the P4, ~1.5us on the S3 boards,
+  -- against 8-13us for the sparse table below. Without it: 64K of SCRATCH,
+  -- sparse -- a cart's own bookkeeping works exactly, a poke at hardware is
+  -- remembered and affects nothing. (Routing only 0x2000 to the real map
+  -- through THIS table was tried and reverted: `picooffroad` uses the region
+  -- as free memory, and two stores in two encodings is the seam that broke.)
+  local _mrd, _mwr
+  if __moy_poke ~= nil then
+    local cpeek, cpoke = __moy_peek, __moy_poke
+    local cmemcpy, cmemset = __moy_memcpy, __moy_memset
+    _mrd, _mwr = cpeek, cpoke
+    function peek(a, n)
+      if n == nil or n <= 1 then return cpeek(a) end
+      local out = {}
+      for i = 0, fl(n) - 1 do out[i + 1] = cpeek(a + i) end
+      return table.unpack(out)
+    end
+    function poke(a, v, ...)
+      cpoke(a, v or 0)
+      local n = select("#", ...)
+      for i = 1, n do cpoke(a + i, select(i, ...) or 0) end
+    end
+    function memcpy(dst, src, len) cmemcpy(dst, src, len or 0) end
+    function memset(dst, val, len) cmemset(dst, val or 0, len or 0) end
+  else
+    local p8mem = {}
+    _mrd = function(a) return p8mem[a] or 0 end
+    _mwr = function(a, v)
+      if a >= 0 and a < 0x8000 then p8mem[a] = v & 0xff end
+    end
+    function peek(a, n)
+      a = fl(a)
+      if n == nil or n <= 1 then return _mrd(a) end
+      local out = {}
+      for i = 0, fl(n) - 1 do out[i + 1] = _mrd(a + i) end
+      return table.unpack(out)
+    end
+    function poke(a, ...)
+      a = fl(a)
+      local n = select("#", ...)
+      for i = 1, n do _mwr(a + i - 1, fl(select(i, ...) or 0)) end
+    end
+    function memcpy(dst, src, len)
+      dst, src, len = fl(dst), fl(src), fl(len or 0)
+      if dst == src or len <= 0 then return end
+      if dst < src then
+        for i = 0, len - 1 do _mwr(dst + i, _mrd(src + i)) end
+      else
+        for i = len - 1, 0, -1 do _mwr(dst + i, _mrd(src + i)) end
+      end
+    end
+    function memset(dst, val, len)
+      dst, val, len = fl(dst), fl(val or 0), fl(len or 0)
+      for i = 0, len - 1 do _mwr(dst + i, val) end
+    end
   end
   function peek2(a) a = fl(a) local v = _mrd(a) | (_mrd(a + 1) << 8)
     if v >= 0x8000 then v = v - 0x10000 end return v end
@@ -1837,19 +1865,6 @@ do
     local raw = fl((v or 0) * 65536) & 0xffffffff
     _mwr(a, raw & 0xff) _mwr(a+1, (raw>>8) & 0xff)
     _mwr(a+2, (raw>>16) & 0xff) _mwr(a+3, (raw>>24) & 0xff) end
-  function memcpy(dst, src, len)
-    dst, src, len = fl(dst), fl(src), fl(len or 0)
-    if dst == src or len <= 0 then return end
-    if dst < src then
-      for i = 0, len - 1 do _mwr(dst + i, _mrd(src + i)) end
-    else
-      for i = len - 1, 0, -1 do _mwr(dst + i, _mrd(src + i)) end
-    end
-  end
-  function memset(dst, val, len)
-    dst, val, len = fl(dst), fl(val or 0), fl(len or 0)
-    for i = 0, len - 1 do _mwr(dst + i, val) end
-  end
 
   -- SAVE DATA is the one that can be honest all the way down: p8's 64 cartdata
   -- slots and the console's pmem are the same shape, so a cart's progress
@@ -1923,6 +1938,27 @@ do
     sheet[y + 1] = string.sub(row, 1, x) .. string.sub(HEXD, c + 1, c + 1)
                    .. string.sub(row, x + 2)
   end
+  if __moy_poke ~= nil then
+    -- The sheet IS memory here (0x0000..0x1fff, two pixels a byte), so an
+    -- sset is what spr() draws next frame -- the approximation above is gone.
+    local cpeek, cpoke = __moy_peek, __moy_poke
+    function sget(x, y)
+      x, y = fl(x), fl(y)
+      if x < 0 or x > 127 or y < 0 or y > 127 then return 0 end
+      local b = cpeek(y * 64 + (x >> 1))
+      if x & 1 == 1 then return b >> 4 end
+      return b & 15
+    end
+    function sset(x, y, c)
+      x, y = fl(x), fl(y)
+      if x < 0 or x > 127 or y < 0 or y > 127 then return end
+      c = fl(c or 6) % 16
+      local a = y * 64 + (x >> 1)
+      local b = cpeek(a)
+      if x & 1 == 1 then cpoke(a, (b & 0x0f) | (c << 4))
+      else cpoke(a, (b & 0xf0) | c) end
+    end
+  end
   function fset(n, f, v) end
   -- There is no ROM to re-read, and no terminal behind a cart.
   function reload(...) end
@@ -1963,6 +1999,25 @@ do
     y = mfloor(y or 0)
     if x < 0 or x > 127 or y < 0 or y > 63 then return 0 end
     return p8map[y * 128 + x + 1]
+  end
+  if __moy_poke ~= nil then
+    -- Memory is the truth on a host that has it: a cell poked at 0x2000 (or
+    -- 0x1000, the shared rows) is the cell mget reads and map() draws.
+    local cpeek, cpoke = __moy_peek, __moy_poke
+    local function maddr(x, y)
+      if y < 32 then return 0x2000 + y * 128 + x end
+      return 0x1000 + (y - 32) * 128 + x
+    end
+    function mget(x, y)
+      x, y = mfloor(x or 0), mfloor(y or 0)
+      if x < 0 or x > 127 or y < 0 or y > 63 then return 0 end
+      return cpeek(maddr(x, y))
+    end
+    function mset(x, y, v)
+      x, y = mfloor(x or 0), mfloor(y or 0)
+      if x < 0 or x > 127 or y < 0 or y > 63 then return end
+      cpoke(maddr(x, y), v or 0)
+    end
   end
   function fget(n, f)
     local v = gff[mfloor(n or 0)] or 0
