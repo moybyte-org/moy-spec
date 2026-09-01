@@ -141,30 +141,39 @@ measures three things by comparing rendered frames: `runs` (no error), `animates
 when a direction is held). A cart can pass all three and still be unplayable —
 two below do.
 
-| cart | runs | animates | responds | actually |
+Every row below marked *played* was driven by a person, not inferred from the
+gate.
+
+| cart | runs | animates | responds | played |
 |---|---|---|---|---|
-| bunnysurvivor | yes | yes | yes | **plays** — played through, menus and all |
-| crimson_night | yes | yes | no | **plays** — played through; its audio drove the sfx-filter work |
-| dungeons_and_diagrams | yes | yes | yes | passes the gate; nobody has sat down with it |
-| mossmoss | yes | yes | yes | starts, but you cannot leave the first room |
-| celeste_classic_2 | yes | yes | yes | starts, but nothing moves and only the clouds draw |
-| lowmemsky | yes | yes | no | procedural, takes no input by design |
-| poom | yes | yes | no | Doom demake — renders by poking screen memory |
-| petal_quest | yes | no | no | coroutine-driven scenes; borderline past its title |
-| picooffroad | yes | no | no | runs, frame never changes |
-| dank_tomb | no | no | no | `_init` errors — reads level data as raw memory |
-| nimudazus | no | no | no | Tempest 2000, minified into a bytecode VM |
-| terra_1cart | no | no | no | hangs — world taller than the 128×64 map |
+| bunnysurvivor | yes | yes | yes | **plays** — through, menus and all |
+| crimson_night | yes | yes | no | **plays** — its audio drove the sfx-filter work |
+| dungeons_and_diagrams | yes | yes | yes | **plays** |
+| lowmemsky | yes | yes | no | runs; no input — which is the cart, it makes no `btn` calls |
+| mossmoss | yes | yes | yes | starts; you cannot leave the first room |
+| celeste_classic_2 | yes | yes | yes | starts; nothing moves, only the clouds draw |
+| picooffroad | yes | no | no | starts; the track never begins |
+| petal_quest | yes | no | no | title screen, and nothing past it |
+| poom | yes | yes | no | does not work |
+| dank_tomb | no | no | no | *(not played — `_init` errors)* |
+| nimudazus | no | no | no | *(not played — errors on a nil call)* |
+| terra_1cart | no | no | no | *(not played — hangs, no frame in 45s)* |
 
-So: **9 of 12 boot, 7 of 12 animate, and 2 are confirmed played by a human.**
-Everything else in the "actually" column above is either a known break or an
-absence of evidence — including one cart that passes all three signals and
-which nobody has played.
+So: **9 of 12 boot, 7 of 12 animate, and 3 of 12 play.** That spread is the
+honest summary of this document — booting is cheap and playing is not, and no
+automated signal here could tell you which you have. Two carts pass all three
+gate signals and are unplayable.
 
-That gap is the honest summary of this document. Booting is cheap, playing is
-not, and only a person with the cart in front of them can tell you which one you
-have. If you convert a cart and play it, the useful contribution is a line in
-this table.
+The four that boot but do not play are not random, and each lands on a limit
+this document already names: **poom** renders by poking screen memory,
+**petal_quest** drives its scenes with coroutines, **picooffroad** keeps its
+track data in a packed binary blob, and **celeste_classic_2** and **mossmoss**
+both fail at moving between rooms. If you are choosing a cart to convert, the
+question worth asking first is not "how big is it" but "does it touch the
+machine".
+
+If you convert a cart and play it, the useful contribution is a line in this
+table.
 
 ## Licensing
 
