@@ -165,11 +165,15 @@ separately:
    `moycore`; the same seven verbs belong there or the host and the boards
    disagree on a poke.
 2. **The browser build** compiles `modmoycore.c` already and inherits it.
-3. **The S3 boards cannot load these carts today** — `pico off road`, `poom`
-   and `celeste2` all fail at load with Lua's `not enough memory` on the
-   Guition (105 KB of source, with 60 KB string literals). That is a memory
-   layout problem on that board class and gates every p8 port there, memory
-   verbs or not.
+3. **The S3 boards load them.** One measurement session saw all three fail
+   at load on the Guition with Lua's `not enough memory`; a reflash cleared
+   it and every later run loaded (direct through moycore and through the
+   console, both firmwares), so it was the board's state after six 100 KB
+   serial pushes without a reset, not the carts. Recorded so the next reader
+   does not repeat the wrong conclusion this file briefly carried. What the S3
+   does have is the tier's speed: with the sparse-table shim, `celeste2` runs
+   at 40 fps, `pico off road` at 12 and `poom`'s loading screen at 2 — about
+   0.6× the P4 on every row, which is the per-op ratio above.
 4. `PICO8.md`'s gap table (the `peek`/`poke`, `sget`, `sset` rows and the
    "carts that render by poking video memory" paragraph) and
    `p8-tic80-verb-gaps.md`'s "never" entry describe the sparse table and would
