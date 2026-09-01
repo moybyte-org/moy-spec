@@ -1291,6 +1291,13 @@ do
   local mfloor = math.floor
   local function fl(v) return mfloor(v or 0) end
 
+  -- Declared HERE, above the fill verbs that read it. It was declared beside
+  -- fillp() further down, which is after rectfill -- so rectfill closed over
+  -- nothing and read a nil GLOBAL instead, and the transparency skip was dead
+  -- code that tested green by doing nothing. A test that filled the screen
+  -- and looked at it is what caught that.
+  local fill_pattern, fill_transparent = 0, false
+
   function camera(cx, cy) m_camera(fl(cx), fl(cy)) end
   -- p8 math over the sandboxed Lua math lib (the moy api only registers
   -- rnd/flr; a python cart gets abs/min/max from python builtins, a lua cart
@@ -1331,6 +1338,7 @@ do
 
   -- p8 rect/circ are OUTLINES and rectangles take the far corner
   function rectfill(x0, y0, x1, y1, c)
+    if fill_transparent then return end
     x0 = fl(x0) y0 = fl(y0) x1 = fl(x1) y1 = fl(y1)
     if x1 < x0 then x0, x1 = x1, x0 end
     if y1 < y0 then y0, y1 = y1, y0 end
@@ -1342,7 +1350,10 @@ do
     if y1 < y0 then y0, y1 = y1, y0 end
     m_rectb(x0, y0, x1 - x0 + 1, y1 - y0 + 1, fl(c))
   end
-  function circfill(x, y, r, c) m_circ(fl(x), fl(y), fl(r), fl(c)) end
+  function circfill(x, y, r, c)
+    if fill_transparent then return end
+    m_circ(fl(x), fl(y), fl(r), fl(c))
+  end
   function circ(x, y, r, c) m_circb(fl(x), fl(y), fl(r), fl(c)) end
   -- SPEC.md 6 gives `print` fixed 8px glyphs -- TWICE the size p8 meant on a
   -- native 128px raster, and celeste's memorial letters its text at the p8
@@ -1822,8 +1833,20 @@ do
   -- so the pattern is remembered and not used: the cart runs and its gradients
   -- come out flat. Six of twelve measured carts call it, and every one of them
   -- used to stop dead here.
-  local fill_pattern = 0
-  function fillp(p) fill_pattern = p or 0 end
+  -- fillp() is a DITHER PATTERN for the fill verbs, and the console fills
+  -- solid -- but the pattern's fractional 0.5 bit means "colour 1 is
+  -- TRANSPARENT", and that half we can honour exactly by not drawing.
+  --
+  -- It matters more than the dithering does. Carts fade between scenes by
+  -- setting a transparent pattern and filling the whole screen:
+  -- `picooffroad` does exactly that every transition, and ignoring the
+  -- transparency turned each fade into a solid black screen -- strictly worse
+  -- than the flat fill everything else gets.
+  function fillp(p)
+    p = p or 0
+    fill_pattern = p
+    fill_transparent = (p % 1) >= 0.5
+  end
 
   -- The SHEET is a file here, not memory. sget reads back 0 rather than
   -- refusing: a cart doing collision off sheet pixels will be wrong, and one
