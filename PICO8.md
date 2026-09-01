@@ -7,11 +7,37 @@ PICO-8 cart across.
 
 **Read the licensing section before you publish anything you convert.**
 
+## Converting one
+
+The [rolling release](https://github.com/moybyte-org/moy-spec/releases/tag/player-latest)
+is a single executable and needs no Python:
+
 ```
-python3 p8_lua_port.py cart.p8 out_dir [--title "Name"]
+moy port cart.p8                       # -> cart.moy, beside it
+moy port https://www.lexaloffle.com/bbs/cposts/1/15133.p8.png
+moy port cart.p8 out.moy --title "Name"
+moy play cart.moy                      # and there it is
 ```
 
-Two scripts do the work, both in this repository:
+It takes a BBS URL directly, so converting somebody's cart is one line with
+nothing checked out. `moy demo` does the whole thing end to end — fetches
+Celeste Classic, ports it, plays it — if you would rather see it than read
+about it.
+
+`--zoom` adds the `view(128,120)` hint, which crops 8 PICO-8 rows so a 4:3
+handheld fills its height instead of letterboxing. It does not change a desktop
+window.
+
+From a checkout, the same conversion is `python3 moy.py port …`, and the porter
+runs standalone as `python3 p8_lua_port.py cart.p8 out_dir [--title "Name"]`.
+
+A host built on this may offer its own import — Moybyte's browser console takes
+a dropped `.p8` and converts it in the page, with no install and no cable — but
+`moy port` is what this repository ships.
+
+## What does the work
+
+Two scripts, both in this repository:
 
 | | |
 |---|---|
