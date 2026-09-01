@@ -79,6 +79,31 @@ jobs:
         run: make conform-lua
         working-directory: libmoy
 
+      # THE PORTER, against real PICO-8 carts, on this VM. p8_lua_port.py lives
+      # in this repository and hosts vendor it, so without this a porter bug is
+      # only noticed at the next re-vendor -- the delay conform-lua exists to
+      # close for the C. And the VM is the point: LUA_32BITS makes lua_Number a
+      # single-precision float, so a fixed-point implementation of p8's bitwise
+      # operators that is correct on a 64-bit Lua returns 0 here.
+      #
+      # The carts are NOT in this repository -- they are their authors' work.
+      # p8_corpus.json holds the links; the cache means a green run costs the
+      # BBS nothing, and the fetcher never fails the build over someone else's
+      # hosting. A cart that cannot be downloaded is simply skipped, and the
+      # ratchet only judges carts that arrived.
+      - name: Cache the PICO-8 cart corpus
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/moy/p8
+          key: p8-corpus-${{ hashFiles('conformance/p8_corpus.json') }}
+
+      - name: Fetch the PICO-8 cart corpus
+        run: python3 conformance/fetch_p8_corpus.py
+
+      - name: Imported PICO-8 carts run under libmoy
+        run: make p8-carts
+        working-directory: libmoy
+
       # SPEC.md 6's host-dependent core verbs -- view, background, layers. It
       # asserts they exist on a console that implements NONE of them, which is
       # the property that keeps them out of 10 and lets a cart drop the guard.

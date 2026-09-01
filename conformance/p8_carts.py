@@ -128,7 +128,11 @@ def main(argv):
     ap = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--corpus", default=os.environ.get("MOY_P8_CORPUS"))
+    # Same default the fetcher writes to, so `fetch_p8_corpus.py && make
+    # p8-carts` works with no environment at all -- which is what CI does.
+    ap.add_argument("--corpus", default=(
+        os.environ.get("MOY_P8_CORPUS")
+        or os.path.join(os.path.expanduser("~"), ".cache", "moy", "p8")))
     ap.add_argument("--work", default="/tmp/moy_p8_carts")
     args = ap.parse_args(argv[1:])
 
