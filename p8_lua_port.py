@@ -1339,7 +1339,14 @@ do
   -- popup draws with color 7+flash%2). The moy engine takes integer indices,
   -- so this shim floors at the boundary.
   local mfloor = math.floor
-  local function fl(v) return mfloor(v or 0) end
+  -- p8 coerces every API number argument: nil is 0, a numeric string is its
+  -- number, and anything else (`pset(x, y, color)` -- the API function, a
+  -- typo for a `colour` parameter, live in `picooffroad`) is 0 rather than
+  -- an error.
+  local function fl(v)
+    if type(v) ~= "number" then v = tonumber(v) or 0 end
+    return mfloor(v)
+  end
 
   -- Declared HERE, above the fill verbs that read it. It was declared beside
   -- fillp() further down, which is after rectfill -- so rectfill closed over
@@ -1365,8 +1372,9 @@ do
   -- gets them here). p8 angles are TURNS (0..1) and sin is flipped (+y down).
   function sin(t) return -msin((t or 0) * 6.283185307179586) end
   function cos(t) return mcos((t or 0) * 6.283185307179586) end
-  flr = math.floor
-  abs = math.abs
+  local mabs = math.abs
+  function flr(v) return mfloor(v or 0) end
+  function abs(v) return mabs(v or 0) end
   -- p8 coerces nil to 0 in arithmetic, so `min(nil, 5)` is 0 there and an
   -- error in Lua. `dank_tomb` stops on its first frame otherwise, and the
   -- message has no line number in it -- the error is raised inside math.min,
@@ -1517,7 +1525,7 @@ do
     end
     m_pal(fl(a), fl(b))
   end
-  function pset(x, y, c) m_pix(fl(x), fl(y), fl(c)) end
+  function pset(x, y, c) m_pix(fl(x), fl(y), fl(c == nil and p8_pen or c)) end
   function pget(x, y) return m_pix(fl(x), fl(y)) end
   local m_line = line
   function line(x0, y0, x1, y1, c)
