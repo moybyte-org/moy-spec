@@ -11,12 +11,19 @@ suite -- which is exactly the delay that let the PICO-8 pitch offset be wrong
 for ten days. libmoy is in-tree for this reason (see .github/workflows/
 libmoy.yml) and the porter deserves the same treatment: red on the same push.
 
-And it is not merely earlier, it is a DIFFERENT MACHINE. libmoy builds Lua with
-LUA_32BITS, which makes lua_Number a single-precision float. A host testing
-against a desktop Lua is testing 64-bit integers and doubles. On 2026-09-01 a
-faithful 16.16 fixed-point implementation of p8's bitwise operators passed
-every host test and returned 0 here, because `0xffff.fffe` is already 65536.0
-by the time a cart on this VM can see it. Only this runner could have said so.
+It is also the VM the porter's output has to survive: libmoy builds Lua with
+LUA_32BITS, so lua_Number is a single-precision float and `0xffff.fffe` is
+already 65536.0 by the time a cart can see it. A faithful 16.16 fixed-point
+implementation of p8's bitwise operators was written on 2026-09-01 and returns
+0 here.
+
+That is NOT because hosts run a different Lua -- moybyte's host runs this
+binding over this vendored Lua, LUA_32BITS and all, and deleted its lupa lane
+in 2026-08-14 precisely so it would. What actually happened is worse and worth
+recording: the fixed-point work was validated in a throwaway `lupa` script,
+which is 64-bit, and lupa is the second embedding this project already threw
+out for exactly that reason. The lesson is not "test upstream", it is "do not
+check numeric semantics on a Lua nobody ships".
 
 A RATCHET, like the goldens: `p8_carts_expected.json` records which carts run
 today, so a known failure does not break the build and a REGRESSION does. A
