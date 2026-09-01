@@ -1,6 +1,6 @@
 /* Run a real .moy cart through libmoy + Lua, and dump the frame.
  *
- *   run_cart <cart-dir> <out.bin> [--frames N]
+ *   run_cart <cart-dir> <out.bin> [--frames N] [--hold BTN@FROM-TO,...]
  *
  * Speaks the conformance player protocol, so
  *
@@ -38,7 +38,77 @@ static int layer_taken;
 /* Deterministic on purpose. A conformance frame must not depend on when it was
  * captured, so time stands still and no button is ever held. */
 
-static int  h_btn(void *u, moy_button b, int p) { (void)u; (void)b; (void)p; return 0; }
+/* SCRIPTED INPUT. `--hold a@30-34,right@90-150` holds a button over a frame
+ * range, which is what makes this harness able to answer "does the cart
+ * RESPOND" and not only "does it run". Most carts want a button before
+ * anything moves at all, so without this a title screen and a dead cart look
+ * exactly alike. */
+#define HOLD_MAX 16
+static struct { moy_button b; int from, to; } holds[HOLD_MAX];
+static int n_holds;
+static int cur_frame;
+
+static int held_now(moy_button b, int at)
+{
+    int i;
+    for (i = 0; i < n_holds; i++)
+        if (holds[i].b == b && at >= holds[i].from && at <= holds[i].to)
+            return 1;
+    return 0;
+}
+
+static int  h_btn(void *u, moy_button b, int p)
+{
+    (void)u; (void)p;
+    return held_now(b, cur_frame);
+}
+
+/* Pressed THIS tick: held now and not on the frame before. */
+static int  h_btnp(void *u, moy_button b, int p)
+{
+    (void)u; (void)p;
+    return held_now(b, cur_frame) && !held_now(b, cur_frame - 1);
+}
+
+static int parse_button(const char *name, moy_button *out)
+{
+    static const struct { const char *n; moy_button b; } TAB[] = {
+        {"left", MOY_BTN_LEFT}, {"right", MOY_BTN_RIGHT},
+        {"up", MOY_BTN_UP}, {"down", MOY_BTN_DOWN},
+        {"a", MOY_BTN_A}, {"b", MOY_BTN_B}, {"run", MOY_BTN_RUN},
+    };
+    size_t i;
+    for (i = 0; i < sizeof TAB / sizeof TAB[0]; i++)
+        if (!strcmp(name, TAB[i].n)) { *out = TAB[i].b; return 1; }
+    return 0;
+}
+
+/* "a@30-34,right@90-150" */
+static int parse_holds(char *spec)
+{
+    char *item = strtok(spec, ",");
+    while (item && n_holds < HOLD_MAX) {
+        char name[16];
+        int from, to;
+        char *at = strchr(item, '@');
+        char *dash;
+        if (!at) return 0;
+        *at = 0;
+        if (strlen(item) >= sizeof name) return 0;
+        strcpy(name, item);
+        dash = strchr(at + 1, '-');
+        if (!dash) return 0;
+        *dash = 0;
+        from = atoi(at + 1);
+        to = atoi(dash + 1);
+        if (!parse_button(name, &holds[n_holds].b)) return 0;
+        holds[n_holds].from = from;
+        holds[n_holds].to = to;
+        n_holds++;
+        item = strtok(NULL, ",");
+    }
+    return 1;
+}
 static int  h_players(void *u)                  { (void)u; return 1; }
 static uint32_t h_time(void *u)                 { (void)u; return 0; }
 static int32_t h_pmem_get(void *u, int s)       { (void)u; return pmem_slots[s]; }
@@ -206,11 +276,19 @@ int main(int argc, char **argv)
 
     for (i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--frames") && i + 1 < argc) frames = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--hold") && i + 1 < argc) {
+            if (!parse_holds(argv[++i])) {
+                fprintf(stderr, "run_cart: bad --hold (want "
+                                "\"a@30-34,right@90-150\")\n");
+                return 2;
+            }
+        }
         else if (!cart) cart = argv[i];
         else out = argv[i];
     }
     if (!cart || !out) {
-        fprintf(stderr, "usage: run_cart <cart-dir> <out.bin> [--frames N]\n");
+        fprintf(stderr, "usage: run_cart <cart-dir> <out.bin> [--frames N]"
+                        " [--hold a@30-34,right@90-150]\n");
         return 2;
     }
 
@@ -229,7 +307,7 @@ int main(int argc, char **argv)
 
     moy_console_init(&con, &canvas, &sheet, &map);
     con.host.btn = h_btn;
-    con.host.btnp = h_btn;
+    con.host.btnp = h_btnp;
     con.host.players = h_players;
     con.host.time_ms = h_time;
     con.host.pmem_get = h_pmem_get;
@@ -263,6 +341,7 @@ int main(int argc, char **argv)
         return 1;
     }
     for (i = 0; i < frames && !quit_requested; i++) {
+        cur_frame = i;                  /* what --hold is measured against */
         /* Draw state is per-frame and must not leak (SPEC.md 6). */
         moy_reset_state(&canvas);
         if (moy_lua_update(L, 1.0f / 30.0f, err, sizeof err)) {

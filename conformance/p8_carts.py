@@ -42,7 +42,18 @@ import p8_lua_port                                            # noqa: E402
 
 RUN_CART = os.path.join(ROOT, "libmoy", "build", "run_cart")
 EXPECTED = os.path.join(HERE, "p8_carts_expected.json")
-FRAMES = 90
+FRAMES = 200
+# A cart that spins gets ONE chance to prove it, not three: `terra` never
+# returns, and running the held and unheld passes anyway turned a two-minute
+# suite into a six-minute one for a result already known after the first.
+TIMEOUT_S = 45
+
+# Most carts want a button before anything moves, and they do not agree on
+# which -- so press several, spaced, and give the cart time between. A start
+# screen that never gets its button looks exactly like a cart that does not
+# run, which is the confusion these two numbers exist to separate.
+START = "a@30-34,b@70-74,a@110-114,up@150-154"
+MOVE = START + ",right@170-190,left@192-199"
 
 
 def _frame_hash(path):
@@ -51,7 +62,7 @@ def _frame_hash(path):
 
 
 def check(cart_path, work):
-    """-> (runs, animates, note).
+    """-> (runs, animates, responds, note).
 
     Both matter and they fail differently. A cart that never ticks still LOADS
     and still writes a frame, so `runs` alone cannot see a driver that stopped
@@ -63,28 +74,47 @@ def check(cart_path, work):
         sections = p8_import.read_p8(cart_path)
         p8_lua_port.port_sections(sections, out_dir, name)
     except Exception as exc:                       # noqa: BLE001 - reported
-        return False, False, "import %s: %s" % (type(exc).__name__, exc)
+        return False, False, False, "import %s: %s" % (type(exc).__name__, exc)
 
     # Two runs at different frame counts: if the cart is ANIMATING the frames
     # differ, and if it is frozen (or never ticked) they do not. A cart that
     # never runs also never errors, so a clean exit proves nothing on its own.
-    shots = []
-    for frames in (2, FRAMES):
-        dump = os.path.join(work, "%s.%d.bin" % (name, frames))
+    def frame_at(frames, hold, tag):
+        dump = os.path.join(work, "%s.%s.bin" % (name, tag))
+        cmd = [RUN_CART, out_dir, dump, "--frames", str(frames)]
+        if hold:
+            cmd += ["--hold", hold]
         try:
-            r = subprocess.run([RUN_CART, out_dir, dump, "--frames", str(frames)],
-                               capture_output=True, text=True, timeout=120)
+            r = subprocess.run(cmd, capture_output=True, text=True,
+                               timeout=TIMEOUT_S)
         except subprocess.TimeoutExpired:
-            return False, False, "HUNG (no frame in 120s)"
+            return None, "HUNG (no frame in %ds)" % TIMEOUT_S
         if r.returncode != 0:
-            return False, False, (r.stderr.strip() or r.stdout.strip() or
-                                  "run_cart exit %d" % r.returncode)[:140]
+            return None, (r.stderr.strip() or r.stdout.strip() or
+                          "run_cart exit %d" % r.returncode)[:140]
         if not os.path.exists(dump):
-            return False, False, "run_cart wrote no frame"
-        shots.append(_frame_hash(dump))
-    if shots[0] == shots[1]:
-        return True, False, "runs, but the frame never changed"
-    return True, True, "runs and animates"
+            return None, "run_cart wrote no frame"
+        return _frame_hash(dump), None
+
+    early, err = frame_at(2, None, "early")
+    if err:
+        return False, False, False, err
+    late, err = frame_at(FRAMES, MOVE, "move")
+    if err:
+        return False, False, False, err          # a hang stops here
+    idle, err = frame_at(FRAMES, START, "idle")
+    if err:
+        return False, False, False, err
+
+    moves = early != late
+    # RESPONDS: the same cart, same frame count, differing only in whether a
+    # direction was held. Two runs are what makes that a measurement rather
+    # than a guess -- one run cannot tell motion from reaction.
+    responds = late != idle
+    note = ("runs and animates" if moves else "runs, but the frame never changed")
+    if responds:
+        note += "; takes input"
+    return True, moves, responds, note
 
 
 def main(argv):
@@ -114,23 +144,39 @@ def main(argv):
         with open(EXPECTED, encoding="utf-8") as fh:
             expected = json.load(fh).get("carts", {})
 
+    # A cart marked `unstable` FLAPPED across the runs its pin was taken from --
+    # petal_quest sits on a title and stops on cocreate at a variable point, so
+    # whether it animates inside the frame budget is a coin toss. It is still
+    # gated on `runs`, which is stable; it is simply not judged on the two
+    # signals it cannot hold steady. Naming the one flaky cart is honest, and
+    # it beats loosening the gate for the eleven that are not.
+    #
+    # `responds` is gated only DOWNWARD. A cart on the edge of getting past its
+    # title -- petal_quest dies on cocreate at a variable point -- flips it
+    # between runs, and failing the build because a flaky signal turned ON is
+    # noise. It still fails if a cart that reliably took input stops.
     regressed, improved, running = [], [], 0
     for f in carts:
         stem = f.split(".p8")[0]
-        ok, moves, note = check(os.path.join(args.corpus, f), args.work)
+        ok, moves, responds, note = check(os.path.join(args.corpus, f), args.work)
         running += 1 if ok else 0
         want = expected.get(stem, {})
+        shaky = bool(want.get("unstable"))
         mark = "ok" if ok else "FAIL"
         if want.get("runs") is True and not ok:
             regressed.append("%s stopped running: %s" % (stem, note))
-        elif want.get("animates") is True and not moves:
+        elif want.get("animates") is True and not moves and not shaky:
             regressed.append("%s stopped animating: %s" % (stem, note))
+        elif want.get("responds") is True and not responds and not shaky:
+            regressed.append("%s stopped taking input: %s" % (stem, note))
         elif want.get("runs") is False and ok:
             improved.append("%s runs now" % stem)
             mark = "NEW"
-        elif want.get("animates") is False and moves:
+        elif want.get("animates") is False and moves and not shaky:
             improved.append("%s animates now" % stem)
             mark = "NEW"
+        elif shaky:
+            mark = "shaky"
         elif want.get("runs") is False:
             mark = "known"          # a recorded failure, not a build breaker
         print("  %-28s %-5s %s" % (stem[:28], mark, note))

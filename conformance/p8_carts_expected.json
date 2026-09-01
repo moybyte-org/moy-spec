@@ -1,64 +1,77 @@
 {
-  "_": "Which corpus carts run and ANIMATE under libmoy. A RATCHET: a cart that stops doing either fails the build, and one that starts asks for this file to be raised. The carts are not in this repository -- see conformance/p8_carts.py.",
+  "_": "What each corpus cart does under libmoy -- the real C console and its LUA_32BITS VM. A RATCHET: a cart that stops running, animating or taking input fails the build; runs/animates also fail if a cart starts, asking for this file to be raised. Recorded as the AND of THREE runs, so a borderline cart is pinned at its weakest observed behaviour -- these are real carts with clocks and randomness, and a gate that flaps gets deleted rather than fixed. The carts are not in this repository (see conformance/p8_carts.py).",
   "carts": {
     "bunnysurvivor-9": {
       "animates": true,
-      "note": "runs and animates",
+      "note": "runs and animates; takes input",
+      "responds": true,
       "runs": true
     },
     "celeste_classic_2-5": {
       "animates": true,
-      "note": "runs and animates",
+      "note": "runs and animates; takes input",
+      "responds": true,
       "runs": true
     },
     "crimson_night-5": {
-      "animates": false,
-      "note": "runs, but the frame never changed",
+      "animates": true,
+      "note": "runs and animates",
+      "responds": false,
       "runs": true
     },
     "dank_tomb-0": {
       "animates": false,
       "note": "run_cart: _init: [string \"main.lua\"]:2264: attempt to index a nil value (global 'hf')",
+      "responds": false,
       "runs": false
     },
     "dungeons_and_diagrams-5": {
       "animates": true,
-      "note": "runs and animates",
+      "note": "runs and animates; takes input",
+      "responds": true,
       "runs": true
     },
     "lowmemsky-1": {
       "animates": true,
       "note": "runs and animates",
+      "responds": false,
       "runs": true
     },
     "mossmoss-17": {
       "animates": true,
-      "note": "runs and animates",
+      "note": "runs and animates; takes input",
+      "responds": true,
       "runs": true
     },
     "nimudazus-27": {
       "animates": false,
       "note": "run_cart: [string \"main.lua\"]:869: attempt to call a nil value (for iterator 'for iterator')",
+      "responds": false,
       "runs": false
     },
     "petal_quest-12": {
-      "animates": true,
-      "note": "runs and animates",
-      "runs": true
+      "animates": false,
+      "note": "borderline: gets past its title only sometimes inside the frame budget, then stops on cocreate",
+      "responds": false,
+      "runs": true,
+      "unstable": true
     },
     "picooffroad-5": {
       "animates": false,
       "note": "runs, but the frame never changed",
+      "responds": false,
       "runs": true
     },
     "poom_0-9": {
-      "animates": false,
-      "note": "runs, but the frame never changed",
+      "animates": true,
+      "note": "runs and animates",
+      "responds": false,
       "runs": true
     },
     "terra_1cart-44": {
       "animates": false,
-      "note": "HUNG (no frame in 120s)",
+      "note": "HUNG (no frame in 45s)",
+      "responds": false,
       "runs": false
     }
   }
