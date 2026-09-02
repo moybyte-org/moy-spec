@@ -2408,49 +2408,57 @@ P8_API = ("btn btnp camera sin cos flr abs min max sqrt atan2 spr rectfill "
 def _strip_lua(body):
     """The code with comments and string CONTENTS gone, so a pattern never
     fires on prose. Strings keep their quotes (a call shape survives), long
-    brackets and long comments are removed whole."""
+    brackets and long comments are removed whole.
+
+    Appends SLICES, never characters: this runs on MicroPython in the browser
+    importer, where a list with one entry per byte of a 100 KB cart is the
+    allocation that fails."""
     out = []
     i = 0
     n = len(body)
+    keep = 0                              # start of the slice not yet emitted
     while i < n:
         ch = body[i]
-        if body.startswith("--", i):
+        if ch == "-" and body.startswith("--", i):
+            out.append(body[keep:i])
             j = i + 2
-            if body.startswith("[[", j) or body.startswith("[=", j):
-                k = j
-                while k < n and body[k] == "=":
-                    k += 1
-                close = "]" + body[j + 1:k] + "]" if body[j] == "[" and k > j + 1 else "]]"
+            k = j
+            while k < n and body[k] == "=":
+                k += 1
+            if body[j:j + 1] == "[" and body[k:k + 1] == "[":
                 close = "]" + "=" * (k - j - 1) + "]"
                 e = body.find(close, k)
                 i = n if e < 0 else e + len(close)
             else:
                 e = body.find("\n", j)
                 i = n if e < 0 else e
+            keep = i
             continue
-        if ch in "\"\'":
+        if ch == '"' or ch == "'":
+            out.append(body[keep:i])
             j = i + 1
-            while j < n and body[j] != ch:
+            while j < n and body[j] != ch and body[j] != "\n":
                 if body[j] == "\\":
                     j += 1
-                if body[j:j + 1] == "\n":
-                    break
                 j += 1
             out.append(ch + ch)
             i = j + 1
+            keep = i
             continue
-        if ch == "[" and (body.startswith("[[", i) or body.startswith("[=", i)):
+        if ch == "[" and body[i + 1:i + 2] in ("[", "="):
             k = i + 1
             while k < n and body[k] == "=":
                 k += 1
             if body[k:k + 1] == "[":
+                out.append(body[keep:i])
                 close = "]" + "=" * (k - i - 1) + "]"
                 e = body.find(close, k)
-                out.append("\"\"")
+                out.append('""')
                 i = n if e < 0 else e + len(close)
+                keep = i
                 continue
-        out.append(ch)
         i += 1
+    out.append(body[keep:n])
     return "".join(out)
 
 
@@ -2898,9 +2906,11 @@ def port_sections(sections, out_dir, title, crop=(0, 0)):
     shim = SHIM.replace("__P8_VH__", str(vh))
     want_sheet = _calls_verb(body, "sget") or _calls_verb(body, "sset")
     # Data tables BEFORE the shim, so the shim captures them as upvalues.
-    main_lua = (header + data_tables_lua(sections, want_sheet) + "\n" + shim
-                + "\n" + localization_lua(body) + body)
-    _write(out_dir, "main.lua", main_lua)
+    # Written as PIECES: joined into one string first, main.lua is ~100 KB
+    # held twice, which is the allocation the browser's MicroPython refused.
+    _write(out_dir, "main.lua",
+           [header, data_tables_lua(sections, want_sheet), "\n", shim, "\n",
+            localization_lua(body), body])
     written.append("main.lua")
 
     # map.moymap -- the console's own tilemap format (cells store tile+1,
