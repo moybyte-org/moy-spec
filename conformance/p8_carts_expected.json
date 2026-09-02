@@ -23,10 +23,10 @@
       "verdict": "runs"
     },
     "dank_tomb-0": {
-      "animates": false,
-      "note": "run_cart: _init: [string \"main.lua\"]:2264: attempt to index a nil value (global 'hf')",
-      "responds": false,
-      "runs": false,
+      "animates": true,
+      "note": "runs and animates; takes input (its level parser needs 16.16 bit verbs on fractional constants, integral floats printing as integers, and the raw map bytes -- all since 2026-09-02)",
+      "responds": true,
+      "runs": true,
       "verdict": "gaps"
     },
     "dungeons_and_diagrams-5": {
@@ -58,11 +58,10 @@
       "verdict": "refused"
     },
     "petal_quest-12": {
-      "animates": false,
-      "note": "borderline: gets past its title only sometimes inside the frame budget, then stops on cocreate",
-      "responds": false,
+      "animates": true,
+      "note": "runs and animates; takes input (coroutines, a btnp() edge visible in _draw, and map()'s whole-map default -- 2026-09-02)",
+      "responds": true,
       "runs": true,
-      "unstable": true,
       "verdict": "runs"
     },
     "picooffroad-5": {

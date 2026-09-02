@@ -184,7 +184,7 @@ static inline uint8_t rd(const moy_p8 *p, uint32_t a)
 static int l_poke(lua_State *L)
 {
     moy_p8 *p = p8_of(L);
-    uint32_t a = (uint32_t)iarg(L, 1);
+    uint32_t a = (uint32_t)iarg(L, 1) & 0xffffu;   /* p8 wraps addresses */
     uint8_t v = (uint8_t)iarg(L, 2);
     if (a >= MOY_P8_MEM) return 0;
     p->mem[a] = v;
@@ -195,7 +195,7 @@ static int l_poke(lua_State *L)
 static int l_peek(lua_State *L)
 {
     moy_p8 *p = p8_of(L);
-    uint32_t a = (uint32_t)iarg(L, 1);
+    uint32_t a = (uint32_t)iarg(L, 1) & 0xffffu;   /* p8 wraps addresses */
     lua_pushinteger(L, a < MOY_P8_MEM ? rd(p, a) : 0);
     return 1;
 }
@@ -228,7 +228,7 @@ static void apply_range(moy_p8 *p, uint32_t d, uint32_t n)
 static int l_memcpy(lua_State *L)
 {
     moy_p8 *p = p8_of(L);
-    uint32_t d = (uint32_t)iarg(L, 1), s = (uint32_t)iarg(L, 2);
+    uint32_t d = (uint32_t)iarg(L, 1) & 0xffffu, s = (uint32_t)iarg(L, 2) & 0xffffu;
     int32_t n = iarg(L, 3);
     if (n <= 0 || d >= MOY_P8_MEM || s >= MOY_P8_MEM) return 0;
     if ((uint32_t)n > MOY_P8_MEM - d) n = (int32_t)(MOY_P8_MEM - d);
@@ -242,7 +242,7 @@ static int l_memcpy(lua_State *L)
 static int l_memset(lua_State *L)
 {
     moy_p8 *p = p8_of(L);
-    uint32_t d = (uint32_t)iarg(L, 1);
+    uint32_t d = (uint32_t)iarg(L, 1) & 0xffffu;
     uint8_t v = (uint8_t)iarg(L, 2);
     int32_t n = iarg(L, 3);
     if (n <= 0 || d >= MOY_P8_MEM) return 0;
@@ -259,7 +259,7 @@ static int l_memset(lua_State *L)
 static int l_reload(lua_State *L)
 {
     moy_p8 *p = p8_of(L);
-    uint32_t d = (uint32_t)iarg(L, 1), s = (uint32_t)iarg(L, 2);
+    uint32_t d = (uint32_t)iarg(L, 1) & 0xffffu, s = (uint32_t)iarg(L, 2) & 0xffffu;
     int32_t n = lua_isnoneornil(L, 3) ? MOY_P8_ROM : iarg(L, 3);
     if (!p->rom || n <= 0 || d >= MOY_P8_MEM || s >= MOY_P8_ROM) return 0;
     if ((uint32_t)n > MOY_P8_MEM - d) n = (int32_t)(MOY_P8_MEM - d);
@@ -272,7 +272,7 @@ static int l_reload(lua_State *L)
 static int l_cstore(lua_State *L)
 {
     moy_p8 *p = p8_of(L);
-    uint32_t d = (uint32_t)iarg(L, 1), s = (uint32_t)iarg(L, 2);
+    uint32_t d = (uint32_t)iarg(L, 1) & 0xffffu, s = (uint32_t)iarg(L, 2) & 0xffffu;
     int32_t n = lua_isnoneornil(L, 3) ? MOY_P8_ROM : iarg(L, 3);
     if (!p->rom || n <= 0 || d >= MOY_P8_ROM || s >= MOY_P8_MEM) return 0;
     if ((uint32_t)n > MOY_P8_ROM - d) n = (int32_t)(MOY_P8_ROM - d);

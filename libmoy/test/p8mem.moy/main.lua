@@ -83,7 +83,8 @@ function _init()
   __moy_reload()
   check("cstore rewrites the ROM", mget(5, 0) == 77)
   -- bounds
-  check("out of range reads 0", __moy_peek(-1) == 0 and __moy_peek(70000) == 0)
+  check("addresses wrap at 16 bits, as PICO-8's do",
+        __moy_peek(-1) == __moy_peek(0xffff) and __moy_peek(70000) == __moy_peek(70000 & 0xffff))
   __moy_poke(70000, 1)
   __moy_memcpy(0xfff0, 0, 100)
   __moy_memset(0xfff0, 1, 100)

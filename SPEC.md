@@ -401,6 +401,14 @@ still conforms — it is strictly more precise — but a suite scene that carrie
 arithmetic must be judged against the 32-bit player rather than a 64-bit build, which
 would drift from it in the last digits (§11).
 
+**An integral float prints without a fraction.** `tostring(3.0)`, `3.0 .. ""` and
+`print(6 / 2)` all give `3`, where stock Lua 5.4 gives `3.0`. A cart mixes the two
+kinds of number constantly — `flr` returns an integer, `/` a float — and the suffix
+was a wart in every score display and a silent mismatch in every table keyed by
+`x .. "," .. y`. It is one line in the VM's number formatter (`lobject.c`,
+`tostringbuff`), and a host that builds its own Lua carries it. `math.type` still
+tells the two apart; only their spelling agrees. (2026-09-02.)
+
 ### 4.3 Errors
 
 A Lua error terminates the cart. The host reports it to the user with the script line

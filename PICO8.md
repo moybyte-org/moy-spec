@@ -100,6 +100,8 @@ at 16–31, so `pal(c, 128 + i)` lands on the real colour.
 | `if (c) stmt` / `while (c) stmt` | `if c then stmt end` / `while c do stmt end` |
 | `if c do ... end` | `if c then ... end` |
 | `?"text"` | `print("text")` |
+| `a \\ b` | `flr(a / b)` — an integer, so `x \\ 8 .. ","` prints `3,` and not `3.0,` |
+| `0xffff`, `0x0.0001`, `0xA5A5.8` | the 16.16 bit pattern PICO-8 reads: `(-1)`, `(1/65536)`, `(-1515880448/65536)` |
 | `@addr`, `%addr`, `$addr` | `peek(addr)`, `peek2(addr)`, `peek4(addr)` |
 | `0b1010`, `0x1f`, `.5`, `0or` | Lua-legal numbers (PICO-8 has no exponent form, so `0or1` lexes as `0 or 1`) |
 | `[[ long strings ]]` | quoted strings |
@@ -142,7 +144,7 @@ verdict names them per cart.
 | `cstore` | writes the ROM snapshot in memory; nothing reaches the cart file |
 | `0x5f2c` screen modes | the 64×64 and rotated modes are refused; the normal mode is a no-op |
 | custom fonts (`0x5600`), bitplane masks (`0x5f5e`), sheet/screen remaps (`0x5f54`/`0x5f55`) | remembered, not applied |
-| 16.16 arithmetic | floats: a hash or a mask built from fractional bits comes out wrong (runs with gaps); a data decoder built from shifts by 16 does not run |
+| 16.16 arithmetic | the bit verbs (`band`, `shr`, `rotl`, …) work on the 32-bit fixed image, and a hex literal spells PICO-8's bit pattern (`0xffff` is −1, `0x0.0001` is 1/65536) — exact whenever the pattern fits float32's 24 bits, which fraction-packed flags and masks do. A data decoder built from shifts by 16 over full 32-bit words does not run |
 | `cartdata` `dget` `dset` | **real** — they persist through the console's own save memory |
 | `printh` `extcmd` `holdframe` | dropped |
 
@@ -179,21 +181,21 @@ gate.
 | bunnysurvivor | runs | yes | yes | yes | **plays** — through, menus and all |
 | crimson_night | runs | yes | yes | no | **plays** — its audio drove the sfx-filter work |
 | picooffroad | runs | yes | yes | yes | **plays** — races, with its shadow and its fades, on the reference boards (2026-09) |
-| petal_quest | runs | yes | shaky | shaky | title, then a coroutine-driven scene that now has coroutines |
-| dungeons_and_diagrams | gaps | yes | yes | yes | **plays**; its packed-flag bit trick reads wrong |
-| mossmoss | gaps | yes | yes | yes | starts; you cannot leave the first room |
+| petal_quest | runs | yes | yes | yes | **plays** from the title into its coroutine cutscenes, with its map (2026-09-02: coroutines, a `btnp` edge visible in `_draw`, `map()`'s whole-map default) |
+| dungeons_and_diagrams | gaps | yes | yes | yes | **plays**; its packed-flag bit trick reads right now (16.16 bit verbs) |
+| mossmoss | gaps | yes | yes | yes | starts; moss placement keys its walls by `x..","..y`, which needed integral floats to print as integers — to be re-played |
 | lowmemsky | gaps | yes | yes | no | runs; no input — which is the cart, it makes no `btn` calls |
-| dank_tomb | gaps | no | no | no | *(not played — `_init` errors on decoded data: the verdict's miss, a dry run's catch)* |
+| dank_tomb | gaps | yes | yes | yes | boots to its title and takes input (2026-09-02: 16.16 bit verbs on its data parser, integer printing, the raw map bytes); to be played |
 | terra_1cart | gaps | no | no | no | *(not played — generates its world past the harness's 45 s)* |
 | celeste_classic_2 | refused | yes | yes | yes | starts; nothing moves, only the clouds draw — its levels are px9-packed 16.16 |
 | nimudazus | refused | no | no | no | *(not played — errors decoding its bytecode)* |
 | poom | refused | yes | yes | no | multi-cart; the loading screen draws through the memory map and stops there |
 
-Ten of twelve boot, three are refused up front and two of those would have sat
-on a shelf looking broken. Of the nine that import, two the verdict calls
-"gaps" fail anyway — one on decoded data, one on time — which is the honest
-edge of a static reading. If you convert a cart and play it, the useful
-contribution is a line in this table.
+Eleven of twelve boot, three are refused up front and two of those would have
+sat on a shelf looking broken. Of the nine that import, one the verdict calls
+"gaps" still fails — on time, not on a verb — which is the honest edge of a
+static reading. If you convert a cart and play it, the useful contribution is
+a line in this table.
 
 ## Licensing
 
