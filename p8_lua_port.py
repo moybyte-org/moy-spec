@@ -2375,6 +2375,186 @@ P8_API = ("btn btnp camera sin cos flr abs min max sqrt atan2 spr rectfill "
           "band bor bxor bnot shl shr rotl rotr").split()
 
 
+# --------------------------------------------------------------------------
+# The import verdict: what a cart will do here, decided from its source
+# --------------------------------------------------------------------------
+#
+# Three answers, in order of how much a person needs to hear them:
+#
+#   "refused"  the cart cannot run on this console -- it loads other carts,
+#              packs its data in 16.16 fixed-point bit tricks, spins on
+#              flip(), or draws in a screen mode there is no screen for.
+#              A host refuses the import and says why, so nothing lands on
+#              a shelf that cannot start.
+#   "gaps"     it runs, and something will look or sound different: a
+#              pause-menu entry, a machine counter reading zero, a sound
+#              synthesised by poking sfx RAM. Import it, badge it, list them.
+#   "runs"     nothing the scan knows about is in the way.
+#
+# Everything here is a pattern over the CONVERTED code, not an execution: a
+# dry run can tell you a cart errored on frame one, and this cannot -- but
+# this runs in a millisecond on every tier, with the cart's own words as the
+# reason. Each rule exists because a corpus cart hit it (PICO8.md's table
+# says which). A rule that matches nothing in the corpus was not added.
+
+def _strip_lua(body):
+    """The code with comments and string CONTENTS gone, so a pattern never
+    fires on prose. Strings keep their quotes (a call shape survives), long
+    brackets and long comments are removed whole."""
+    out = []
+    i = 0
+    n = len(body)
+    while i < n:
+        ch = body[i]
+        if body.startswith("--", i):
+            j = i + 2
+            if body.startswith("[[", j) or body.startswith("[=", j):
+                k = j
+                while k < n and body[k] == "=":
+                    k += 1
+                close = "]" + body[j + 1:k] + "]" if body[j] == "[" and k > j + 1 else "]]"
+                close = "]" + "=" * (k - j - 1) + "]"
+                e = body.find(close, k)
+                i = n if e < 0 else e + len(close)
+            else:
+                e = body.find("\n", j)
+                i = n if e < 0 else e
+            continue
+        if ch in "\"\'":
+            j = i + 1
+            while j < n and body[j] != ch:
+                if body[j] == "\\":
+                    j += 1
+                if body[j:j + 1] == "\n":
+                    break
+                j += 1
+            out.append(ch + ch)
+            i = j + 1
+            continue
+        if ch == "[" and (body.startswith("[[", i) or body.startswith("[=", i)):
+            k = i + 1
+            while k < n and body[k] == "=":
+                k += 1
+            if body[k:k + 1] == "[":
+                close = "]" + "=" * (k - i - 1) + "]"
+                e = body.find(close, k)
+                out.append("\"\"")
+                i = n if e < 0 else e + len(close)
+                continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+def _hex_addr_calls(code, verb):
+    """Every first argument of `verb(` that is a number, as an int."""
+    out = []
+    for m in re.finditer(r"\b%s\s*\(\s*(0x[0-9a-fA-F]+|\d+)" % verb, code):
+        s = m.group(1)
+        try:
+            out.append(int(s, 16) if s.lower().startswith("0x") else int(s))
+        except ValueError:
+            pass
+    return out
+
+
+def classify_body(body):
+    """-> {"verdict": "runs"|"gaps"|"refused", "reasons": [...]}, from the
+    CONVERTED cart code (what p8_lua_to_lua54 emits). Reasons are the
+    sentences a host shows; the refusing ones come first."""
+    code = _strip_lua(body)
+    refused = []
+    gaps = []
+
+    # -- will not run --------------------------------------------------------
+    if re.search(r"^\s*#include\b", code, re.M):
+        refused.append("it #includes another file, which does not travel with the cart")
+    # PICO-8's load() swaps carts; a cart's own `board:load()` is not it.
+    if not _defines_function(body, "load") and re.search(r"(?<![\w.:])load\s*\(", code):
+        refused.append("it loads other carts (load) -- a multi-cart game; this console "
+                       "runs one cart at a time")
+    # The 16.16 class. A shift by sixteen is how a cart reads the integer
+    # half of a packed 32-bit value, and it is FATAL when the cart is
+    # unpacking its data that way (celeste 2's px9, nimudazus's bytecode) --
+    # a decoder is a peek2/peek4/ord next to the shifts. Without one it is a
+    # hash or a mask that comes out wrong, which is a gap, not a death.
+    shifts = bool(re.search(r">>\s*16\b|<<\s*16\b", code)
+                  or re.search(r"\b(?:shr|shl|lshr)\s*\([^,()]+,\s*16\s*\)", code))
+    decoder = bool(re.search(r"\b(?:peek2|peek4|ord)\s*\(", code))
+    if shifts and decoder:
+        refused.append("it unpacks its data with 16.16 fixed-point shifts that this "
+                       "console's float numbers cannot reproduce")
+    elif shifts:
+        gaps.append("it shifts numbers by 16 bits, which loses the fixed-point precision "
+                    "PICO-8 has; a hash or a mask may come out wrong")
+    frac_bits = [ln for ln in code.split("\n")
+                 if re.search(r"\b0x[0-9a-fA-F]*\.[0-9a-fA-F]+", ln)
+                 and re.search(r"[&|~]|<<|>>|\b(?:band|bor|bxor|bnot|shl|shr|lshr|rotl|rotr)\s*\(", ln)]
+    if frac_bits:
+        gaps.append("it does bit arithmetic on fractional hex constants (0x0.0001 and "
+                    "the like); those bits are lost on floats, so a packed flag may read wrong")
+    has_loop = (_defines_function(body, "p8_update") or _defines_function(body, "p8_update60")
+                or _defines_function(body, "p8_draw"))
+    if re.search(r"\bflip\s*\(", code) and not _defines_function(body, "flip"):
+        if not has_loop:
+            refused.append("it runs its own loop on flip() instead of _update/_draw, "
+                           "and the console owns the frame")
+        else:
+            gaps.append("flip() does nothing here; the console draws each frame itself")
+    for a in _hex_addr_calls(code, "poke"):
+        if a == 0x5f2c:
+            m = re.search(r"\bpoke\s*\(\s*(?:0x5f2c|24364)\s*,\s*([0-9]+)", code)
+            if m and int(m.group(1)) & 7:
+                refused.append("it switches to a 64x64 or rotated screen mode (poke 0x5f2c) "
+                               "this console has no screen for")
+            break
+
+    # -- runs, with gaps -----------------------------------------------------
+    if re.search(r"\bmenuitem\s*\(", code) and not _defines_function(body, "menuitem"):
+        gaps.append("its pause-menu entries (menuitem) are not shown; the console owns the menu")
+    stat_ids = _hex_addr_calls(code, "stat")
+    stat_calls = len(re.findall(r"\bstat\s*\(", code))
+    if stat_calls and not _defines_function(body, "stat") and (
+            len(stat_ids) < stat_calls or any(not 32 <= i <= 36 for i in stat_ids)):
+        gaps.append("stat() reads zero: clock, CPU and audio counters are not measured")
+    audio_ram = [a for v in ("poke", "poke2", "poke4", "memcpy", "memset")
+                 for a in _hex_addr_calls(code, v) if 0x3100 <= a < 0x4300]
+    if audio_ram:
+        gaps.append("it writes sound data into sfx/music memory at runtime; the imported "
+                    "sounds play instead")
+    regs = [a for v in ("poke", "poke2", "poke4", "memcpy", "memset")
+            for a in _hex_addr_calls(code, v)]
+    if any(a == 0x5f2d for a in regs) or re.search(r"\bstat\s*\(\s*3[2-6]\s*\)", code):
+        gaps.append("it reads the mouse; there is no pointer in a PICO-8 port's input")
+    if any(a in (0x5f54, 0x5f55) for a in regs):
+        gaps.append("it remaps the sheet or screen (0x5f54/0x5f55); the remap is remembered, "
+                    "not applied")
+    if any(a in (0x5f5e, 0x5f5f) for a in regs):
+        gaps.append("it uses bitplane masks (0x5f5e); the mask is remembered, not applied")
+    if any(0x5600 <= a < 0x5e00 for a in regs):
+        gaps.append("it installs a custom font (0x5600); text draws in the system font")
+    if re.search(r"\bsfx\s*\([^()]*,[^()]*,", code):
+        gaps.append("sfx() with an offset or length plays the whole sound")
+    if re.search(r"\bcstore\s*\(", code):
+        gaps.append("cstore() writes a copy in memory; nothing is saved back to the cart file")
+    if re.search(r"\bserial\s*\(", code):
+        gaps.append("serial() has nothing on the other end")
+    if re.search(r"\bpal\s*\([^()]*,[^()]*,\s*2\s*\)", code):
+        gaps.append("the secondary palette (pal(..., 2)) is treated as the draw palette")
+
+    if refused:
+        return {"verdict": "refused", "reasons": refused + gaps}
+    if gaps:
+        return {"verdict": "gaps", "reasons": gaps}
+    return {"verdict": "runs", "reasons": []}
+
+
+def classify(sections):
+    """The verdict for parsed cart `sections` (p8_import.read_p8), computed
+    BEFORE anything is written, so a host can refuse without a trace."""
+    return classify_body(p8_lua_to_lua54(sections.get("lua", [])))
+
+
 def _calls_verb(body, name):
     """`name(` in the body at a word boundary."""
     i = 0
@@ -2595,7 +2775,7 @@ def port_sections(sections, out_dir, title, crop=(0, 0)):
     """Already-parsed `sections` -> a `.moy` folder at `out_dir`.
 
     Returns the facts only the writer knows: `{"files": [...], "sfx": n,
-    "music": m}`. Takes SECTIONS rather than a path because a console was handed
+    "music": m, "verdict": classify_body(...)}`. Takes SECTIONS rather than a path because a console was handed
     the dropped bytes and has already had to parse them to decide the file was a
     cart at all -- reading it a second time here is 40ms of a `.p8.png` inflate
     spent to learn nothing."""
@@ -2667,14 +2847,35 @@ def port_sections(sections, out_dir, title, crop=(0, 0)):
                title, icon_tile(kgfx),
                60 if _defines_function(body, "p8_update60") else 30)))
     written.append("manifest.json")
-    return {"files": sorted(written), "sfx": n_sfx, "music": n_music}
+    return {"files": sorted(written), "sfx": n_sfx, "music": n_music,
+            "verdict": classify_body(body)}
 
 
-def port(p8_path, out_dir, title=None, crop=(0, 0)):
+def port(p8_path, out_dir, title=None, crop=(0, 0), force=False):
+    """Port a cart file to `out_dir`; returns the writer's summary.
+
+    A REFUSED verdict (classify) writes nothing and raises SystemExit with
+    the reasons, unless `force`: a host that lands such a cart on its shelf
+    lands one that cannot start."""
     sections = read_p8(p8_path)      # text .p8 OR the BBS .p8.png
     title = title or _title_from(sections, p8_path)
-    port_sections(sections, out_dir, title, crop)
-    return out_dir
+    verdict = classify(sections)
+    if verdict["verdict"] == "refused" and not force:
+        raise SystemExit("refused: %s will not run on this console:\n  - %s\n"
+                         "(--force ports it anyway)"
+                         % (title, "\n  - ".join(verdict["reasons"])))
+    summary = port_sections(sections, out_dir, title, crop)
+    summary["out_dir"] = out_dir
+    return summary
+
+
+def verdict_lines(verdict):
+    """The verdict as the lines a host prints or shows beside the cart."""
+    v = verdict["verdict"]
+    if v == "runs":
+        return ["runs: nothing the importer knows about is in the way"]
+    head = ("will not run:" if v == "refused" else "runs with gaps:")
+    return [head] + ["  - " + r for r in verdict["reasons"]]
 
 
 def parse_zoom(argv):
@@ -2710,10 +2911,14 @@ def main(argv):
     if crop != (0, 0):
         args = [a for a in args if "," not in a or not a.replace(",", "").isdigit()]
     if len(args) != 2:
-        print("usage: p8_lua_port.py cart.p8 out_dir [--title NAME] [--zoom [T,B]]")
+        print("usage: p8_lua_port.py cart.p8 out_dir [--title NAME] [--zoom [T,B]]"
+              " [--force]")
         return 2
-    out = port(args[0], args[1], title, crop)
+    summary = port(args[0], args[1], title, crop, force="--force" in argv)
+    out = summary["out_dir"]
     vh = 128 - crop[0] - crop[1]
+    for line in verdict_lines(summary["verdict"]):
+        print("  " + line)
     print("ported ->", out)
     print("  canvas: 128x128 (native p8 pixels -- the host scales)")
     if crop != (0, 0):

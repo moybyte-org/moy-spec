@@ -47,24 +47,48 @@ Two scripts, both in this repository:
 The output is an ordinary `"runtime": "lua"` cart declaring a `128x128` canvas,
 so it draws real PICO-8 pixels 1:1 and the host does all scaling.
 
+## What the importer decides before it writes
+
+Every conversion starts with a **verdict**, read off the cart's own code
+before a byte lands on disk:
+
+| verdict | what a host does |
+|---|---|
+| **runs** | nothing the importer knows about is in the way |
+| **runs with gaps** | imports; the reasons are listed beside the cart, so a flat pause menu or a zero on a debug HUD is not a mystery |
+| **will not run** | refused, with the reasons — a cart that loads other carts, unpacks its data with 16.16 fixed-point shifts, or switches to a screen mode this console has no screen for. `--force` ports it anyway |
+
+`moy port` prints it, `p8_lua_port.classify(sections)` returns it, and
+`port_sections` hands it back beside the file list so a browser importer can
+badge the card. It is a **static** reading — patterns over the converted code,
+each one put there by a corpus cart that hit it — so it cannot see a cart that
+errors on its first frame or generates a world for a minute; that is a dry
+run's job, and the corpus table below records where the two disagree.
+
 ## How faithful is it, really
 
 Faithful enough that most carts boot and play, and **not** an emulator. PICO-8
-is a machine with a memory map; moy is a verb table. Where a cart uses the API,
-conversion is close to exact. Where it uses the *machine* — poking video memory,
-reading sheet pixels back, counting CPU — there is nothing underneath to be
-faithful to, and those carts break in ways no amount of shim work fixes.
+is a machine with a memory map; moy is a verb table with, since 2026-09, a
+PICO-8 machine behind it for ported carts. Where a cart uses the API,
+conversion is close to exact. Where it uses the *machine*, the machine is now
+there: 64 KB of memory with the sheet, the map, the flags, both palettes,
+camera, clip and the screen at their PICO-8 addresses, kept in step with the
+console both ways (`libmoy/src/moy_p8.c`, measured in
+[`proposals/p8-memory-map.md`](proposals/p8-memory-map.md)).
 
-One number matters up front: PICO-8 uses 16.16 fixed point, and this runs on a
-Lua whose numbers are floats (`LUA_32BITS` — single precision — on the C tier).
-Arithmetic differs in the last bits. Fine for nearly everything; fatal for a
-cart that depends on exact fixed-point overflow or on a fractional bitmask.
+One number still matters up front: PICO-8 uses 16.16 fixed point, and this
+runs on a Lua whose numbers are floats (`LUA_32BITS` — single precision — on
+the C tier). Arithmetic differs in the last bits. Fine for nearly everything;
+fatal for a cart that unpacks its data with fixed-point shifts or depends on a
+fractional bitmask, and that is the one class the verdict refuses outright.
 
 ## What comes across cleanly
 
 **The data.** Sprite sheet, the full 128×64 map (including the rows PICO-8
-hides in the bottom half of `__gfx__`), sprite flags, all 64 sfx with their
-per-sfx filters and custom instruments, and the music patterns.
+hides in the bottom half of `__gfx__`), sprite flags as `flags.moyflags`, all
+64 sfx with their per-sfx filters and custom instruments, and the music
+patterns. The manifest ships PICO-8's palette with its sixteen secret colours
+at 16–31, so `pal(c, 128 + i)` lands on the real colour.
 
 **The dialect.** The cart's Lua is converted token by token, not by regex:
 
@@ -87,44 +111,49 @@ the host drives it at the rate it was written for.
 
 **The API.** The shim implements PICO-8's verbs over the moy cart API —
 `sin`/`cos` with their turn-and-flip semantics, the table verbs
-(`add`/`del`/`foreach`/`all`/`count`), flag-masked `map()`, `btn`/`btnp` with
-PICO-8's auto-repeat, `pal()` including the table form, `rnd()` including the
-table form, string indexing, and the PICO-8 system font at its true 3×5.
+(`add`/`del`/`foreach`/`all`/`count`), `btn`/`btnp` with PICO-8's auto-repeat,
+`pal()` in every form including the table form and the **screen palette**
+(`pal(c, d, 1)`, kept across frames as PICO-8 keeps it), `palt()` as real
+transparency state (so `palt(0, false)` draws black), `fillp()` with its
+two-nibble colours and its transparency bit, `oval`/`ovalfill`, `rnd()`
+including the table form, string indexing, coroutines (`cocreate`, `coresume`,
+`costatus`, `yield`), and the PICO-8 system font at its true 3×5, drawn by the
+console in C where the machine is open.
+
+**The machine.** `peek`/`poke`/`peek2`/`poke2`/`peek4`/`poke4`/`memcpy`/`memset`
+address the real memory map; `sget`/`sset` and `mget`/`mset` read and write it;
+`fget`/`fset` are the console's own flags; `reload`/`cstore` copy from and to a
+ROM snapshot of the seeded image. A cart that bakes a texture by copying the
+screen into the sheet, fades by `memcpy` into the palette, or draws a shadow by
+`peek`/`poke` over `0x6000` does exactly that here.
 
 ## What is approximated
 
 These convert, run, and do *something* — but not the thing PICO-8 did. The
-importer reports them per cart, so you see the list for the cart in front of you.
+verdict names them per cart.
 
 | verb | what happens instead |
 |---|---|
-| `peek` `poke` `peek2/4` `poke2/4` `memcpy` `memset` | read and write 64K of **scratch** memory. A cart keeping its own bookkeeping there works; one poking a hardware register or blitting to the screen changes nothing. |
-| `sget` | reads back 0 — the sheet is a *file* here, not memory. Collision or effects driven off sheet pixels will be wrong. |
-| `sset` | dropped; `spr()` keeps drawing the art as imported. |
-| `fillp` | the pattern is remembered but fills are solid, so dithered gradients come out flat. |
-| `fset` | dropped — flags are baked in read-only, though `fget` works. |
-| `flip` | does nothing; the console calls `_draw()` for you. **A cart that loops on `flip()` still needs that loop moved into `_update()`.** |
-| `stat` | machine counters read 0 and the mouse reads nothing, so a debug HUD shows zeroes. |
-| `cartdata` `dget` `dset` | **real** — they persist through the console's own save memory. |
-| `reload` `cstore` | nothing to re-read; the sheet and map are files. |
-| `printh` `extcmd` `holdframe` | dropped. |
+| `menuitem` | the pause menu is the console's; entries are not shown |
+| `stat` | clock, CPU and audio counters read 0; the mouse reads nothing |
+| `flip` | does nothing; the console calls `_draw()` for you. A cart whose whole loop is `flip()` with no `_update`/`_draw` is refused |
+| sfx/music memory (`0x3100`–`0x42ff`) | remembered, not played; the imported sounds play |
+| `sfx(n, ch, offset, len)` | the whole sound plays |
+| `cstore` | writes the ROM snapshot in memory; nothing reaches the cart file |
+| `0x5f2c` screen modes | the 64×64 and rotated modes are refused; the normal mode is a no-op |
+| custom fonts (`0x5600`), bitplane masks (`0x5f5e`), sheet/screen remaps (`0x5f54`/`0x5f55`) | remembered, not applied |
+| 16.16 arithmetic | floats: a hash or a mask built from fractional bits comes out wrong (runs with gaps); a data decoder built from shifts by 16 does not run |
+| `cartdata` `dget` `dset` | **real** — they persist through the console's own save memory |
+| `printh` `extcmd` `holdframe` | dropped |
 
 ## What cannot come across
 
 | verb | why |
 |---|---|
-| `cocreate` `coresume` `costatus` `yield` | the console's Lua does not open the coroutine library. Rewrite that part as a state machine driven from `_update()`. |
-| `reboot` `load` | the launcher swaps carts here; reset your own state instead. |
-| `stop` | there is no command line to drop to. |
-| `trace` | no traceback to fetch; the cart error screen shows the line. |
-| `info` `serial` | no console to print to, nothing on the other end of the port. |
-
-Beyond the verb list, three shapes of cart do not survive:
-
-- **Carts that render by poking video memory.** The screen is not addressable.
-- **Carts whose world is bigger than the 128×64 map**, built by streaming rows
-  through memory the importer has no equivalent for.
-- **Carts driven by coroutines**, which is usually a scene or cutscene system.
+| `load` | the launcher swaps carts here; a multi-cart game is refused |
+| `reboot` `stop` | there is no command line to drop to |
+| `trace` `info` `serial` | no traceback to fetch, no console to print to, nothing on the other end of the port |
+| `#include` | the included file does not travel with the cart |
 
 ## The test corpus
 
@@ -138,42 +167,33 @@ the gate.
 **The gate is weak on purpose and you should not read it as "plays".** It
 measures three things by comparing rendered frames: `runs` (no error), `animates`
 (the frame changed between two run lengths) and `responds` (the frame differs
-when a direction is held). A cart can pass all three and still be unplayable —
-two below do.
+when a direction is held) — and beside them it records the importer's
+**verdict**, pinned in `p8_carts_expected.json` like a golden, so the table
+shows where the static call and the run disagree.
 
 Every row below marked *played* was driven by a person, not inferred from the
 gate.
 
-| cart | runs | animates | responds | played |
-|---|---|---|---|---|
-| bunnysurvivor | yes | yes | yes | **plays** — through, menus and all |
-| crimson_night | yes | yes | no | **plays** — its audio drove the sfx-filter work |
-| dungeons_and_diagrams | yes | yes | yes | **plays** |
-| lowmemsky | yes | yes | no | runs; no input — which is the cart, it makes no `btn` calls |
-| mossmoss | yes | yes | yes | starts; you cannot leave the first room |
-| celeste_classic_2 | yes | yes | yes | starts; nothing moves, only the clouds draw |
-| picooffroad | yes | no | no | starts; the track never begins |
-| petal_quest | yes | no | no | title screen, and nothing past it |
-| poom | yes | yes | no | does not work |
-| dank_tomb | no | no | no | *(not played — `_init` errors)* |
-| nimudazus | no | no | no | *(not played — errors on a nil call)* |
-| terra_1cart | no | no | no | *(not played — hangs, no frame in 45s)* |
+| cart | verdict | runs | animates | responds | played |
+|---|---|---|---|---|---|
+| bunnysurvivor | runs | yes | yes | yes | **plays** — through, menus and all |
+| crimson_night | runs | yes | yes | no | **plays** — its audio drove the sfx-filter work |
+| picooffroad | runs | yes | yes | yes | **plays** — races, with its shadow and its fades, on the reference boards (2026-09) |
+| petal_quest | runs | yes | shaky | shaky | title, then a coroutine-driven scene that now has coroutines |
+| dungeons_and_diagrams | gaps | yes | yes | yes | **plays**; its packed-flag bit trick reads wrong |
+| mossmoss | gaps | yes | yes | yes | starts; you cannot leave the first room |
+| lowmemsky | gaps | yes | yes | no | runs; no input — which is the cart, it makes no `btn` calls |
+| dank_tomb | gaps | no | no | no | *(not played — `_init` errors on decoded data: the verdict's miss, a dry run's catch)* |
+| terra_1cart | gaps | no | no | no | *(not played — generates its world past the harness's 45 s)* |
+| celeste_classic_2 | refused | yes | yes | yes | starts; nothing moves, only the clouds draw — its levels are px9-packed 16.16 |
+| nimudazus | refused | no | no | no | *(not played — errors decoding its bytecode)* |
+| poom | refused | yes | yes | no | multi-cart; the loading screen draws through the memory map and stops there |
 
-So: **9 of 12 boot, 7 of 12 animate, and 3 of 12 play.** That spread is the
-honest summary of this document — booting is cheap and playing is not, and no
-automated signal here could tell you which you have. Two carts pass all three
-gate signals and are unplayable.
-
-The four that boot but do not play are not random, and each lands on a limit
-this document already names: **poom** renders by poking screen memory,
-**petal_quest** drives its scenes with coroutines, **picooffroad** keeps its
-track data in a packed binary blob, and **celeste_classic_2** and **mossmoss**
-both fail at moving between rooms. If you are choosing a cart to convert, the
-question worth asking first is not "how big is it" but "does it touch the
-machine".
-
-If you convert a cart and play it, the useful contribution is a line in this
-table.
+Ten of twelve boot, three are refused up front and two of those would have sat
+on a shelf looking broken. Of the nine that import, two the verdict calls
+"gaps" fail anyway — one on decoded data, one on time — which is the honest
+edge of a static reading. If you convert a cart and play it, the useful
+contribution is a line in this table.
 
 ## Licensing
 

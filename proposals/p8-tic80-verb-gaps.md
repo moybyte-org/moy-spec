@@ -1,10 +1,14 @@
 # Proposal: the PICO-8 / TIC-80 verb gaps — what a native of those consoles misses here
 
-**Status: draft. Not part of core 0.2.** Nothing in this file changes SPEC.md;
-it is the gap analysis of 2026-08-12, grounded against SPEC.md's actual verb
-tables, the p8 port shim's stub list (every stub is a confessed gap), and the
-reference console's shipped Lua sandbox — written down so each item gets a
-deliberate yes/no instead of drifting in as "obviously we should".
+**Status: largely landed, 2026-09-02.** This was the gap analysis of
+2026-08-12, grounded against SPEC.md's verb tables, the p8 port shim's stub
+list and the reference console's sandbox. What it recommended is now in
+SPEC.md: Tier 1 whole (`coroutine` in §4.1, `srand` in §9, the `pix` read form
+in §6), the Tier 2 flags bundle (§3.5 `flags.moyflags`, `fget`/`fset`,
+`map(..., layers)`), and from Tier 3 `fillp`, `sget`/`sset` and `oval`/`ovalb`
+— plus the screen palette §12.1 had deferred, and the memory map this file once
+filed under "never" (see `p8-memory-map.md`). The text below is kept as the
+record of the argument; the tables are what SPEC.md says now.
 
 ## Who this serves, precisely
 

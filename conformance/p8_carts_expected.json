@@ -1,78 +1,90 @@
 {
-  "_": "What each corpus cart does under libmoy -- the real C console and its LUA_32BITS VM. A RATCHET: a cart that stops running, animating or taking input fails the build; runs/animates also fail if a cart starts, asking for this file to be raised. Recorded as the AND of THREE runs, so a borderline cart is pinned at its weakest observed behaviour -- these are real carts with clocks and randomness, and a gate that flaps gets deleted rather than fixed. The carts are not in this repository (see conformance/p8_carts.py).",
+  "_": "What each corpus cart does under libmoy -- the real C console and its LUA_32BITS VM. A RATCHET: a cart that stops running, animating or taking input fails the build; runs/animates also fail if a cart starts, asking for this file to be raised. Recorded as the AND of THREE runs, so a borderline cart is pinned at its weakest observed behaviour -- these are real carts with clocks and randomness, and a gate that flaps gets deleted rather than fixed. The carts are not in this repository (see conformance/p8_carts.py). `verdict` is what the IMPORTER says before writing (PICO8.md, the static verdict) -- a golden too, since the classifier is deterministic.",
   "carts": {
     "bunnysurvivor-9": {
       "animates": true,
       "note": "runs and animates; takes input",
       "responds": true,
-      "runs": true
+      "runs": true,
+      "verdict": "runs"
     },
     "celeste_classic_2-5": {
       "animates": true,
       "note": "runs and animates; takes input",
       "responds": true,
-      "runs": true
+      "runs": true,
+      "verdict": "refused"
     },
     "crimson_night-5": {
       "animates": true,
       "note": "runs and animates",
       "responds": false,
-      "runs": true
+      "runs": true,
+      "verdict": "runs"
     },
     "dank_tomb-0": {
       "animates": false,
       "note": "run_cart: _init: [string \"main.lua\"]:2264: attempt to index a nil value (global 'hf')",
       "responds": false,
-      "runs": false
+      "runs": false,
+      "verdict": "gaps"
     },
     "dungeons_and_diagrams-5": {
       "animates": true,
       "note": "runs and animates; takes input",
       "responds": true,
-      "runs": true
+      "runs": true,
+      "verdict": "gaps"
     },
     "lowmemsky-1": {
       "animates": true,
       "note": "runs and animates",
       "responds": false,
-      "runs": true
+      "runs": true,
+      "verdict": "gaps"
     },
     "mossmoss-17": {
       "animates": true,
       "note": "runs and animates; takes input",
       "responds": true,
-      "runs": true
+      "runs": true,
+      "verdict": "gaps"
     },
     "nimudazus-27": {
       "animates": false,
       "note": "run_cart: [string \"main.lua\"]:869: attempt to call a nil value (for iterator 'for iterator')",
       "responds": false,
-      "runs": false
+      "runs": false,
+      "verdict": "refused"
     },
     "petal_quest-12": {
       "animates": false,
       "note": "borderline: gets past its title only sometimes inside the frame budget, then stops on cocreate",
       "responds": false,
       "runs": true,
-      "unstable": true
+      "unstable": true,
+      "verdict": "runs"
     },
     "picooffroad-5": {
       "animates": true,
       "note": "runs and animates; takes input (the track streams out of map ROM through reload(), and its fades are fillp holes -- both since 2026-09)",
       "responds": true,
-      "runs": true
+      "runs": true,
+      "verdict": "runs"
     },
     "poom_0-9": {
       "animates": true,
       "note": "runs and animates",
       "responds": false,
-      "runs": true
+      "runs": true,
+      "verdict": "refused"
     },
     "terra_1cart-44": {
       "animates": false,
       "note": "HUNG (no frame in 45s)",
       "responds": false,
-      "runs": false
+      "runs": false,
+      "verdict": "gaps"
     }
   }
 }

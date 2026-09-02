@@ -363,9 +363,10 @@ def cmd_port(args):
         args = [a for a in args if a != title]
     if crop != (0, 0):        # drop the "T,B" that followed --zoom
         args = [a for a in args if not ("," in a and a.replace(",", "").isdigit())]
+    force = "--force" in sys.argv
     if not args:
         die("usage: moy.py port <cart.p8 | url> [out.moy]"
-            " [--title NAME] [--zoom [T,B]]")
+            " [--title NAME] [--zoom [T,B]] [--force]")
     src = args[0]
     if src.startswith(("http://", "https://")):
         import urllib.request
@@ -380,7 +381,12 @@ def cmd_port(args):
         die("no such .p8: " + src)
     out = cart_dir(args[1] if len(args) > 1
                    else os.path.splitext(os.path.basename(src))[0])
-    p8_lua_port.port(src, out, title=title, crop=crop)
+    # The verdict comes first (PICO8.md, "What the importer decides"): a cart
+    # that cannot run is refused before a byte is written, with its reasons,
+    # and --force overrides for someone who wants to see it fail.
+    summary = p8_lua_port.port(src, out, title=title, crop=crop, force=force)
+    for line in p8_lua_port.verdict_lines(summary["verdict"]):
+        print("  " + line)
     print("ported -> %s" % out)
     print("  PICO-8 carts carry their own licenses (BBS default CC BY-NC-SA")
     print("  4.0) -- ported carts are dev/personal material unless stated.")

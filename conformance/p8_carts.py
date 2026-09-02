@@ -69,7 +69,7 @@ def _frame_hash(path):
 
 
 def check(cart_path, work):
-    """-> (runs, animates, responds, note).
+    """-> (runs, animates, responds, note, verdict).
 
     Both matter and they fail differently. A cart that never ticks still LOADS
     and still writes a frame, so `runs` alone cannot see a driver that stopped
@@ -77,11 +77,15 @@ def check(cart_path, work):
     """
     name = os.path.basename(cart_path).split(".p8")[0]
     out_dir = os.path.join(work, name + ".moy")
+    verdict = "?"
     try:
         sections = p8_import.read_p8(cart_path)
-        p8_lua_port.port_sections(sections, out_dir, name)
+        # The import VERDICT (PICO8.md): what the porter says about the cart
+        # before it writes. Recorded beside what the cart then does, so the
+        # table shows where the static call and the run disagree.
+        verdict = p8_lua_port.port_sections(sections, out_dir, name)["verdict"]["verdict"]
     except Exception as exc:                       # noqa: BLE001 - reported
-        return False, False, False, "import %s: %s" % (type(exc).__name__, exc)
+        return False, False, False, "import %s: %s" % (type(exc).__name__, exc), verdict
 
     # Two runs at different frame counts: if the cart is ANIMATING the frames
     # differ, and if it is frozen (or never ticked) they do not. A cart that
@@ -105,13 +109,13 @@ def check(cart_path, work):
 
     early, err = frame_at(2, None, "early")
     if err:
-        return False, False, False, err
+        return False, False, False, err, verdict
     late, err = frame_at(FRAMES, MOVE, "move")
     if err:
-        return False, False, False, err          # a hang stops here
+        return False, False, False, err, verdict   # a hang stops here
     idle, err = frame_at(FRAMES, START, "idle")
     if err:
-        return False, False, False, err
+        return False, False, False, err, verdict
 
     moves = early != late
     # RESPONDS: the same cart, same frame count, differing only in whether a
@@ -121,7 +125,7 @@ def check(cart_path, work):
     note = ("runs and animates" if moves else "runs, but the frame never changed")
     if responds:
         note += "; takes input"
-    return True, moves, responds, note
+    return True, moves, responds, note, verdict
 
 
 def main(argv):
@@ -169,11 +173,16 @@ def main(argv):
     regressed, improved, running = [], [], 0
     for f in carts:
         stem = f.split(".p8")[0]
-        ok, moves, responds, note = check(os.path.join(args.corpus, f), args.work)
+        ok, moves, responds, note, verdict = check(os.path.join(args.corpus, f), args.work)
         running += 1 if ok else 0
         want = expected.get(stem, {})
         shaky = bool(want.get("unstable"))
         mark = "ok" if ok else "FAIL"
+        # The verdict is a GOLDEN: the classifier is deterministic, so a change
+        # in either direction is a change to review, not a drift to absorb.
+        if want.get("verdict") is not None and want.get("verdict") != verdict:
+            regressed.append("%s: the importer's verdict moved from %s to %s"
+                             % (stem, want["verdict"], verdict))
         if want.get("runs") is True and not ok:
             regressed.append("%s stopped running: %s" % (stem, note))
         elif want.get("animates") is True and not moves and not shaky:
@@ -190,9 +199,10 @@ def main(argv):
             mark = "shaky"
         elif want.get("runs") is False:
             mark = "known"          # a recorded failure, not a build breaker
-        print("  %-28s %-5s %s" % (stem[:28], mark, note))
+        print("  %-28s %-5s %-8s %s" % (stem[:28], mark, verdict, note))
 
-    print("\n%d/%d carts run under libmoy" % (running, len(carts)))
+    print("\n%d/%d carts run under libmoy (verdict column: what the importer says up front)"
+          % (running, len(carts)))
     if regressed:
         print("\nREGRESSED -- these ran before:")
         for r in regressed:

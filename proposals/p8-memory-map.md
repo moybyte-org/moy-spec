@@ -1,7 +1,10 @@
 # Proposal: PICO-8's memory map for ported carts — measured on glass
 
-**Status: draft, measured 2026-09-01, prototype running on the reference boards.**
-Nothing in this file changes SPEC.md. It exists because
+**Status: landed 2026-09-02 as `libmoy/src/moy_p8.c`** — an opt-in machine a
+host opens with `moy_p8_open`, not a SPEC.md verb; every libmoy host (the web
+player, the desktop port, `run_cart`, and the reference console once it
+re-vendors) carries it, and `libmoy/test/p8mem.moy` asserts every mirrored
+region both ways. The measurements below are what decided it. It exists because
 `p8-tic80-verb-gaps.md` filed `peek`/`poke`/`memcpy`/`memset` under "by design,
 never", and SPEC.md §15 says reaching pixels through a per-pixel binding is
 "dead at any VM speed" — and both claims were arguments, not measurements. This
@@ -188,7 +191,11 @@ imported carts (z8lua: Lua 5.2.4, MIT, fix32 with PICO-8's overflow
 semantics, the dialect built in), which is integer arithmetic and would not
 carry this tax -- but it is a second VM in the image and its own project.
 
-## What landing it would take
+## What landing it took
+
+Landed 2026-09-02: the map moved from the reference console's `modmoycore.c`
+prototype into `libmoy/src/moy_p8.c`, so every host that links libmoy has it
+and the "host twin" below is the same C. The list is kept as written:
 
 1. **The host twin.** The desktop simulator runs Lua through
    `runtime/lua_binding` (libmoy's binding compiled for the host), not

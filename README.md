@@ -76,12 +76,14 @@ conformance checklist.
 map, the sfx, and the cart's own code converted token by token, over a shim
 that implements PICO-8's verbs on the moy API. Most carts boot and play.
 
-It is a converter, not an emulator, and the line falls where a cart stops using
-the API and starts using the *machine* — poking video memory, reading sheet
-pixels back, driving scenes with coroutines. [PICO8.md](PICO8.md) lists what
-comes across, what is approximated, what cannot, and the corpus of twelve real
-carts with what each one actually does. Note the licensing section: BBS carts
-default to CC BY-NC-SA 4.0.
+It is a converter, not an emulator, but since 2026-09 there is a PICO-8
+machine behind it — the memory map, the screen palette, the fill pattern, the
+flags, coroutines, the system font — so the line now falls at 16.16 fixed
+point and at multi-cart games, and the importer says which side of it a cart is
+on before it writes. [PICO8.md](PICO8.md) lists what comes across, what is
+approximated, what cannot, and the corpus of twelve real carts with what each
+one actually does. Note the licensing section: BBS carts default to CC BY-NC-SA
+4.0.
 
 ## Why this exists
 
