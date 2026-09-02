@@ -1268,6 +1268,7 @@ do
   -- below is guarded so the cart still runs there.
   local m_oval, m_ovalb, m_fillp = oval, ovalb, fillp
   local m_sget, m_sset, m_palt = sget, sset, palt
+  local m_fget, m_fset, m_map = fget, fset, map
   local m_sfx = sfx
   local m_music, m_music_stop = music, music_stop
   -- The data tables (emitted ABOVE the shim) and the stdlib verbs, captured
@@ -2076,7 +2077,6 @@ do
       else cpoke(a, (b & 0xf0) | c) end
     end
   end
-  function fset(n, f, v) end
   -- There is no ROM to re-read, and no terminal behind a cart.
   if __moy_reload ~= nil then
     -- The cart ROM is the seeded memory image on a host with the C map, so
@@ -2152,6 +2152,25 @@ do
     if f == nil then return v end
     return (v >> f) & 1 == 1
   end
+  function fset(n, f, v)
+    n = mfloor(n or 0)
+    if v == nil then gff[n] = mfloor(f or 0) & 0xff return end
+    local bit = 1 << (mfloor(f) & 7)
+    gff[n] = v and ((gff[n] or 0) | bit) or ((gff[n] or 0) & ~bit)
+  end
+  if m_fget ~= nil then
+    -- The console carries the flags (flags.moyflags, SPEC.md 3.5): fget and
+    -- fset are its own, and what fset writes is what map(..., layers) sees.
+    function fget(n, f)
+      n = fl(n)
+      if f == nil then return m_fget(n) end
+      return m_fget(n, fl(f))
+    end
+    function fset(n, f, v)
+      n = fl(n)
+      if v == nil then m_fset(n, fl(f)) else m_fset(n, fl(f), v and true or false) end
+    end
+  end
   -- Flag-masked map: ONE native call when the host offers the C walk
   -- (moybyte's __moy_map_masked, #66 M0 -- the flags crossed once in the
   -- __gff__ block above; the quads ride the same batch the spr fast path
@@ -2169,6 +2188,12 @@ do
     mask = mask or 0
     if native_map ~= nil
         and native_map(celx, cely, sx, sy, cw, ch, mask) then
+      return
+    end
+    if m_fget ~= nil then
+      -- The console's own masked walk (SPEC.md 7.2 layers, 2026-09), in C
+      -- on every libmoy host; the Lua loop below is for one that predates it.
+      m_map(celx, cely, cw, ch, sx, sy, -1, 1, mask)
       return
     end
     for cy = 0, ch - 1 do
@@ -2603,6 +2628,16 @@ def port_sections(sections, out_dir, title, crop=(0, 0)):
     if kgfx:
         _write(out_dir, "sprites.moygfx", kgfx)
         written.append("sprites.moygfx")
+
+    # flags.moyflags (SPEC.md 3.5): __gff__ is its first 256 tiles, byte for
+    # byte, so the console's own fget/fset/map(..., layers) read the real
+    # thing; the Lua table below the shim stays for a host without them.
+    gff = gff_hex(sections)
+    if any(ch != "0" for ch in gff):
+        gff = (gff + "0" * 1024)[:1024]
+        _write(out_dir, "flags.moyflags",
+               "\n".join(gff[i:i + 64] for i in range(0, 1024, 64)) + "\n")
+        written.append("flags.moyflags")
 
     sounds, n_sfx, n_music = sfx_music_to_sounds(
         sections.get("sfx", []), sections.get("music", []))

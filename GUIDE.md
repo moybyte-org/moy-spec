@@ -412,7 +412,10 @@ it at draw time.
 ### Sprites
 
 `sget(x, y)` reads a sheet pixel and `sset(x, y, c)` writes one; what you write
-is what `spr` draws next, and nothing puts it back for you.
+is what `spr` draws next, and nothing puts it back for you. `fget(n, b)` reads a
+tile's flag bits from `flags.moyflags` — *solid*, *spike*, whatever you decide bit
+b means — and `map(..., layers)` draws only the tiles that carry a bit of the
+mask, which is how one map holds a floor and a foreground.
 
 The sheet is 512 tiles of 8 × 8, sixteen to a row, and it is a text file of hex
 nibbles. §3.2 has the arithmetic that turns a tile id into a position on it —

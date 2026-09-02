@@ -292,10 +292,32 @@ def make_api(canvas, cart=None, input=None, audio=None, pmem=None,
             return
         canvas.tline(tilemap, sheet, x0, y0, x1, y1, u, v, du, dv, colorkey)
 
-    def map_(mx=0, my=0, w=None, h=None, sx=0, sy=0, colorkey=-1, scale=1):
+    flags = cart.flags if cart is not None else bytearray(512)
+
+    def map_(mx=0, my=0, w=None, h=None, sx=0, sy=0, colorkey=-1, scale=1,
+             layers=0):
         if sheet is None or tilemap is None:
             return
-        canvas.map(tilemap, sheet, mx, my, w, h, sx, sy, colorkey, scale)
+        canvas.map(tilemap, sheet, mx, my, w, h, sx, sy, colorkey, scale,
+                   layers, flags)
+
+    def fget(n, b=None):
+        # SPEC.md 7.1: the tile's flag byte, or one bit of it as a boolean.
+        n = int(n)
+        v = flags[n] if 0 <= n < 512 else 0
+        if b is None:
+            return v
+        return bool((v >> (int(b) & 7)) & 1)
+
+    def fset(n, b, on=None):
+        n = int(n)
+        if not (0 <= n < 512):
+            return
+        if on is None:                  # fset(n, byte)
+            flags[n] = int(b) & 0xFF
+            return
+        bit = 1 << (int(b) & 7)
+        flags[n] = (flags[n] | bit) if on else (flags[n] & ~bit & 0xFF)
 
     def mget(x, y):
         return tilemap.mget(x, y) if tilemap is not None else -1
@@ -419,6 +441,8 @@ def make_api(canvas, cart=None, input=None, audio=None, pmem=None,
         "mset": mset,
         "sget": sget,
         "sset": sset,
+        "fget": fget,
+        "fset": fset,
         # input
         "btn": inp.btn,
         "btnp": inp.btnp,

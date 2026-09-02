@@ -93,6 +93,13 @@
       "note": "The screen palette (SPEC.md 6, 12.1): pal(c0, c1, 1) moves\npixels ALREADY drawn, chains after the draw palette, and\npal() resets both. The golden is the frame as shown."
     },
     {
+      "name": "flags",
+      "core": true,
+      "calls": 20,
+      "frame_sha256": "c71888eea693eb43fa1c399f36478d422af26ac49d01af4215566936e7b8a169",
+      "note": "Tile flags (SPEC.md 3.5, 7.1, 7.2): map(..., layers) draws only\nthe cells whose tile shares a flag bit with the mask; fset\nchanges that on the next map(); a mask against no flags draws\nnothing. The scene restores what it edits first."
+    },
+    {
       "name": "provisional",
       "core": false,
       "calls": 12,

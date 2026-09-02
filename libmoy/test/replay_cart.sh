@@ -27,6 +27,7 @@ fi
 set -- "$trace" "$out"
 [ -f "$cart/sprites.moygfx" ] && set -- "$@" --sheet "$cart/sprites.moygfx"
 [ -f "$cart/map.moymap" ]     && set -- "$@" --map   "$cart/map.moymap"
+[ -f "$cart/flags.moyflags" ] && set -- "$@" --flags "$cart/flags.moyflags"
 
 # MOY_REPLAY picks which build of the replayer runs -- the index one by
 # default, the direct-colour one for `make conform-565`. Same suite, same

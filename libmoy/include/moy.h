@@ -261,6 +261,14 @@ void moy_mset(moy_map *m, int x, int y, int tile);      /* negative clears */
 void moy_map_draw(moy_canvas *c, const moy_map *m, const moy_sheet *s,
                   int mx, int my, int w, int h, int sx, int sy,
                   int colorkey, int scale);
+/* SPEC.md 7.2 map(..., layers): with `layers` non-zero a cell draws only when
+ * its tile's flag byte shares a bit with it; `flags` is the MOY_FLAGS-byte
+ * table (NULL: no cell passes). layers == 0 is moy_map_draw. */
+#define MOY_FLAGS 512
+void moy_map_draw_layers(moy_canvas *c, const moy_map *m, const moy_sheet *s,
+                         int mx, int my, int w, int h, int sx, int sy,
+                         int colorkey, int scale, int layers,
+                         const uint8_t *flags);
 
 /* Textured line: exactly moy_line's pixels, sampling the MAP as a virtual
  * texture of m->w*8 x m->h*8 pixels. u, v, du, dv are 16.16 fixed point --
@@ -356,6 +364,10 @@ typedef struct {
     moy_canvas *canvas;
     moy_sheet  *sheet;
     moy_map    *map;
+    /* SPEC.md 3.5 tile flags: MOY_FLAGS bytes, YOURS, or NULL for a host
+     * with none -- then fget reads 0, fset is a no-op and a non-zero map
+     * layer mask draws nothing. */
+    uint8_t    *flags;
     moy_host    host;
     uint32_t    rng;        /* see moy_rnd */
     /* SPEC.md 6, the always-present half. A cart calls view() or background()

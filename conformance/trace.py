@@ -52,10 +52,11 @@ class RecordingCanvas:
     """Wraps a Canvas: draws for real, and records what a cart would have
     called to produce the same thing."""
 
-    def __init__(self, canvas, sheet=None, tilemap=None):
+    def __init__(self, canvas, sheet=None, tilemap=None, flags=None):
         self._c = canvas
         self._sheet = sheet
         self._tilemap = tilemap
+        self._flags = flags
         self.calls = []
 
     # Pass-through verbs whose cart signature matches the canvas one exactly.
@@ -174,13 +175,27 @@ class RecordingCanvas:
         return self._c.sspr(sheet, sx, sy, sw, sh, dx, dy, dw, dh, colorkey, flip)
 
     def map(self, tilemap, sheet, mx=0, my=0, w=None, h=None,
-            sx=0, sy=0, colorkey=-1, scale=1):
+            sx=0, sy=0, colorkey=-1, scale=1, layers=0):
         # Resolve the defaults now: a trace must be self-contained, so "the
         # rest of the map" has to become concrete numbers before it ships.
         w = (tilemap.w - mx) if w is None else w
         h = (tilemap.h - my) if h is None else h
-        self._rec("map", mx, my, w, h, sx, sy, colorkey, scale)
-        return self._c.map(tilemap, sheet, mx, my, w, h, sx, sy, colorkey, scale)
+        if layers:
+            self._rec("map", mx, my, w, h, sx, sy, colorkey, scale, layers)
+        else:
+            self._rec("map", mx, my, w, h, sx, sy, colorkey, scale)
+        return self._c.map(tilemap, sheet, mx, my, w, h, sx, sy, colorkey, scale,
+                           layers, self._flags)
+
+    def fset(self, n, b, on=None):
+        # A FLAGS write, recorded like a draw call: it changes what the next
+        # map(..., layers) draws.
+        if on is None:
+            self._rec("fset", n, b)
+        else:
+            self._rec("fset", n, b, bool(on))
+        if self._flags is not None:
+            _fset(self._flags, n, b, on)
 
 
 # The verbs a replayer must implement, and how many arguments each takes in a
@@ -189,12 +204,23 @@ ARITY = {
     "cls": (1,), "pix": (3,), "line": (5,), "rect": (5,), "rectb": (5,),
     "circ": (4,), "circb": (4,), "print": (4,), "camera": (0, 2),
     "clip": (0, 4), "pal": (0, 2, 3), "palt": (0, 2), "spr": (6,),
-    "map": (8,), "tri": (7,), "trib": (7,), "sspr": (10,), "tline": (9,),
+    "map": (8, 9), "fset": (2, 3), "tri": (7,), "trib": (7,), "sspr": (10,), "tline": (9,),
     "fillp": (0, 2), "oval": (5,), "ovalb": (5,), "sset": (3,),
 }
 
 
-def replay(calls, canvas, sheet=None, tilemap=None):
+def _fset(flags, n, b, on=None):
+    n = int(n)
+    if not (0 <= n < 512):
+        return
+    if on is None:
+        flags[n] = int(b) & 0xFF
+        return
+    bit = 1 << (int(b) & 7)
+    flags[n] = (flags[n] | bit) if on else (flags[n] & ~bit & 0xFF)
+
+
+def replay(calls, canvas, sheet=None, tilemap=None, flags=None):
     """Run a trace against a Canvas -- the reference replayer, and the model
     for a port's own."""
     for call in calls:
@@ -247,7 +273,10 @@ def replay(calls, canvas, sheet=None, tilemap=None):
                          a[6], a[7], a[8])
         elif verb == "map":
             canvas.map(tilemap, sheet, a[0], a[1], a[2], a[3], a[4], a[5],
-                       a[6], a[7])
+                       a[6], a[7], a[8] if len(a) > 8 else 0, flags)
+        elif verb == "fset":
+            if flags is not None:
+                _fset(flags, *a)
         else:
             raise ValueError("unknown trace verb %r" % (verb,))
 

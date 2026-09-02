@@ -187,6 +187,7 @@ mygame.moy/
   main.lua           required
   sprites.moygfx     optional — the sprite sheet
   map.moymap         optional — the tilemap
+  flags.moyflags     optional — one flag byte per tile
   sounds.json        optional — the audio bank
   config.json        optional — author-exposed tuning values
 ```
@@ -325,6 +326,21 @@ for every converted cart. A field that must be named cannot be silently wrong.
 
 Cover art — the large, authored, promotional image a store would show — is
 deliberately **not** here. See §12.7.
+
+### 3.5 flags.moyflags
+
+One byte per tile, **512 tiles** in tile order, as hex pairs: sixteen lines of
+sixty-four digits, whitespace ignored. A short file leaves the remaining tiles
+zero; an absent file is all zero. It is the tile-tagging idiom of both consoles
+this format courts — *solid*, *spike*, *coin*, *layer 2* — read by `fget`, written
+by `fset` and consulted by `map(..., layers)` (§7.1, §7.2). PICO-8's `__gff__` is
+its first 256 tiles, byte for byte.
+
+A sidecar rather than a manifest field because it is data with the sheet's
+shape, and rather than a block in `sprites.moygfx` because that file has one
+concern already. How a host lets an author set the bits — dots in a sprite
+inspector, a text editor — is the host's business, like every other authoring
+surface.
 
 ---
 
@@ -652,6 +668,8 @@ needs a `~= nil` guard.
 | `sspr(sx, sy, sw, sh, dx, dy, dw, dh, colorkey, flip)` | stretch a sheet **pixel** region to `dw × dh` at `dx, dy` — provisional, see §6.1 |
 | `sget(x, y)` | the index at sheet **pixel** `x, y`; `0` off the sheet |
 | `sset(x, y, c)` | write a sheet pixel; `c` is masked to 0–15 (§2.3), a write off the sheet is dropped |
+| `fget(n)` · `fget(n, b)` | tile `n`'s flag byte (§3.5) · whether bit `b` (0–7) of it is set; `0` / `false` off the sheet |
+| `fset(n, v)` · `fset(n, b, on)` | write tile `n`'s flag byte · set or clear one bit of it |
 
 `n` is a sheet tile, **0–511**. `colorkey` is the transparent palette index, `-1` for
 opaque (default). `scale` is an integer enlargement, default 1. `flip`: `0` none, `1`
@@ -675,9 +693,16 @@ this section once pointed at is deleted for exactly that reason.
 
 | verb | effect |
 |---|---|
-| `map(mx, my, w, h, sx, sy, colorkey, scale)` | blit a `w × h` region of the tilemap at cell `mx, my` to screen `sx, sy` |
+| `map(mx, my, w, h, sx, sy, colorkey, scale, layers)` | blit a `w × h` region of the tilemap at cell `mx, my` to screen `sx, sy`; with `layers` non-zero, only the cells whose tile's flags (§3.5) share a bit with it |
 | `mget(x, y)` | tile id at a cell; `-1` for empty or out of range |
 | `mset(x, y, tile)` | write a cell; a negative id clears it |
+
+`layers` is how a level is drawn in strata — the ground with mask `1`, the
+foreground with mask `2` after the sprites — from one map and one call each. It is
+a filter on the **tile's** flags, not the cell's, so tagging a tile once tags every
+cell that uses it; `0` (or absent) is no filter at all. A cart with no `flags.moyflags`
+has all-zero flags, so a non-zero mask draws nothing there, and `fset` at runtime
+changes what the next `map` draws.
 
 ### 7.3 Input
 

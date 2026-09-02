@@ -37,6 +37,7 @@ ICON_MAX_TILES = 4
 MANIFEST = "manifest.json"
 SPRITES = "sprites.moygfx"
 MAP = "map.moymap"
+FLAGS = "flags.moyflags"
 SOUNDS = "sounds.json"
 CONFIG = "config.json"
 
@@ -87,6 +88,26 @@ def _normalize_icon(value, tile_count):
     return (tile, w, h)
 
 
+def parse_flags(text):
+    """flags.moyflags (SPEC.md 3.5): two hex digits per tile in tile order,
+    whitespace ignored, a short file leaves the rest zero."""
+    hexd = "".join(text.split())
+    if len(hexd) % 2 or len(hexd) > 1024:
+        raise ValueError("expected up to 512 hex byte pairs, got %d digits" % len(hexd))
+    out = bytearray(512)
+    for i in range(0, len(hexd), 2):
+        out[i // 2] = int(hexd[i:i + 2], 16)
+    return out
+
+
+def flags_to_hex(flags):
+    """The file form: sixteen lines of thirty-two tiles."""
+    lines = []
+    for row in range(16):
+        lines.append("".join("%02x" % flags[row * 32 + i] for i in range(32)))
+    return "\n".join(lines) + "\n"
+
+
 class Cart:
     """A loaded cart: its manifest, its script source and its assets.
 
@@ -94,11 +115,13 @@ class Cart:
     and points them at this."""
 
     def __init__(self, manifest, source, sheet=None, tilemap=None,
-                 sounds=None, config=None, name=None):
+                 sounds=None, config=None, name=None, flags=None):
         self.manifest = manifest
         self.source = source
         self.sheet = sheet if sheet is not None else SpriteSheet()
         self.tilemap = tilemap if tilemap is not None else TileMap()
+        # SPEC.md 3.5: one byte per tile, 512 tiles, absent = all zero.
+        self.flags = flags if flags is not None else bytearray(512)
         self.sounds = sounds if sounds is not None else {}
         self.config = config if config is not None else {}
         self.name = name
@@ -236,6 +259,13 @@ class Cart:
             except SheetError as exc:
                 raise CartError("%s: %s" % (MAP, exc))
 
+        flags = bytearray(512)
+        if FLAGS in files:
+            try:
+                flags = parse_flags(_text(files[FLAGS]))
+            except ValueError as exc:
+                raise CartError("%s: %s" % (FLAGS, exc))
+
         sounds = {}
         if SOUNDS in files:
             try:
@@ -261,7 +291,8 @@ class Cart:
             except Exception as exc:
                 raise CartError("manifest palette: %s" % exc)
 
-        return cls(manifest, source, sheet, tilemap, sounds, config, name=name)
+        return cls(manifest, source, sheet, tilemap, sounds, config, name=name,
+                   flags=flags)
 
 
 def load_cart(path, **kw):

@@ -73,6 +73,10 @@ NOTES = {
     "sheet": "sset (SPEC.md 7.1): a sheet write is what spr, sspr and map draw\n"
              "next; the index is masked to 0-15; writes off the sheet are\n"
              "dropped.",
+    "flags": "Tile flags (SPEC.md 3.5, 7.1, 7.2): map(..., layers) draws only\n"
+             "the cells whose tile shares a flag bit with the mask; fset\n"
+             "changes that on the next map(); a mask against no flags draws\n"
+             "nothing. The scene restores what it edits first.",
     "screen_pal": "The screen palette (SPEC.md 6, 12.1): pal(c0, c1, 1) moves\n"
                   "pixels ALREADY drawn, chains after the draw palette, and\n"
                   "pal() resets both. The golden is the frame as shown.",
@@ -101,35 +105,38 @@ def _write(path, blob):
 
 
 def build_assets():
-    """The sheet and map every conformance cart shares."""
+    """The sheet, map and tile flags every conformance cart shares."""
     sheet = moycore.SpriteSheet()
     tilemap = moycore.TileMap(20, 15)
+    flags = bytearray(512)
     scenes._fill_sheet(sheet)
     scenes._fill_map(tilemap)
-    return sheet, tilemap
+    scenes._fill_flags(flags)
+    return sheet, tilemap, flags
 
 
 def main():
     _mkdir(CARTS); _mkdir(TRACES); _mkdir(GOLDEN)
-    sheet, tilemap = build_assets()
+    sheet, tilemap, flags = build_assets()
     sheet_hex = sheet.to_hex()
     map_hex = tilemap.to_hex()
+    flags_hex = moycore.cart.flags_to_hex(flags)
 
     manifest_scenes = []
     problems = []
 
     for name, fn in scenes.SCENES:
         # 1. Run the scene, recording it.
-        s, t = build_assets()
+        s, t, fl = build_assets()
         direct = moycore.Canvas()
-        rec = trace.RecordingCanvas(direct, s, t)
+        rec = trace.RecordingCanvas(direct, s, t, fl)
         fn(rec, s, t)
         calls = rec.calls
 
         # 2. Replay the trace into a fresh canvas and demand the same pixels.
-        s2, t2 = build_assets()
+        s2, t2, fl2 = build_assets()
         replayed = moycore.Canvas()
-        trace.replay(calls, replayed, s2, t2)
+        trace.replay(calls, replayed, s2, t2, fl2)
         if replayed.present() != direct.present():
             problems.append("%s: the recorded trace does not reproduce the scene" % name)
             continue
@@ -163,6 +170,7 @@ def main():
                trace.to_lua(calls, name, NOTES.get(name, "")))
         _write(os.path.join(cart_dir, "sprites.moygfx"), sheet_hex + "\n")
         _write(os.path.join(cart_dir, "map.moymap"), map_hex + "\n")
+        _write(os.path.join(cart_dir, "flags.moyflags"), flags_hex)
 
         # 4. The generated cart must load.
         try:

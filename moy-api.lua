@@ -176,7 +176,8 @@ function sspr(sx, sy, sw, sh, dx, dy, dw, dh, colorkey, flip) end
 ---@param sy? integer
 ---@param colorkey? integer
 ---@param scale? integer
-function map(mx, my, w, h, sx, sy, colorkey, scale) end
+---@param layers? integer flag mask: draw only tiles whose flags share a bit (0 = all)
+function map(mx, my, w, h, sx, sy, colorkey, scale, layers) end
 
 ---Read a tilemap cell.
 ---@param x integer
@@ -202,6 +203,19 @@ function sget(x, y) end
 ---@param y integer
 ---@param c integer
 function sset(x, y, c) end
+
+---Tile n's flag byte (flags.moyflags), or with `b` whether bit b (0-7) is set.
+---@param n integer tile id 0-511
+---@param b? integer bit 0-7
+---@return integer|boolean
+function fget(n, b) end
+
+---Write tile n's flag byte (2 args), or set/clear one bit of it (3 args).
+---What you set is what map(..., layers) filters on next.
+---@param n integer
+---@param b integer the byte, or the bit
+---@param on? boolean
+function fset(n, b, on) end
 
 -- --- text / draw state ------------------------------------------------------
 

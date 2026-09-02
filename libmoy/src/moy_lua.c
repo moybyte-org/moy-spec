@@ -255,9 +255,37 @@ static int l_map(lua_State *L)
     int mx, my;
     if (!con->sheet || !con->map) return 0;
     mx = argi(L, 1, 0); my = argi(L, 2, 0);
-    moy_map_draw(con->canvas, con->map, con->sheet, mx, my,
-                 argi(L, 3, con->map->w - mx), argi(L, 4, con->map->h - my),
-                 argi(L, 5, 0), argi(L, 6, 0), argi(L, 7, -1), argi(L, 8, 1));
+    moy_map_draw_layers(con->canvas, con->map, con->sheet, mx, my,
+                        argi(L, 3, con->map->w - mx), argi(L, 4, con->map->h - my),
+                        argi(L, 5, 0), argi(L, 6, 0), argi(L, 7, -1), argi(L, 8, 1),
+                        argi(L, 9, 0), con->flags);
+    return 0;
+}
+
+/* SPEC.md 7.1 tile flags. A host with no table reads 0 and drops writes --
+ * the same truthful degrade as an unpainted sheet. */
+static int l_fget(lua_State *L)
+{
+    moy_console *con = con_of(L);
+    int n = argi(L, 1, -1);
+    int v = (con->flags && n >= 0 && n < MOY_FLAGS) ? con->flags[n] : 0;
+    if (lua_isnoneornil(L, 2)) lua_pushinteger(L, v);
+    else lua_pushboolean(L, (v >> (argi(L, 2, 0) & 7)) & 1);
+    return 1;
+}
+
+static int l_fset(lua_State *L)
+{
+    moy_console *con = con_of(L);
+    int n = argi(L, 1, -1);
+    if (!con->flags || n < 0 || n >= MOY_FLAGS) return 0;
+    if (lua_isnoneornil(L, 3)) {                 /* fset(n, byte) */
+        con->flags[n] = (uint8_t)(argi(L, 2, 0) & 0xFF);
+    } else {                                     /* fset(n, bit, on) */
+        int bit = 1 << (argi(L, 2, 0) & 7);
+        if (lua_toboolean(L, 3)) con->flags[n] = (uint8_t)(con->flags[n] | bit);
+        else con->flags[n] = (uint8_t)(con->flags[n] & ~bit);
+    }
     return 0;
 }
 
@@ -691,7 +719,7 @@ static const luaL_Reg VERBS[] = {
     {"print", l_print}, {"camera", l_camera}, {"clip", l_clip},
     {"pal", l_pal}, {"palt", l_palt}, {"fillp", l_fillp},
     {"spr", l_spr}, {"map", l_map}, {"mget", l_mget}, {"mset", l_mset},
-    {"sget", l_sget}, {"sset", l_sset},
+    {"sget", l_sget}, {"sset", l_sset}, {"fget", l_fget}, {"fset", l_fset},
     {"btn", l_btn}, {"btnp", l_btnp}, {"players", l_players},
     {"time", l_time}, {"pmem", l_pmem}, {"cfg", l_cfg},
     {"rnd", l_rnd}, {"srand", l_srand}, {"flr", l_flr}, {"quit", l_quit},

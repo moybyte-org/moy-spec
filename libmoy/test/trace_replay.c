@@ -154,8 +154,35 @@ static int parse_arg(arg *a)
 
 static uint8_t sheet_pix[MOY_SHEET_W * MOY_SHEET_H];
 static uint8_t map_cells[MOY_MAP_MAX * MOY_MAP_MAX];
+static uint8_t flag_bytes[MOY_FLAGS];
 static moy_sheet sheet;
 static moy_map   map;
+
+static int hexval(int ch);
+
+/* flags.moyflags (SPEC.md 3.5): hex byte pairs in tile order, whitespace
+ * ignored, a short file leaves the rest zero. */
+static void load_flags(const char *path)
+{
+    FILE *f = fopen(path, "rb");
+    int hi, lo, n = 0;
+    if (!f) return;
+    for (;;) {
+        do { hi = fgetc(f); } while (hi == '\n' || hi == '\r' || hi == ' ');
+        lo = fgetc(f);
+        if (hi == EOF || lo == EOF || n >= MOY_FLAGS) break;
+        flag_bytes[n++] = (uint8_t)((hexval(hi) << 4) | hexval(lo));
+    }
+    fclose(f);
+}
+
+static void set_flag(int n, int b, int has_on, int on)
+{
+    if (n < 0 || n >= MOY_FLAGS) return;
+    if (!has_on) { flag_bytes[n] = (uint8_t)(b & 0xFF); return; }
+    if (on) flag_bytes[n] = (uint8_t)(flag_bytes[n] | (1 << (b & 7)));
+    else flag_bytes[n] = (uint8_t)(flag_bytes[n] & ~(1 << (b & 7)));
+}
 
 static int hexval(int ch)
 {
@@ -231,6 +258,7 @@ int main(int argc, char **argv)
     for (i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--sheet") && i + 1 < argc) load_sheet(argv[++i]);
         else if (!strcmp(argv[i], "--map") && i + 1 < argc) load_map(argv[++i]);
+        else if (!strcmp(argv[i], "--flags") && i + 1 < argc) load_flags(argv[++i]);
         else if (!trace_path) trace_path = argv[i];
         else out_path = argv[i];
     }
@@ -299,7 +327,8 @@ int main(int argc, char **argv)
             else if (!strcmp(verb, "sset"))   moy_sheet_pset(&sheet, N(0), N(1), N(2));
             else if (!strcmp(verb, "spr"))    moy_spr(&c, &sheet, N(0), N(1), N(2), N(3), N(4), N(5));
             else if (!strcmp(verb, "sspr"))   moy_sspr(&c, &sheet, N(0), N(1), N(2), N(3), N(4), N(5), N(6), N(7), N(8), N(9));
-            else if (!strcmp(verb, "map"))    moy_map_draw(&c, &map, &sheet, N(0), N(1), N(2), N(3), N(4), N(5), N(6), N(7));
+            else if (!strcmp(verb, "map"))    moy_map_draw_layers(&c, &map, &sheet, N(0), N(1), N(2), N(3), N(4), N(5), N(6), N(7), n > 8 ? N(8) : 0, flag_bytes);
+            else if (!strcmp(verb, "fset"))   set_flag(N(0), N(1), n > 2, n > 2 ? (int)a[2].num : 0);
             else if (!strcmp(verb, "tline"))  moy_tline(&c, &sheet, &map, N(0), N(1), N(2), N(3), (int32_t)N(4), (int32_t)N(5), (int32_t)N(6), (int32_t)N(7), N(8));
             else {
                 /* Never skipped: an unimplemented verb is a failure to report,

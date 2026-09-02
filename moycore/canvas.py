@@ -639,7 +639,7 @@ class Canvas:
                 y0 += sy
 
     def map(self, tilemap, sheet, mx=0, my=0, w=None, h=None,
-            sx=0, sy=0, colorkey=-1, scale=1):
+            sx=0, sy=0, colorkey=-1, scale=1, layers=0, flags=None):
         """Blit a w x h CELL region of the tilemap (top-left cell mx, my) to
         screen (sx, sy).
 
@@ -647,7 +647,12 @@ class Canvas:
         apply and a map tile is pixel-identical to the same tile drawn by hand.
         Empty cells (SPEC.md 3.3: byte 00) are skipped, leaving whatever was
         underneath -- which is what makes a tilemap composable with a
-        background."""
+        background.
+
+        `layers` (SPEC.md 7.2) is a flag mask: when non-zero, a cell draws only
+        if its tile's flags share a bit with it. No flags means no cell passes
+        a non-zero mask."""
+        layers = int(layers) & 0xFF
         mx = int(mx); my = int(my)
         scale = int(scale)
         if scale < 1:
@@ -666,6 +671,8 @@ class Canvas:
             for cx in range(w):
                 tid = tilemap.mget(mx + cx, ty)
                 if tid < 0:
+                    continue
+                if layers and (flags is None or not (flags[tid] & layers)):
                     continue
                 img = cache.get(tid)
                 if img is None:

@@ -51,6 +51,7 @@ static uint8_t  frame[MOY_W * MOY_H];
 static uint8_t  shown[MOY_W * MOY_H];     /* frame through the screen palette */
 static uint8_t  sheet_pix[MOY_SHEET_W * MOY_SHEET_H];
 static uint8_t  map_cells[MOY_MAP_MAX * MOY_MAP_MAX];
+static uint8_t  flag_bytes[MOY_FLAGS];
 static uint32_t rgba[MOY_W * MOY_H];
 static int32_t  pmem_slots[256];
 
@@ -141,6 +142,26 @@ static void load_sheet(void)
         if (v >= 0 && y < MOY_SHEET_H && x < MOY_SHEET_W)
             sheet_pix[y * MOY_SHEET_W + x] = (uint8_t)v;
         x++;
+    }
+}
+
+/* flags.moyflags (SPEC.md 3.5): hex byte pairs in tile order, whitespace
+ * ignored; absent or short leaves the rest zero. */
+static void load_flags(void)
+{
+    long n = 0, i = 0;
+    const char *t = cart_get("flags.moyflags", &n);
+    int k = 0;
+    memset(flag_bytes, 0, sizeof flag_bytes);
+    if (!t) return;
+    while (i + 1 < n && k < MOY_FLAGS) {
+        int hi, lo;
+        while (i < n && (t[i] == ' ' || t[i] == '\n' || t[i] == '\r')) i++;
+        if (i + 1 >= n) break;
+        hi = hexval((unsigned char)t[i++]);
+        lo = hexval((unsigned char)t[i++]);
+        if (hi < 0 || lo < 0) break;
+        flag_bytes[k++] = (uint8_t)((hi << 4) | lo);
     }
 }
 
@@ -432,6 +453,7 @@ KEEP int moy_web_boot(uint32_t seed)
     moy_sheet_init(&sheet, sheet_pix);
     load_sheet();
     load_map();
+    load_flags();
 
     if (moy_bank_parse(&bank, sounds))
         /* A malformed bank means silence, not a dead cart (SPEC.md 8.3), but it
@@ -440,6 +462,7 @@ KEEP int moy_web_boot(uint32_t seed)
         snprintf(errmsg, sizeof errmsg, "sounds.json is malformed; playing silent");
 
     moy_console_init(&con, &canvas, &sheet, &map);
+    con.flags = flag_bytes;
     con.host.btn = h_btn;
     con.host.btnp = h_btnp;
     con.host.players = h_players;

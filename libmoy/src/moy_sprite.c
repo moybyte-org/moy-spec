@@ -325,23 +325,34 @@ void moy_mset(moy_map *m, int x, int y, int tile)
     m->cells[y * m->w + x] = (uint8_t)(tile + 1);
 }
 
-void moy_map_draw(moy_canvas *c, const moy_map *m, const moy_sheet *s,
-                  int mx, int my, int w, int h, int sx, int sy,
-                  int colorkey, int scale)
+void moy_map_draw_layers(moy_canvas *c, const moy_map *m, const moy_sheet *s,
+                         int mx, int my, int w, int h, int sx, int sy,
+                         int colorkey, int scale, int layers,
+                         const uint8_t *flags)
 {
     /* Straight per-cell blit through moy_spr, so camera, clip, pal and palt all
      * apply and a map tile is pixel-identical to the same tile drawn by hand.
      * Empty cells are skipped, leaving whatever was underneath -- which is what
-     * makes a tilemap composable with a background. */
+     * makes a tilemap composable with a background. A layer mask (SPEC.md 7.2)
+     * skips the cells whose tile carries none of its bits. */
     int cy, cx, step;
     if (scale < 1) scale = 1;
+    layers &= 0xFF;
     step = MOY_TILE * scale;
     for (cy = 0; cy < h; cy++) {
         for (cx = 0; cx < w; cx++) {
             int tid = moy_mget(m, mx + cx, my + cy);
             if (tid < 0) continue;
+            if (layers && (!flags || (flags[tid] & layers) == 0)) continue;
             moy_spr(c, s, tid, sx + cx * step, sy + cy * step,
                     colorkey, scale, MOY_FLIP_NONE);
         }
     }
+}
+
+void moy_map_draw(moy_canvas *c, const moy_map *m, const moy_sheet *s,
+                  int mx, int my, int w, int h, int sx, int sy,
+                  int colorkey, int scale)
+{
+    moy_map_draw_layers(c, m, s, mx, my, w, h, sx, sy, colorkey, scale, 0, NULL);
 }

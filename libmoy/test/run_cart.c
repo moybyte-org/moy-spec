@@ -31,6 +31,7 @@ static uint8_t frame[MOY_W * MOY_H];
 static uint8_t shown[MOY_W * MOY_H];
 static uint8_t sheet_pix[MOY_SHEET_W * MOY_SHEET_H];
 static uint8_t map_cells[MOY_MAP_MAX * MOY_MAP_MAX];
+static uint8_t flag_bytes[MOY_FLAGS];
 static int32_t pmem_slots[256];
 static uint8_t layer_pix[MOY_W * MOY_H];
 static int layer_taken;
@@ -209,6 +210,22 @@ static void load_map(const char *path, moy_map *m)
     moy_map_init(m, map_cells, w, h);
 }
 
+/* flags.moyflags (SPEC.md 3.5): hex byte pairs in tile order, whitespace
+ * ignored, a short or absent file leaves the rest zero. */
+static void load_flags(const char *path)
+{
+    FILE *f = fopen(path, "rb");
+    int hi, lo, n = 0;
+    if (!f) return;                          /* optional */
+    for (;;) {
+        do { hi = fgetc(f); } while (hi == '\n' || hi == '\r' || hi == ' ');
+        lo = fgetc(f);
+        if (hi == EOF || lo == EOF || n >= MOY_FLAGS) break;
+        flag_bytes[n++] = (uint8_t)((hexval(hi) << 4) | hexval(lo));
+    }
+    fclose(f);
+}
+
 /* The declared canvas (SPEC.md 3.1): default 320x240, and a value outside the
  * closed set refuses the cart -- running at a size it did not ask for would
  * break every coordinate in it. Returns 0 on an unknown value. */
@@ -305,8 +322,11 @@ int main(int argc, char **argv)
     load_sheet(path);
     snprintf(path, sizeof path, "%s/map.moymap", cart);
     load_map(path, &map);
+    snprintf(path, sizeof path, "%s/flags.moyflags", cart);
+    load_flags(path);
 
     moy_console_init(&con, &canvas, &sheet, &map);
+    con.flags = flag_bytes;
     con.host.btn = h_btn;
     con.host.btnp = h_btnp;
     con.host.players = h_players;

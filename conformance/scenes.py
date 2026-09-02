@@ -67,6 +67,40 @@ def _fill_map(tilemap):
             tilemap.mset(x, y, v - 1 if v else -1)
 
 
+def _fill_flags(flags):
+    """Tile flags for the shared assets (SPEC.md 3.5). Chosen so that every
+    layer mask in the flags scene selects a DIFFERENT set of the map's tiles:
+    tile 1 carries bit 0, tile 2 bits 0 and 1, tile 4 bit 7, tile 0 nothing."""
+    flags[1] = 0x01
+    flags[2] = 0x03
+    flags[4] = 0x80
+
+
+def flags_scene(c, sheet, tilemap):
+    """map(..., layers) and fset (SPEC.md 7.1, 7.2). Flags outlive a frame like
+    the sheet, so the scene puts back what it changes before it starts."""
+    c.fset(3, 0x00)                                     # restore: tile 3 no flags
+    c.fset(2, 1, True)                                  # restore: tile 2 bit 1 on
+    c.fset(0, 0x00)
+    c.cls(1)
+    c.map(tilemap, sheet, 0, 0, 10, 6, 0, 0)            # everything: no mask
+    c.map(tilemap, sheet, 0, 0, 10, 6, 100, 0, -1, 1, 1)   # bit 0: tiles 1 and 2
+    c.map(tilemap, sheet, 0, 0, 10, 6, 200, 0, -1, 1, 2)   # bit 1: tile 2 only
+    c.map(tilemap, sheet, 0, 0, 10, 6, 0, 60, -1, 1, 0x80) # bit 7: tile 4 only
+    c.map(tilemap, sheet, 0, 0, 10, 6, 100, 60, -1, 1, 0x40)  # a bit nobody has: nothing
+    c.map(tilemap, sheet, 0, 0, 10, 6, 200, 60, -1, 1, 0x81)  # any of two bits
+    c.fset(3, 0x02)                                     # tile 3 joins layer 2 ...
+    c.map(tilemap, sheet, 0, 0, 10, 6, 0, 120, -1, 1, 2)    # ... on the next map
+    c.fset(2, 1, False)                                 # tile 2 leaves it, by bit
+    c.map(tilemap, sheet, 0, 0, 10, 6, 100, 120, -1, 1, 2)
+    c.fset(0, 0x01)                                     # the blank tile flagged draws blank
+    c.map(tilemap, sheet, 0, 0, 10, 6, 200, 120, -1, 1, 1)
+    c.map(tilemap, sheet, 0, 0, 10, 6, 0, 180, -1, 2, 1)    # a mask under scale
+    c.camera(-200, -180)                                # ... and camera
+    c.map(tilemap, sheet, 0, 0, 10, 6, 0, 0, -1, 1, 0x80)
+    c.camera()
+
+
 def primitives(c, sheet, tilemap):
     """Every core drawing verb once, at a size where the rasterization shows."""
     c.cls(1)
@@ -501,6 +535,7 @@ SCENES = (
     ("fillp", fillp_scene),
     ("sheet", sheet_scene),
     ("screen_pal", screen_pal_scene),
+    ("flags", flags_scene),
     ("provisional", provisional),
     ("provisional_tline", provisional_tline),
 )

@@ -78,10 +78,12 @@ def render_moycore(name, fn):
         f.close()
     sheet = moycore.SpriteSheet()
     tilemap = moycore.TileMap(20, 15)
+    flags = bytearray(512)
     scenes._fill_sheet(sheet)
     scenes._fill_map(tilemap)
+    scenes._fill_flags(flags)
     canvas = moycore.Canvas()
-    trace.replay(calls, canvas, sheet, tilemap)
+    trace.replay(calls, canvas, sheet, tilemap, flags)
     return canvas.present()             # the frame as SHOWN (SPEC.md 11)
 
 

@@ -255,6 +255,28 @@ static void load_sheet(const char *dir)
     free(t);
 }
 
+static uint8_t flag_bytes[MOY_FLAGS];
+
+/* flags.moyflags (SPEC.md 3.5): hex byte pairs in tile order, whitespace
+ * ignored, absent or short leaves the rest zero. */
+static void load_flags(const char *dir)
+{
+    char path[1024];
+    FILE *f;
+    int hi, lo, n = 0;
+    memset(flag_bytes, 0, sizeof flag_bytes);
+    snprintf(path, sizeof path, "%s/flags.moyflags", dir);
+    f = fopen(path, "rb");
+    if (!f) return;
+    for (;;) {
+        do { hi = fgetc(f); } while (hi == '\n' || hi == '\r' || hi == ' ');
+        lo = fgetc(f);
+        if (hi == EOF || lo == EOF || n >= MOY_FLAGS) break;
+        flag_bytes[n++] = (uint8_t)((hexval(hi) << 4) | hexval(lo));
+    }
+    fclose(f);
+}
+
 static void load_map(const char *dir, moy_map *m)
 {
     char path[1024];
@@ -398,6 +420,7 @@ int main(int argc, char **argv)
     moy_map_init(&map, map_cells, 20, 15);
     load_sheet(cart);
     load_map(cart, &map);
+    load_flags(cart);
 
     {   /* the sound bank. A missing sounds.json is a silent cart; a MALFORMED
          * one is worth a line on stderr, because "my music does not play" is
@@ -417,6 +440,7 @@ int main(int argc, char **argv)
     memset(&host, 0, sizeof host);
     host.running = 1;
     moy_console_init(&con, &canvas, &sheet, &map);
+    con.flags = flag_bytes;
     con.host.user = &host;
     con.host.btn = h_btn;
     con.host.btnp = h_btnp;
@@ -613,6 +637,7 @@ int main(int argc, char **argv)
                         memset(map_cells, 0, sizeof map_cells);
                         moy_map_init(&map, map_cells, 20, 15);
                         load_map(cart, &map);
+                        load_flags(cart);
                         {   char *snd;
                             snprintf(path, sizeof path, "%s/sounds.json", cart);
                             snd = slurp(path, NULL);
