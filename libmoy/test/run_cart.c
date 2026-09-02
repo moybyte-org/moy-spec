@@ -32,6 +32,9 @@ static uint8_t shown[MOY_W * MOY_H];
 static uint8_t sheet_pix[MOY_SHEET_W * MOY_SHEET_H];
 static uint8_t map_cells[MOY_MAP_MAX * MOY_MAP_MAX];
 static uint8_t flag_bytes[MOY_FLAGS];
+static uint8_t p8_mem[MOY_P8_MEM];
+static uint8_t p8_rom[MOY_P8_ROM];
+static moy_p8  p8;
 static int32_t pmem_slots[256];
 static uint8_t layer_pix[MOY_W * MOY_H];
 static int layer_taken;
@@ -348,6 +351,7 @@ int main(int argc, char **argv)
     L = luaL_newstate();
     if (!L) { fprintf(stderr, "run_cart: no lua_State\n"); return 2; }
     moy_lua_open(L, &con);
+    moy_p8_open(L, &con, &p8, p8_mem, p8_rom);   /* the PICO-8 machine, for ports */
 
     if (luaL_loadbuffer(L, source, strlen(source), mainfile) != LUA_OK ||
         lua_pcall(L, 0, 0, 0) != LUA_OK) {

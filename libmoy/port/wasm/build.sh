@@ -56,6 +56,7 @@ SRC=(
   "${LIBMOY}/src/moy_data.c"
   "${LIBMOY}/src/moy_audio.c"
   "${LIBMOY}/src/moy_lua.c"
+  "${LIBMOY}/src/moy_p8.c"
 )
 for f in "${LIBMOY}"/vendor/lua/*.c; do SRC+=("$f"); done
 

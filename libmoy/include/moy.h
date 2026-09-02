@@ -403,6 +403,26 @@ int moy_lua_open(struct lua_State *L, moy_console *con);
 int moy_lua_init  (struct lua_State *L, char *err, size_t errlen);
 int moy_lua_update(struct lua_State *L, float dt, char *err, size_t errlen);
 int moy_lua_draw  (struct lua_State *L, char *err, size_t errlen);
+
+/* -- the PICO-8 machine, for ported carts (src/moy_p8.c, PICO8.md) --------
+ *
+ * OPT-IN and not part of SPEC.md: a host that calls moy_p8_open offers the
+ * `__moy_*` globals the p8 port shim probes for -- a 64 KB memory map with
+ * the sheet, map, flags, palettes, camera/clip and the screen behind their
+ * PICO-8 addresses, the ROM snapshot reload()/cstore() copy from, and the
+ * 3x5 system font. Both buffers are YOURS (libmoy allocates nothing):
+ * MOY_P8_MEM bytes of memory and MOY_P8_ROM of ROM, or NULL for no ROM.
+ * Call it after moy_lua_open and before the cart's source runs; it seeds
+ * memory from the console's assets as they stand. */
+#define MOY_P8_MEM 0x10000
+#define MOY_P8_ROM 0x4300
+typedef struct {
+    moy_console *con;
+    uint8_t *mem;
+    uint8_t *rom;
+} moy_p8;
+int moy_p8_open(struct lua_State *L, moy_console *con, moy_p8 *p8,
+                uint8_t *mem, uint8_t *rom);
 #endif
 
 /* -- palette and font (SPEC.md 2, 6) ------------------------------------- */

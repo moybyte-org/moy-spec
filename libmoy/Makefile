@@ -59,7 +59,12 @@ $(LUA_DIR)/%.o: $(LUA_DIR)/%.c
 src/moy_lua.o: src/moy_lua.c include/moy.h
 	$(CC) $(CFLAGS) -DMOY_WITH_LUA -I$(LUA_DIR) -c $< -o $@
 
-$(RUNCART): test/run_cart.c src/moy_lua.o $(LUA_OBJ) $(LIB)
+# The PICO-8 machine (src/moy_p8.c): host verbs for ported carts, opt-in,
+# and Lua-shaped like the binding, so it builds with it.
+src/moy_p8.o: src/moy_p8.c include/moy.h src/moy_pixel.h
+	$(CC) $(CFLAGS) -DMOY_WITH_LUA -I$(LUA_DIR) -c $< -o $@
+
+$(RUNCART): test/run_cart.c src/moy_lua.o src/moy_p8.o $(LUA_OBJ) $(LIB)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -DMOY_WITH_LUA -I$(LUA_DIR) $^ $(LDLIBS) -o $@
 
@@ -74,7 +79,7 @@ $(RUNCART): test/run_cart.c src/moy_lua.o $(LUA_OBJ) $(LIB)
 # "no rule to make target", which is how this was found.
 PLAY := build/moy-play
 
-$(PLAY): port/sdl2/main.c src/moy_lua.o $(LUA_OBJ) $(LIB)
+$(PLAY): port/sdl2/main.c src/moy_lua.o src/moy_p8.o $(LUA_OBJ) $(LIB)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -DMOY_WITH_LUA -I$(LUA_DIR) $^ \
 	  $(shell pkg-config --cflags --libs sdl2) $(LDLIBS) -o $@
@@ -135,7 +140,7 @@ EXTT    := build/ext_test
 
 # SPEC.md 10's extensions need the Lua binding, hence moy_lua.o and the VM --
 # the audio test above needs neither, which is why they are separate targets.
-$(EXTT): test/ext_test.c src/moy_lua.o $(LUA_OBJ) $(LIB)
+$(EXTT): test/ext_test.c src/moy_lua.o src/moy_p8.o $(LUA_OBJ) $(LIB)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -DMOY_WITH_LUA -I$(LUA_DIR) $^ $(LDLIBS) -o $@
 
@@ -172,8 +177,14 @@ $(SPRSWEEP): test/spr_scale_sweep.c $(LIB)
 spr-sweep: $(SPRSWEEP)
 	./$(SPRSWEEP)
 
-test: conform conform-lua ext-test audio-test lowres spr-sweep p8-carts
+# The PICO-8 machine: a cart asserts every mirrored region of the memory map
+# both ways (test/p8mem.moy), and the C font is held equal to the shim's.
+p8-test: $(RUNCART)
+	./$(RUNCART) test/p8mem.moy build/p8mem.bin --frames 2
+	python3 test/p8_font_check.py
+
+test: conform conform-lua ext-test audio-test lowres spr-sweep p8-test p8-carts
 
 clean:
-	rm -f $(OBJ) $(LUA_OBJ) src/moy_lua.o $(LIB)
+	rm -f $(OBJ) $(LUA_OBJ) src/moy_lua.o src/moy_p8.o $(LIB)
 	rm -rf build

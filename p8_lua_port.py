@@ -1359,8 +1359,10 @@ do
   -- code that tested green by doing nothing. A test that filled the screen
   -- and looked at it is what caught that.
   local fill_pattern, fill_transparent = 0, false
-  -- p8's pen: the colour a draw verb uses when the cart passes none.
+  -- p8's pen: the colour a draw verb uses when the cart passes none, and
+  -- its print cursor.
   local p8_pen = 6
+  local p8_cx, p8_cy = 0, 0
 
   -- A p8 COLOUR argument is a byte: the low nibble draws; bit 7 picks the
   -- secret palette, which this port ships at indices 16-31 (SPEC.md 2.2);
@@ -1502,10 +1504,23 @@ do
   local BTN_GLYPH = {[139] = 60, [145] = 62, [148] = 94, [131] = 118,
                      [142] = 65, [151] = 66}
   local sbyte = string.byte
+  local m_p8print = __moy_p8print
   function print(s, x, y, c)
     s = tostring(s)
-    c = c == nil and 7 or fl(c)
+    -- print(s) and print(s, c) take the cursor and advance it a line, as
+    -- PICO-8 does (without its scrolling); the four-argument form is placed.
+    if y == nil then
+      c = x
+      x, y = p8_cx, p8_cy
+      p8_cy = p8_cy + 6
+    end
+    c = pcol(c)
     local lx = fl(x)
+    if m_p8print ~= nil then
+      -- The console draws the PICO-8 font itself (moy_p8.c): one call for the
+      -- string instead of fifteen pix() calls a glyph.
+      return m_p8print(s, lx, fl(y), c)
+    end
     local cx, cy = lx, fl(y)
     for i = 1, #s do
       local b = sbyte(s, i)
@@ -2099,7 +2114,7 @@ do
   -- p8's persistent draw colour, and its print cursor.
   function color(c) p8_pen = fl(c or 6) & 0x8f end
   function cursor(x, y, c) p8_cx, p8_cy = fl(x or 0), fl(y or 0)
-    if c ~= nil then p8_pen = fl(c) end end
+    if c ~= nil then p8_pen = fl(c) & 0x8f end end
 
   local m_mget, m_mset = mget, mset
   local p8map = {}

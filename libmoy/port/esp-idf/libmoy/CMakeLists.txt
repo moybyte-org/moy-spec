@@ -25,7 +25,7 @@ set(MOY_INCS "${MOY_ROOT}/include")
 
 if(CONFIG_MOY_WITH_LUA)
     file(GLOB MOY_LUA_SRCS "${MOY_ROOT}/vendor/lua/*.c")
-    list(APPEND MOY_SRCS "${MOY_ROOT}/src/moy_lua.c" ${MOY_LUA_SRCS})
+    list(APPEND MOY_SRCS "${MOY_ROOT}/src/moy_lua.c" "${MOY_ROOT}/src/moy_p8.c" ${MOY_LUA_SRCS})
     # Public, because the host is the one that calls luaL_newstate and hands the
     # state to moy_lua_open. moy.h only forward-declares struct lua_State.
     list(APPEND MOY_INCS "${MOY_ROOT}/vendor/lua")

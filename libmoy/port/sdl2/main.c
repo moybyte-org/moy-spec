@@ -256,6 +256,9 @@ static void load_sheet(const char *dir)
 }
 
 static uint8_t flag_bytes[MOY_FLAGS];
+static uint8_t p8_mem[MOY_P8_MEM];
+static uint8_t p8_rom[MOY_P8_ROM];
+static moy_p8  p8;
 
 /* flags.moyflags (SPEC.md 3.5): hex byte pairs in tile order, whitespace
  * ignored, absent or short leaves the rest zero. */
@@ -464,6 +467,7 @@ int main(int argc, char **argv)
 
     L = luaL_newstate();
     moy_lua_open(L, &con);
+    moy_p8_open(L, &con, &p8, p8_mem, p8_rom);   /* the PICO-8 machine, for ports */
     if (luaL_loadbuffer(L, source, strlen(source), mainfile) != LUA_OK ||
         lua_pcall(L, 0, 0, 0) != LUA_OK) {
         /* SPEC.md 4.3: report it with the line number and return to where the
@@ -608,6 +612,7 @@ int main(int argc, char **argv)
                 } else {
                     lua_State *nl = luaL_newstate();
                     moy_lua_open(nl, &con);
+                    moy_p8_open(nl, &con, &p8, p8_mem, p8_rom);
                     if (luaL_loadbuffer(nl, src2, strlen(src2), nmain) != LUA_OK ||
                         lua_pcall(nl, 0, 0, 0) != LUA_OK) {
                         /* the common case: a syntax error mid-edit. Say it and

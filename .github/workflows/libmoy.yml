@@ -111,6 +111,12 @@ jobs:
         run: make ext-test
         working-directory: libmoy
 
+      # The PICO-8 machine behind the port shim: every mirrored region of the
+      # memory map, both ways, and the C font held equal to the shim's Lua.
+      - name: The PICO-8 memory map mirrors the console
+        run: make p8-test
+        working-directory: libmoy
+
       - name: The desktop port still builds
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq libsdl2-dev
@@ -208,7 +214,7 @@ jobs:
           mkdir -p dist-win
           x86_64-w64-mingw32-gcc -std=c99 -O2 -DMOY_WITH_LUA -Iinclude -Ivendor/lua \
             -I$SDL/include -I$SDL/include/SDL2 \
-            port/sdl2/main.c src/moy_canvas.c src/moy_sprite.c src/moy_data.c src/moy_audio.c src/moy_lua.c \
+            port/sdl2/main.c src/moy_canvas.c src/moy_sprite.c src/moy_data.c src/moy_audio.c src/moy_lua.c src/moy_p8.c \
             vendor/lua/*.c \
             -L$SDL/lib -lmingw32 -lSDL2main -lSDL2 -lm \
             -o dist-win/moy-play.exe
@@ -305,7 +311,7 @@ jobs:
           SDLC=SDL2-2.30.11/prefix/bin/sdl2-config
           cc -std=c99 -O2 -DMOY_WITH_LUA -Iinclude -Ivendor/lua \
             -ISDL2-2.30.11/prefix/include $($SDLC --cflags) \
-            port/sdl2/main.c src/moy_canvas.c src/moy_sprite.c src/moy_data.c src/moy_audio.c src/moy_lua.c \
+            port/sdl2/main.c src/moy_canvas.c src/moy_sprite.c src/moy_data.c src/moy_audio.c src/moy_lua.c src/moy_p8.c \
             vendor/lua/*.c $($SDLC --static-libs) \
             -o ../dist/moy-play
 
