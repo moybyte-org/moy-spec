@@ -1,6 +1,7 @@
 /* Run a real .moy cart through libmoy + Lua, and dump the frame.
  *
  *   run_cart <cart-dir> <out.bin> [--frames N] [--hold BTN@FROM-TO,...]
+ *   MOY_PROFILE=1 run_cart ...   -- also print a Lua line profile at exit
  *
  * Speaks the conformance player protocol, so
  *
@@ -26,6 +27,88 @@
 #include "lauxlib.h"
 
 #include "moy.h"
+
+/* -- MOY_PROFILE=1: a Lua line profiler ----------------------------------
+ * A count hook samples the running line every PROF_EVERY VM instructions and
+ * the report at exit ranks lines and functions by samples, split into the
+ * ported cart's shim (up to the "end shim" marker) and the cart itself. */
+#define PROF_EVERY 1000
+#define PROF_LINES 16384
+static int prof_hits[PROF_LINES];
+static int prof_fn[PROF_LINES];
+static long prof_total;
+static const char *prof_src;
+static int prof_shim_end;
+
+static void prof_hook(lua_State *L, lua_Debug *ar)
+{
+    if (!lua_getinfo(L, "Sl", ar) || ar->currentline <= 0 ||
+        ar->currentline >= PROF_LINES) return;
+    prof_total++;
+    prof_hits[ar->currentline]++;
+    prof_fn[ar->currentline] = ar->linedefined;
+}
+
+static const char *prof_line_text(int line, char *buf, size_t n)
+{
+    const char *p = prof_src;
+    int l = 1;
+    size_t i = 0;
+    while (p && *p && l < line) { if (*p == '\n') l++; p++; }
+    if (!p) { buf[0] = 0; return buf; }
+    while (*p == ' ' || *p == '\t') p++;
+    while (*p && *p != '\n' && i + 1 < n) buf[i++] = *p++;
+    buf[i] = 0;
+    return buf;
+}
+
+static void prof_report(void)
+{
+    int fn_hits[PROF_LINES], top[40], i, k, n;
+    long shim = 0;
+    char text[72];
+    if (!prof_total) return;
+    memset(fn_hits, 0, sizeof fn_hits);
+    for (i = 1; i < PROF_LINES; i++) {
+        if (!prof_hits[i]) continue;
+        if (i <= prof_shim_end) shim += prof_hits[i];
+        if (prof_fn[i] > 0 && prof_fn[i] < PROF_LINES) fn_hits[prof_fn[i]] += prof_hits[i];
+        else fn_hits[0] += prof_hits[i];
+    }
+    printf("MOY_PROFILE: %ld samples x %d instructions; shim %.1f%%, cart %.1f%% "
+           "(shim ends at line %d)\n", prof_total, PROF_EVERY,
+           100.0 * (double)shim / (double)prof_total,
+           100.0 * (double)(prof_total - shim) / (double)prof_total, prof_shim_end);
+    printf("-- top lines: samples %% line fn | text\n");
+    for (n = 0; n < 40; n++) {
+        int best = 0;
+        for (i = 1; i < PROF_LINES; i++) {
+            for (k = 0; k < n; k++) if (top[k] == i) break;
+            if (k < n) continue;
+            if (prof_hits[i] > prof_hits[best]) best = i;
+        }
+        if (!best || !prof_hits[best]) break;
+        top[n] = best;
+        printf("%7d %5.1f%% %5d %5d | %s\n", prof_hits[best],
+               100.0 * (double)prof_hits[best] / (double)prof_total, best,
+               prof_fn[best], prof_line_text(best, text, sizeof text));
+    }
+    printf("-- top functions (by linedefined): samples %% fn | text\n");
+    for (n = 0; n < 25; n++) {
+        int best = -1;
+        for (i = 0; i < PROF_LINES; i++) {
+            if (!fn_hits[i]) continue;
+            for (k = 0; k < n; k++) if (top[k] == i) break;
+            if (k < n) continue;
+            if (best < 0 || fn_hits[i] > fn_hits[best]) best = i;
+        }
+        if (best < 0) break;
+        top[n] = best;
+        printf("%7d %5.1f%% %5d | %s\n", fn_hits[best],
+               100.0 * (double)fn_hits[best] / (double)prof_total, best,
+               best ? prof_line_text(best, text, sizeof text) : "(main chunk)");
+    }
+}
 
 static uint8_t frame[MOY_W * MOY_H];
 static uint8_t shown[MOY_W * MOY_H];
@@ -353,13 +436,20 @@ int main(int argc, char **argv)
     moy_lua_open(L, &con);
     moy_p8_open(L, &con, &p8, p8_mem, p8_rom);   /* the PICO-8 machine, for ports */
 
+    if (getenv("MOY_PROFILE")) {
+        const char *m = strstr(source, "end shim");
+        const char *p;
+        for (p = source; m && p < m; p++) if (*p == '\n') prof_shim_end++;
+        prof_src = source;
+        lua_sethook(L, prof_hook, LUA_MASKCOUNT, PROF_EVERY);
+    }
     if (luaL_loadbuffer(L, source, strlen(source), mainfile) != LUA_OK ||
         lua_pcall(L, 0, 0, 0) != LUA_OK) {
         /* SPEC.md 4.3: report it with the script line number, never swallow it. */
         fprintf(stderr, "run_cart: %s\n", lua_tostring(L, -1));
         return 1;
     }
-    free(source);
+    if (!prof_src) free(source);
 
     if (moy_lua_init(L, err, sizeof err)) {
         fprintf(stderr, "run_cart: _init: %s\n", err);
@@ -379,6 +469,7 @@ int main(int argc, char **argv)
         }
     }
     lua_close(L);
+    prof_report();
 
     {
         /* The frame as SHOWN (SPEC.md 11): through the screen palette. */
