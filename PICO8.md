@@ -76,6 +76,18 @@ pen, the print cursor, the fill pattern, camera, clip and the screen at their
 PICO-8 addresses, kept in step with the console both ways (`libmoy/src/moy_p8.c`, measured in
 [`proposals/p8-memory-map.md`](proposals/p8-memory-map.md)).
 
+The machine is also where the shim's cost went. On the boards a Lua-to-C
+call floors at ~1.65 µs, so a shim verb that spent four calls (a nil check, a
+floor, a palette lookup, then the console's verb) was four times the price of
+the pixels it drew. Every p8 draw and input verb is now one crossing into the
+machine, which resolves p8's defaults, floors, the draw palette, the fill
+pattern and the clip from its own memory; `all`/`foreach`, the number verbs,
+the 16.16 bit verbs, `peek`/`poke`, `mget`/`fget` and the native `|`/`&`
+operators are C for the same reason, and one idiom — the lookup-table span
+`poke(a, peek(lut | peek(a)))` over a range — folds into a single call. The
+shim keeps its Lua as the fallback for a host without the machine, and
+`libmoy/test/p8lib.moy` holds both lanes to one answer.
+
 One number still matters up front: PICO-8 uses 16.16 fixed point, and this
 runs on a Lua whose numbers are floats (`LUA_32BITS` — single precision — on
 the C tier). Arithmetic differs in the last bits. Fine for nearly everything;
@@ -215,6 +227,7 @@ verdict names them per cart.
 | `menuitem` | the pause menu is the console's; entries are not shown |
 | `stat` | clock, CPU and audio counters read 0; the mouse reads nothing |
 | `flip` | does nothing; the console calls `_draw()` for you. A cart whose whole loop is `flip()` with no `_update`/`_draw` is refused |
+| the frame cadence | one tick per PICO-8 period on the host's clock. A late frame runs extra ticks only while a tick costs under half the period (PICO-8's own line for two ticks per draw); past it a late frame slows time, as on PICO-8. `_draw` never runs before the first `_update`. A 60 fps cart on a 30 fps host runs two ticks per draw, PICO-8's degraded mode, not something to improve on |
 | sfx/music memory (`0x3100`–`0x42ff`) | remembered, not played; the imported sounds play |
 | `sfx(n, ch, offset, len)` | the whole sound plays |
 | `cstore` | writes the ROM snapshot in memory; nothing reaches the cart file |
