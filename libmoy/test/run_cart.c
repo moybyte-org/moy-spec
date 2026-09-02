@@ -28,6 +28,7 @@
 #include "moy.h"
 
 static uint8_t frame[MOY_W * MOY_H];
+static uint8_t shown[MOY_W * MOY_H];
 static uint8_t sheet_pix[MOY_SHEET_W * MOY_SHEET_H];
 static uint8_t map_cells[MOY_MAP_MAX * MOY_MAP_MAX];
 static int32_t pmem_slots[256];
@@ -356,9 +357,11 @@ int main(int argc, char **argv)
     lua_close(L);
 
     {
+        /* The frame as SHOWN (SPEC.md 11): through the screen palette. */
+        const uint8_t *px = moy_present(&canvas, shown) ? shown : frame;
         FILE *f = fopen(out, "wb");
         if (!f) { perror(out); return 2; }
-        fwrite(frame, 1, (size_t)(cw * ch), f);
+        fwrite(px, 1, (size_t)(cw * ch), f);
         fclose(f);
     }
     return 0;

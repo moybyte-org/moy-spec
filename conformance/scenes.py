@@ -455,6 +455,39 @@ def sheet_scene(c, sheet, tilemap):
     c.map(tilemap, sheet, 3, 0, 2, 1, 8, 72)             # ... and the map draws the edit
 
 
+def screen_pal_scene(c, sheet, tilemap):
+    """The screen palette (SPEC.md 6, 12.1): a display-time remap that moves
+    what is already on the canvas, applied when the frame is shown. Every
+    remap set after the reset stays in force, so the golden shows pixels
+    drawn BEFORE the remap moving with it."""
+    c.cls(1)
+    c.rect(8, 8, 40, 40, 8)              # drawn as 8 long before any remap
+    c.rect(56, 8, 40, 40, 9)             # a real 9, before the draw remap below
+    c.pal(4, 15, 1)                      # set, then reset: must NOT be in force
+    c.pal(2, 8)                          # a draw remap, reset the same way
+    c.pal()                              # no args resets BOTH palettes ...
+    c.rect(104, 8, 40, 40, 4)            # ... so this is shown as 4
+    c.rect(152, 8, 40, 40, 2)            # ... and written as 2, not 8
+    c.pal(8, 11, 1)                      # 8 shown as 11: the FIRST rect moves
+    c.pal(9, 10)                         # draw: 9 lands as 10 from here on
+    c.rect(200, 8, 40, 40, 9)            # lands as 10 ...
+    c.pal(10, 12, 1)                     # ... and 10 is shown as 12: the two chain
+    c.pal(9, 14, 1)                      # the real 9 above is shown as 14
+    c.print("SHOWN", 8, 56, 8)           # text moves like any pixel: 11
+    c.spr_tile(sheet, 1, 248, 8, -1, 4)  # so do sprite pixels (tile 1 is solid 8)
+    c.rect(8, 100, 40, 40, 7)
+    c.pal(7, 15, 1)                      # a swap, both ways at once
+    c.pal(15, 7, 1)
+    c.rect(56, 100, 40, 40, 15)
+    c.pal(11, 3)                         # 11 -> 3 at draw, 3 -> 5 at show
+    c.pal(3, 5, 1)
+    c.rect(104, 100, 40, 40, 11)
+    c.rect(152, 100, 40, 40, 3)          # a real 3 is shown as 5 too
+    c.pal(12, 12, 1)                     # an identity entry changes nothing
+    c.rect(200, 100, 40, 40, 12)
+    c.pal(1, 2, 1)                       # the background, drawn first, moves last
+
+
 SCENES = (
     ("primitives", primitives),
     ("edges", edges),
@@ -467,6 +500,7 @@ SCENES = (
     ("oval", oval_scene),
     ("fillp", fillp_scene),
     ("sheet", sheet_scene),
+    ("screen_pal", screen_pal_scene),
     ("provisional", provisional),
     ("provisional_tline", provisional_tline),
 )

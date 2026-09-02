@@ -86,6 +86,13 @@
       "note": "sset (SPEC.md 7.1): a sheet write is what spr, sspr and map draw\nnext; the index is masked to 0-15; writes off the sheet are\ndropped."
     },
     {
+      "name": "screen_pal",
+      "core": true,
+      "calls": 26,
+      "frame_sha256": "07911248ec600fabda3767f9a1f7bf1a72a183411f66e4508e7e9aa7f59975ea",
+      "note": "The screen palette (SPEC.md 6, 12.1): pal(c0, c1, 1) moves\npixels ALREADY drawn, chains after the draw palette, and\npal() resets both. The golden is the frame as shown."
+    },
+    {
       "name": "provisional",
       "core": false,
       "calls": 12,

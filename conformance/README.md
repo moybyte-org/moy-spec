@@ -3,7 +3,7 @@
 > SPEC.md 11: *An implementation conforms when it runs the conformance suite and
 > produces pixel-identical output.*
 
-This is that suite. Thirteen scenes, eleven of them counted; each is a real moy cart
+This is that suite. Fourteen scenes, twelve of them counted; each is a real moy cart
 plus a golden frame.
 
 ```
@@ -21,8 +21,9 @@ once per scene:
 - `{cart}` — the cart folder to run
 - `{out}` — where to write the frame
 
-Write **either** a 76800-byte raw dump of the framebuffer (one byte per pixel,
-palette indices, row-major from the top-left) **or** an 8-bit indexed PNG. The
+Write **either** a 76800-byte raw dump of the frame **as shown** -- the canvas
+through the screen palette (SPEC.md 6), one byte per pixel, palette indices,
+row-major from the top-left -- **or** an 8-bit indexed PNG of the same. The
 raw form exists so a C or firmware implementation needs no image library at all
 — `fwrite(framebuffer, 1, 320*240, f)` is a conforming adapter.
 
@@ -87,6 +88,7 @@ golden/hashes.json   sha256 per frame, plus the suite manifest
 | `tilemap` | `map()` regions, offsets, scale, colorkey, and a region starting out of range |
 | `oval` | `oval` / `ovalb` at every box shape the walk branches on, the tiny sizes, zero and negative sizes, edges, camera, clip, pal — and the outline over its own fill, which must ring it exactly |
 | `fillp` | holes untouched vs. holes in a second colour, the cell's phase under a moved camera and a clip, all nine shape verbs — and `pix`, `print`, a sprite and a `map` drawn with a pattern live, which must come out solid |
+| `screen_pal` | `pal(c0, c1, 1)` moves pixels already drawn, chains after the draw palette, `pal()` resets both; a player that dumps its canvas instead of its shown frame fails here |
 | `sheet` | `sset` then `spr`/`sspr`/`map` of the edited tile, the 0–15 mask, writes off the sheet; the scene restores its own edits first, since a second frame sees the first frame's sheet |
 | `provisional` | SPEC.md 6.1's `tri` / `trib` / `sspr` — **not counted**, SPEC.md 11 excludes 6.1 until it settles |
 | `provisional_tline` | SPEC.md 6.1's `tline`: the map sampled through 16.16 texture steps — **not counted**, same reason. The scene that caught a real board failing by 2773 pixels (below) |

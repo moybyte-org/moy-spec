@@ -82,7 +82,7 @@ def render_moycore(name, fn):
     scenes._fill_map(tilemap)
     canvas = moycore.Canvas()
     trace.replay(calls, canvas, sheet, tilemap)
-    return bytes(canvas.buf)
+    return canvas.present()             # the frame as SHOWN (SPEC.md 11)
 
 
 def render_external(command, name):

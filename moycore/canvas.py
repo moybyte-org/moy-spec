@@ -166,6 +166,7 @@ class Canvas:
         self.buf = bytearray(width * height)
         self._pal_map = bytearray(_PAL_IDENTITY)
         self._palt = bytearray(_PALT_OPAQUE)
+        self._spal = bytearray(_PAL_IDENTITY)
         self.reset_state()
 
     # -- draw state (SPEC.md 6) ---------------------------------------------
@@ -185,6 +186,7 @@ class Canvas:
         self._clip_x1 = self.w
         self._clip_y1 = self.h
         self._pal_map[:] = _PAL_IDENTITY
+        self._spal[:] = _PAL_IDENTITY
         self._palt[:] = _PALT_OPAQUE
         self._fillp = 0
         self._fillp_col = -1
@@ -221,16 +223,29 @@ class Canvas:
         self._clip_x1 = min(self.w, x + int(w))
         self._clip_y1 = min(self.h, y + int(h))
 
-    def pal(self, c0=None, c1=None):
-        """SPEC.md 6: draw colour c0 as c1. No args resets to identity.
+    def pal(self, c0=None, c1=None, p=0):
+        """SPEC.md 6: draw colour c0 as c1. No args resets BOTH palettes.
 
-        Draw-TIME only (SPEC.md 12.1): it remaps indices as they are written to
-        the canvas, so pixels already on it do not change. Applies to primitives
-        and to sprite pixels alike."""
+        p == 0 (the default) is the DRAW palette: it remaps indices as they are
+        written to the canvas, so pixels already on it do not change, and it
+        applies to primitives and sprite pixels alike. p == 1 is the SCREEN
+        palette (SPEC.md 12.1): applied by present() to every pixel when the
+        frame is shown, so it moves what is already drawn."""
         if c0 is None:
             self._pal_map[:] = _PAL_IDENTITY
+            self._spal[:] = _PAL_IDENTITY
+            return
+        if int(p) == 1:
+            self._spal[int(c0) & 63] = int(c1) & 63
             return
         self._pal_map[int(c0) & 63] = int(c1) & 63
+
+    def present(self):
+        """The frame as SHOWN: the canvas through the screen palette (SPEC.md
+        6, 12.1). What a host flushes and what a golden frame is."""
+        if self._spal == _PAL_IDENTITY:
+            return bytes(self.buf)
+        return bytes(self.buf).translate(bytes(self._spal) + bytes(range(64, 256)))
 
     def palt(self, c=None, on=None):
         """SPEC.md 6: mark index c transparent for sprite blits. No args resets
@@ -707,16 +722,17 @@ class Canvas:
         host does at flush time, and what the conformance runner hashes."""
         pal = self.palette if pal is None else pal
         rows = [bytes(rgb) for rgb in pal]
-        return b"".join(rows[i] for i in self.buf)
+        return b"".join(rows[i] for i in self.present())
 
     def to_rgb565(self, pal=None):
         """The same readout as big-endian RGB565, the format most target panels
         actually want."""
         pal = self.palette if pal is None else pal
         tab = _palette.rgb565_table(pal)
-        out = bytearray(len(self.buf) * 2)
-        for i in range(len(self.buf)):
-            v = self.buf[i] * 2
+        shown = self.present()
+        out = bytearray(len(shown) * 2)
+        for i in range(len(shown)):
+            v = shown[i] * 2
             out[i * 2] = tab[v]
             out[i * 2 + 1] = tab[v + 1]
         return bytes(out)

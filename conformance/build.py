@@ -73,6 +73,9 @@ NOTES = {
     "sheet": "sset (SPEC.md 7.1): a sheet write is what spr, sspr and map draw\n"
              "next; the index is masked to 0-15; writes off the sheet are\n"
              "dropped.",
+    "screen_pal": "The screen palette (SPEC.md 6, 12.1): pal(c0, c1, 1) moves\n"
+                  "pixels ALREADY drawn, chains after the draw palette, and\n"
+                  "pal() resets both. The golden is the frame as shown.",
     "provisional": "SPEC.md 6.1 verbs. NOT part of conformance -- SPEC.md 11\n"
                    "excludes 6.1 until its promotion gates clear. Kept so the\n"
                    "golden already exists when they do.",
@@ -127,7 +130,7 @@ def main():
         s2, t2 = build_assets()
         replayed = moycore.Canvas()
         trace.replay(calls, replayed, s2, t2)
-        if bytes(replayed.buf) != bytes(direct.buf):
+        if replayed.present() != direct.present():
             problems.append("%s: the recorded trace does not reproduce the scene" % name)
             continue
 
@@ -167,7 +170,7 @@ def main():
         except Exception as exc:
             problems.append("%s: generated cart does not load: %s" % (name, exc))
 
-        indexed = bytes(direct.buf)
+        indexed = direct.present()      # a golden is the frame as SHOWN
         _png.write_indexed(os.path.join(GOLDEN, name + ".png"),
                            direct.w, direct.h, indexed, direct.palette)
         manifest_scenes.append({

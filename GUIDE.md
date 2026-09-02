@@ -392,8 +392,9 @@ try to.
 colours byte for byte — and 16–63 extend them (§2).
 
 - `pal(c0, c1)` remaps at *draw time*: pixels already on the canvas do not
-  change. There is no display-time palette to flash the screen with (§12.1); to
-  flash, draw differently for a few frames.
+  change. `pal(c0, c1, 1)` is the *screen* palette: it moves what is already
+  drawn when the frame is shown, which is how you fade or flash a whole scene
+  without redrawing it (§12.1).
 - `palt(c, on)` marks an index transparent for sprites.
 - `fillp(p, c)` sets a 4 × 4 dither for the shape verbs — `line`, `rect`,
   `circ`, `oval`, `tri` and their outlines. A set bit in `p` is a hole; holes

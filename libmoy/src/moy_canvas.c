@@ -70,17 +70,19 @@ void moy_canvas_wire(moy_canvas *c, const uint16_t tab[MOY_PALETTE])
 
 void moy_reset_state(moy_canvas *c)
 {
+    int i;
     c->fillp = 0;
     c->fillp_col = -1;
-    int i;
     c->cam_x = c->cam_y = 0;
     c->clip_x0 = c->clip_y0 = 0;
     c->clip_x1 = c->w;
     c->clip_y1 = c->h;
     for (i = 0; i < MOY_PALETTE; i++) {
         c->pal[i] = (uint8_t)i;
+        c->spal[i] = (uint8_t)i;
         c->palt[i] = 0;
     }
+    c->spal_identity = 1;
     moy_store_rebuild(c);
 }
 
@@ -117,6 +119,67 @@ void moy_pal_reset(moy_canvas *c)
     int i;
     for (i = 0; i < MOY_PALETTE; i++) c->pal[i] = (uint8_t)i;
     moy_store_rebuild(c);
+    moy_pal_screen_reset(c);            /* pal() resets BOTH (SPEC.md 6) */
+}
+
+void moy_pal_screen(moy_canvas *c, int c0, int c1)
+{
+    int i;
+    c->spal[c0 & 63] = (uint8_t)(c1 & 63);
+    c->spal_identity = 1;
+    for (i = 0; i < MOY_PALETTE; i++)
+        if (c->spal[i] != i) { c->spal_identity = 0; break; }
+}
+
+void moy_pal_screen_reset(moy_canvas *c)
+{
+    int i;
+    for (i = 0; i < MOY_PALETTE; i++) c->spal[i] = (uint8_t)i;
+    c->spal_identity = 1;
+}
+
+#ifdef MOY_PIXEL_RGB565
+static unsigned moy_wire_hash(uint16_t w) { return (unsigned)(w ^ (w >> 9)) & 511u; }
+#endif
+
+int moy_present(const moy_canvas *c, moy_pixel *out)
+{
+    size_t i, n = (size_t)c->w * (size_t)c->h;
+    if (c->spal_identity) return 0;
+#ifdef MOY_PIXEL_RGB565
+    {
+        /* wire word -> index through a 512-slot open-addressed table built
+         * per call from the 64 entries. A direct 64K table would not fit the
+         * boards this build exists for; 64 compares a pixel would not fit the
+         * frame. Inserted high to low so a word two indices share resolves to
+         * the LOWER one, as moy_pget does. */
+        uint16_t key[512];
+        uint8_t val[512], used[512];
+        int k;
+        memset(used, 0, sizeof used);
+        for (k = MOY_PALETTE - 1; k >= 0; k--) {
+            uint16_t w = c->wire[k];
+            unsigned h = moy_wire_hash(w);
+            while (used[h] && key[h] != w) h = (h + 1) & 511u;
+            used[h] = 1;
+            key[h] = w;
+            val[h] = (uint8_t)k;
+        }
+        for (i = 0; i < n; i++) {
+            uint16_t w = c->pix[i];
+            unsigned h = moy_wire_hash(w);
+            int idx = 0;
+            while (used[h]) {
+                if (key[h] == w) { idx = val[h]; break; }
+                h = (h + 1) & 511u;
+            }
+            out[i] = c->wire[c->spal[idx]];
+        }
+    }
+#else
+    for (i = 0; i < n; i++) out[i] = c->spal[c->pix[i]];
+#endif
+    return 1;
 }
 
 void moy_palt(moy_canvas *c, int col, int on) { c->palt[col & 63] = on ? 1 : 0; }

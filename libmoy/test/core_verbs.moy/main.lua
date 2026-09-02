@@ -62,6 +62,8 @@ function _init()
   if not (ok1 and v1 == 2 and ok2 and v2 == 10 and coroutine.status(co) == "dead") then
     error("coroutine does not run", 0)
   end
+  pal(7, 9, 1)
+  pal()
   srand(7)
   local r1 = rnd(1000)
   srand(7)

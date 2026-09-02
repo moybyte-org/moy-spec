@@ -48,6 +48,7 @@
 #define AUDIO_MAX  AUDIO_RATE
 
 static uint8_t  frame[MOY_W * MOY_H];
+static uint8_t  shown[MOY_W * MOY_H];     /* frame through the screen palette */
 static uint8_t  sheet_pix[MOY_SHEET_W * MOY_SHEET_H];
 static uint8_t  map_cells[MOY_MAP_MAX * MOY_MAP_MAX];
 static uint32_t rgba[MOY_W * MOY_H];
@@ -375,7 +376,7 @@ KEEP uint32_t *moy_web_pixels(void) { return rgba; }
  * page never wants this -- it wants the RGBA above -- but conform.mjs writes
  * exactly these bytes, so the browser player is checked by the same suite as
  * every other implementation rather than by a rendering of it. */
-KEEP uint8_t *moy_web_indices(void) { return frame; }
+KEEP uint8_t *moy_web_indices(void) { return shown; }
 /* SPEC.md 9's 256 slots, exposed as memory rather than as verbs: the page loads
  * them from localStorage before boot and writes them back when moy_web_pmem_moved
  * says something changed. Reading 1 KB back and re-encoding it every frame would
@@ -545,9 +546,12 @@ KEEP int moy_web_frame(float dt, double t_ms)
     touch_prev = touch_down;
 
     /* pixels out: the one place the console's colours become anyone else's.
-     * Little-endian RGBA, which is what an ImageData wants byte for byte. */
+     * Through the screen palette first (SPEC.md 6 / 12.1), which is a copy
+     * only on frames that set one. Little-endian RGBA, which is what an
+     * ImageData wants byte for byte. */
+    if (!moy_present(&canvas, shown)) memcpy(shown, frame, (size_t)n);
     for (i = 0; i < n; i++) {
-        const uint8_t *e = pal + (size_t)frame[i] * 3;
+        const uint8_t *e = pal + (size_t)shown[i] * 3;
         rgba[i] = 0xFF000000u | ((uint32_t)e[2] << 16) | ((uint32_t)e[1] << 8) | e[0];
     }
     if (!running) return 2;

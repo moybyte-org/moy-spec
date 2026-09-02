@@ -217,6 +217,7 @@ done:
 /* ----------------------------------------------------------- replay ----- */
 
 static moy_pixel frame[MOY_W * MOY_H];
+static moy_pixel shown[MOY_W * MOY_H];
 
 int main(int argc, char **argv)
 {
@@ -290,7 +291,7 @@ int main(int argc, char **argv)
             else if (!strcmp(verb, "print"))  moy_print(&c, a[0].str, a[0].len, N(1), N(2), N(3));
             else if (!strcmp(verb, "camera")) { if (n) moy_camera(&c, N(0), N(1)); else moy_camera_reset(&c); }
             else if (!strcmp(verb, "clip"))   { if (n) moy_clip(&c, N(0), N(1), N(2), N(3)); else moy_clip_reset(&c); }
-            else if (!strcmp(verb, "pal"))    { if (n) moy_pal(&c, N(0), N(1)); else moy_pal_reset(&c); }
+            else if (!strcmp(verb, "pal"))    { if (n == 3 && N(2) == 1) moy_pal_screen(&c, N(0), N(1)); else if (n) moy_pal(&c, N(0), N(1)); else moy_pal_reset(&c); }
             else if (!strcmp(verb, "palt"))   { if (n) moy_palt(&c, N(0), N(1)); else moy_palt_reset(&c); }
             else if (!strcmp(verb, "fillp"))  { if (n) moy_fillp(&c, N(0), N(1)); else moy_fillp_reset(&c); }
             else if (!strcmp(verb, "oval"))   moy_oval(&c, N(0), N(1), N(2), N(3), N(4));
@@ -310,6 +311,10 @@ int main(int argc, char **argv)
         } while (eat(','));
         expect(']');
     }
+
+    /* A golden is the frame as SHOWN (SPEC.md 11): through the screen
+     * palette, when the trace set one. */
+    if (moy_present(&c, shown)) memcpy(frame, shown, sizeof frame);
 
     f = fopen(out_path, "wb");
     if (!f) { perror(out_path); return 2; }

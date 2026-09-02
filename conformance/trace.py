@@ -120,10 +120,12 @@ class RecordingCanvas:
             return self._c.clip()
         self._rec("clip", x, y, w, h); return self._c.clip(x, y, w, h)
 
-    def pal(self, c0=None, c1=None):
+    def pal(self, c0=None, c1=None, p=0):
         if c0 is None:
             self._rec("pal")
             return self._c.pal()
+        if p:
+            self._rec("pal", c0, c1, 1); return self._c.pal(c0, c1, 1)
         self._rec("pal", c0, c1); return self._c.pal(c0, c1)
 
     def palt(self, c=None, on=None):
@@ -186,7 +188,7 @@ class RecordingCanvas:
 ARITY = {
     "cls": (1,), "pix": (3,), "line": (5,), "rect": (5,), "rectb": (5,),
     "circ": (4,), "circb": (4,), "print": (4,), "camera": (0, 2),
-    "clip": (0, 4), "pal": (0, 2), "palt": (0, 2), "spr": (6,),
+    "clip": (0, 4), "pal": (0, 2, 3), "palt": (0, 2), "spr": (6,),
     "map": (8,), "tri": (7,), "trib": (7,), "sspr": (10,), "tline": (9,),
     "fillp": (0, 2), "oval": (5,), "ovalb": (5,), "sset": (3,),
 }

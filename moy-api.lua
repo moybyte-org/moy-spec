@@ -224,10 +224,13 @@ function clip(x, y, w, h) end
 ---@param y? integer
 function camera(x, y) end
 
----Remap palette index c0 -> c1 for subsequent draws; pal() resets all.
+---Remap palette index c0 -> c1 for subsequent draws; with p = 1, remap it
+---when the frame is SHOWN instead (the screen palette: moves what is already
+---drawn -- fades, flashes). pal() resets both.
 ---@param c0? integer
 ---@param c1? integer
-function pal(c0, c1) end
+---@param p? integer 0 draw (default), 1 screen
+function pal(c0, c1, p) end
 
 ---Mark colour `c` transparent (on=true) for sprite blits; palt() resets.
 ---@param c? integer

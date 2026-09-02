@@ -436,12 +436,18 @@ the fill pattern `fillp`.
 | `print(s, x, y, c)` | text, 8 × 8 fixed font |
 | `camera(x, y)` | offset subsequent draws by `-x, -y`. No args resets. **Returns the previous offset** as two values, so `local px, py = camera(x, y)` … `camera(px, py)` saves and restores |
 | `clip(x, y, w, h)` | clip subsequent draws to a rect. No args resets |
-| `pal(c0, c1)` | draw color `c0` as `c1`. No args resets |
+| `pal(c0, c1)` · `pal(c0, c1, 1)` | draw color `c0` as `c1` · with a third argument of `1`, **show** `c0` as `c1`: the screen palette. No args resets both |
 | `palt(c, on)` | mark index `c` transparent. No args resets |
 | `fillp(p, c)` | a 4 × 4 fill pattern for the shape verbs: a set bit is a hole, a hole takes colour `c` or is left alone when `c` is absent or negative. No args resets to solid |
 
-`pal` is **draw-time only** — it remaps colors as they are written to the canvas.
-There is no display-time palette (§12.1).
+`pal(c0, c1)` is **draw-time** — it remaps colors as they are written to the canvas,
+and a pixel already there does not move. `pal(c0, c1, 1)` is the **screen palette**:
+applied to every pixel when the frame is shown, after all drawing, so it moves what is
+already drawn — a fade, a flash, a whole-scene recolour, in sixteen calls and no
+redraw. The two chain: a pixel written as `c0` lands as `pal[c0]` and is shown as
+`spal[pal[c0]]`. Both reset with `pal()`, and both reset at the start of every frame
+like all draw state. A layer's pixels are copied as they are; the third argument does
+nothing on a layer. (§12.1 records why this was once absent.)
 
 **`fillp(p, c)`** is the dither. `p` is sixteen bits read as a 4 × 4 cell, row by
 row from the top-left, bit 15 first; a **set bit is a hole**. The cell is anchored to
@@ -971,7 +977,8 @@ networked carts and there is something real to generalise from.
 ## 11. Conformance
 
 An implementation conforms when it runs the conformance suite and produces
-**pixel-identical** output.
+**pixel-identical** output. The output is the frame **as shown**: the canvas passed
+through the screen palette (§6), which is what a host flushes and what a golden is.
 
 The suite is a set of carts, each exercising one area — primitives, sprite flips and
 scales, clip and camera interaction, palette remaps, text, map blits, input edges —
@@ -1009,14 +1016,18 @@ argument runs longer than that, it lives in `RATIONALE.md` under the heading nam
 here — and **only** there. A decision argued in two documents is a decision that will
 eventually be argued *differently* in two documents.
 
-### 12.1 — No display-time palette.
+### 12.1 — The screen palette, reversed.
 
-PICO-8 has two palettes: draw-time remap, and a
-screen palette applied at flush. This spec has only the first. The second doubles the
-palette state every primitive must consult and mainly buys full-screen flash effects,
-which a cart can do by other means. **Cost:** converted PICO-8 carts using
-screen-palette tricks need the converter to rewrite them, and some can't be. This is
-the most likely thing to get added in 0.2.
+PICO-8 has two palettes: a draw-time remap, and a screen palette applied at flush.
+Until 2026-09-02 this spec had only the first, on the argument that the second
+"doubles the palette state every primitive must consult". That argument was wrong
+on inspection: a screen palette is consulted by **no** primitive — it is one table
+applied once, when the frame is shown — so the per-pixel cost of every verb is
+unchanged and the pass costs a host nothing on the frames that do not set it.
+What it buys is every fade and flash in the PICO-8 catalogue, which the converter
+could not rewrite. **Cost:** a host whose canvas holds direct colour (§1.1's RGB565
+option) must resolve pixels back to indices on the frames that use it — a lookup a
+pixel, and only then. `libmoy` ships that pass as `moy_present`.
 
 ### 12.2 — `btnp` has no autorepeat.
 

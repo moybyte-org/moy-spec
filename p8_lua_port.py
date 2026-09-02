@@ -1547,21 +1547,40 @@ do
     m_palt()
     m_palt(0, true)
   end
-  function pal(a, b)
-    if a == nil then m_pal() p8_palt_default() return end
+  -- The SCREEN palette, pal(c0, c1, 1): p8 keeps it across frames (a cart
+  -- sets its fade once and draws), the console resets draw state every
+  -- frame -- so it is remembered here and re-applied at the top of _draw.
+  local spal, spal_live = {}, false
+  local function spal_set(c0, c1)
+    spal[c0] = c1
+    spal_live = true
+    m_pal(c0, c1, 1)
+  end
+  local function spal_apply()
+    if not spal_live then return end
+    for i = 0, 15 do
+      local v = spal[i]
+      if v ~= nil and v ~= i then m_pal(i, v, 1) end
+    end
+  end
+  function pal(a, b, p)
+    if a == nil then m_pal() spal, spal_live = {}, false p8_palt_default() return end
     if type(a) == "table" then
       -- p8 0.2.0's TABLE form: a whole palette in one call. A table with a
       -- [0] entry keys by colour directly; a plain array maps its i-th entry
       -- onto colour i-1. Carts use it for per-scene recolours, and floor()ing
       -- a table is what stopped two of them on their first frame.
       local shift = (a[0] ~= nil) and 0 or 1
+      local screen = (b == 1)
       for k, v in pairs(a) do
         if type(k) == "number" and type(v) == "number" then
-          m_pal(fl(k) - shift, pcol(v))
+          if screen then spal_set(fl(k) - shift, pcol(v))
+          else m_pal(fl(k) - shift, pcol(v)) end
         end
       end
       return
     end
+    if p == 1 then spal_set(fl(a) & 15, pcol(b)) return end
     m_pal(fl(a) & 15, pcol(b))
   end
   -- palt(): p8's default is colour 0 transparent; palt(c, t) sets one;
@@ -2239,6 +2258,7 @@ do
       -- 0) so a cart that trusts persistent draw state gets PICO-8's.
       camera()
       p8_palt_default()
+      spal_apply()
       p8_draw()
       ticked = false
     end

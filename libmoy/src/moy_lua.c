@@ -161,7 +161,8 @@ static int l_clip(lua_State *L)
 static int l_pal(lua_State *L)
 {
     moy_canvas *c = con_of(L)->canvas;
-    if (lua_gettop(L) == 0) moy_pal_reset(c);
+    if (lua_gettop(L) == 0) moy_pal_reset(c);              /* both palettes */
+    else if (argi(L, 3, 0) == 1) moy_pal_screen(c, argi(L, 1, 0), argi(L, 2, 0));
     else moy_pal(c, argi(L, 1, 0), argi(L, 2, 0));
     return 0;
 }
