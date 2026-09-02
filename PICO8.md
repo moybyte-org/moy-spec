@@ -137,6 +137,15 @@ ROM snapshot of the seeded image. A cart that bakes a texture by copying the
 screen into the sheet, fades by `memcpy` into the palette, or draws a shadow by
 `peek`/`poke` over `0x6000` does exactly that here.
 
+Where the machine is open the shim's hot verbs are the console's C rather than
+Lua closures: the whole memory set above, `all`/`foreach` and the table verbs,
+the number verbs (`flr`, `abs`, `min`, `max`, `mid`, `sgn`, `sin`, `cos`,
+`atan2`), the 16.16 bit verbs, and `mget`/`mset`/`fget`/`fset`. The shim keeps
+its Lua for a host that offers none of them, and `libmoy/test/p8lib.moy` holds
+the two lanes to one answer. `sqrt`, `ceil` and `rnd` stay Lua on purpose —
+the first two are already bare aliases to `math`, and moving `rnd` would move
+the random sequence a cart's world is built from.
+
 ## What is approximated
 
 These convert, run, and do *something* — but not the thing PICO-8 did. The
