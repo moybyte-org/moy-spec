@@ -2806,6 +2806,55 @@ do
     end
   end
 
+  -- ===================== the console's own p8 verbs ==================
+  -- Where the host carries the PICO-8 machine (moy_p8.c), every draw verb
+  -- above is ONE binding call instead of four to six: the Lua wrapper's work
+  -- was never arithmetic, it was crossings -- fl() on each coordinate, fl()
+  -- again inside pcol(), a fill-pattern check, then the console verb, each
+  -- with a fixed cost the board pays whatever is on the other side. The C
+  -- takes the cart's raw arguments and resolves p8's semantics from the
+  -- machine's own state: the pen at 0x5f25, the cursor at 0x5f26, the fill
+  -- pattern at 0x5f31, the palettes at 0x5f00/0x5f10, the camera and clip the
+  -- console already holds. That is also why those bytes are the STATE now
+  -- rather than the locals above: peek() and poke() of them agree with the
+  -- verbs, which they could not while the truth was a Lua upvalue.
+  --
+  -- Per verb, so a host may offer some and not others, and the Lua above
+  -- stays as the fallback for one that offers none.
+  -- libmoy/test/p8lib.moy holds the two lanes to one answer.
+  local function p8c(name) return rawget(_G, "__moy_p8_" .. name) end
+  pset, pget = p8c("pset") or pset, p8c("pget") or pget
+  line = p8c("line") or line
+  rect, rectfill = p8c("rect") or rect, p8c("rectfill") or rectfill
+  circ, circfill = p8c("circ") or circ, p8c("circfill") or circfill
+  oval, ovalfill = p8c("oval") or oval, p8c("ovalfill") or ovalfill
+  spr, sspr = p8c("spr") or spr, p8c("sspr") or sspr
+  print = p8c("print") or print
+  pal, palt, fillp = p8c("pal") or pal, p8c("palt") or palt, p8c("fillp") or fillp
+  color, cursor = p8c("color") or color, p8c("cursor") or cursor
+  sget, sset = p8c("sget") or sget, p8c("sset") or sset
+  -- btn/btnp and the two latch hooks are one thing: the hold counters and the
+  -- pending edges live in the machine or in the tables above, never half in
+  -- each. The pacing rule is unchanged -- an edge latched once a console
+  -- frame, cleared by the tick that consumes it, repeating after 15 cart
+  -- ticks and then every 4.
+  local p8_in_frame, p8_in_tick
+  if p8c("btn") ~= nil then
+    btn, btnp = p8c("btn"), p8c("btnp")
+    p8_in_frame, p8_in_tick = p8c("input_frame"), p8c("input_tick")
+  end
+  -- The per-frame restore: p8's default transparency and its screen palette,
+  -- which the machine keeps at 0x5f10 rather than in the table above. Tied to
+  -- pal(), because that is what decides which of the two holds the fade.
+  local p8_frame = (pal == p8c("pal")) and p8c("frame") or nil
+  -- camera and map move TOGETHER, and only where the Lua map() is the one in
+  -- play: that loop clips against the shim's own copy of the camera, which a
+  -- C camera() would stop updating. A host with its own native masked map
+  -- (__moy_map_masked) keeps both, and camera() stays the shim's.
+  if native_map == nil and p8c("map") ~= nil and p8c("camera") ~= nil then
+    camera, map = p8c("camera"), p8c("map")
+  end
+
   -- moybyte lifecycle -> the p8 one, paced at PICO-8's fixed 30fps
   --
   -- FALSE to start, because PICO-8 never draws before its first update. On a
@@ -2879,12 +2928,16 @@ do
         CHEAP = P8_DT * 500
       end
     end
-    if consumed then
-      for i = 0, 5 do pending[i] = false end
-      consumed = false
-    end
-    for i = 0, 5 do                              -- latch edges EVERY frame
-      if m_btnp(BTN[i]) then pending[i] = true end
+    if p8_in_frame then                          -- the latch, in C
+      p8_in_frame()
+    else
+      if consumed then
+        for i = 0, 5 do pending[i] = false end
+        consumed = false
+      end
+      for i = 0, 5 do                            -- latch edges EVERY frame
+        if m_btnp(BTN[i]) then pending[i] = true end
+      end
     end
     dt = dt or P8_DT
     if dt > 0.25 then dt = 0.25 end              -- a stall is a pause, not debt
@@ -2894,11 +2947,15 @@ do
       if n > 0 and tick_ms > CHEAP then break end
       acc = acc - P8_DT
       n = n + 1
-      for i = 0, 5 do                            -- hold length, in CART ticks
-        hold[i] = m_btn(BTN[i]) and (hold[i] or 0) + 1 or 0
-      end
-      if n > 1 then                              -- a catch-up tick: the first
-        for i = 0, 5 do pending[i] = false end   -- in this frame took the edge
+      if p8_in_tick then
+        p8_in_tick(n > 1)                        -- the hold counters, in C
+      else
+        for i = 0, 5 do                          -- hold length, in CART ticks
+          hold[i] = m_btn(BTN[i]) and (hold[i] or 0) + 1 or 0
+        end
+        if n > 1 then                            -- a catch-up tick: the first
+          for i = 0, 5 do pending[i] = false end -- in this frame took the edge
+        end
       end
       local tick = p8_update60 or p8_update
       if tick then
@@ -2919,10 +2976,16 @@ do
     if p8_draw and (ticked or not (p8_update60 or p8_update)) then
       -- the console resets camera/clip/pal/palt after every cart frame;
       -- re-park the p8 camera and restore p8's default transparency (colour
-      -- 0) so a cart that trusts persistent draw state gets PICO-8's.
+      -- 0) so a cart that trusts persistent draw state gets PICO-8's. The
+      -- machine does all three in one call, screen palette included -- which
+      -- it keeps at 0x5f10, so a memcpy fade there survives the frame too.
       camera()
-      p8_palt_default()
-      spal_apply()
+      if p8_frame then
+        p8_frame()
+      else
+        p8_palt_default()
+        spal_apply()
+      end
       p8_draw()
       ticked = false
     end

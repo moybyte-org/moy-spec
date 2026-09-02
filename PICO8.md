@@ -71,9 +71,9 @@ Faithful enough that most carts boot and play, and **not** an emulator. PICO-8
 is a machine with a memory map; moy is a verb table with, since 2026-09, a
 PICO-8 machine behind it for ported carts. Where a cart uses the API,
 conversion is close to exact. Where it uses the *machine*, the machine is now
-there: 64 KB of memory with the sheet, the map, the flags, both palettes,
-camera, clip and the screen at their PICO-8 addresses, kept in step with the
-console both ways (`libmoy/src/moy_p8.c`, measured in
+there: 64 KB of memory with the sheet, the map, the flags, both palettes, the
+pen, the print cursor, the fill pattern, camera, clip and the screen at their
+PICO-8 addresses, kept in step with the console both ways (`libmoy/src/moy_p8.c`, measured in
 [`proposals/p8-memory-map.md`](proposals/p8-memory-map.md)).
 
 One number still matters up front: PICO-8 uses 16.16 fixed point, and this
@@ -158,11 +158,28 @@ screen into the sheet, fades by `memcpy` into the palette, or draws a shadow by
 Where the machine is open the shim's hot verbs are the console's C rather than
 Lua closures: the whole memory set above, `all`/`foreach` and the table verbs,
 the number verbs (`flr`, `abs`, `min`, `max`, `mid`, `sgn`, `sin`, `cos`,
-`atan2`), the 16.16 bit verbs, and `mget`/`mset`/`fget`/`fset`. The shim keeps
-its Lua for a host that offers none of them, and `libmoy/test/p8lib.moy` holds
-the two lanes to one answer. `sqrt`, `ceil` and `rnd` stay Lua on purpose —
-the first two are already bare aliases to `math`, and moving `rnd` would move
-the random sequence a cart's world is built from.
+`atan2`), the 16.16 bit verbs, `mget`/`mset`/`fget`/`fset`, `btn`/`btnp` with
+their latch, and since 2026-09-02 **every draw verb** — `pset` `pget` `line`
+`rect` `rectfill` `circ` `circfill` `oval` `ovalfill` `spr` `sspr` `map`
+`print` `camera` `color` `cursor` `pal` `palt` `fillp` `sget` `sset`. A shim
+draw verb was four to six binding calls (`fl()` on each coordinate, `fl()`
+again inside the colour, a fill-pattern check, then the console verb) where
+PICO-8 costs one, and a binding call has a fixed floor whatever sits on the
+other side of it; each is ONE now, with p8's coercions, the pen, the fill
+pattern and the palettes resolved in C from the machine's own bytes. That is
+also why the state those wrappers kept in Lua moved into the memory map — the
+pen at `0x5f25`, the print cursor at `0x5f26`, the fill pattern at `0x5f31`,
+the screen palette at `0x5f10` — so `peek` and `poke` of those addresses agree
+with the verbs, and a `memcpy` fade into the screen palette now survives the
+frame the console resets draw state on. The shim aliases per verb and keeps
+its Lua for a host that offers none of them; `cls` and `clip` were never
+wrapped, being the console's own already; and `libmoy/test/p8lib.moy` sweeps
+every verb through both lanes over seeded draw states — palette maps,
+transparency, fill patterns, a camera, a clip, fractional and negative
+coordinates, nil arguments — and holds them to one answer. `sqrt`, `ceil` and
+`rnd` stay Lua on purpose — the first two are already bare aliases to `math`,
+and moving `rnd` would move the random sequence a cart's world is built
+from.
 
 ## What is approximated
 

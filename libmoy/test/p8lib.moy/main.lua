@@ -650,6 +650,485 @@ function font_checks()
   cls(0)
 end
 
+
+-- ---- the draw verbs -----------------------------------------------------
+-- Every p8 draw verb the machine now carries (moy_p8.c), held against the
+-- SHIM'S OWN LUA -- the wrapper in p8_lua_port.py, transcribed below and
+-- calling the same console verbs it calls there. A cart may reach either
+-- lane, so the two must answer alike: the same pixels, the same draw state,
+-- the same return value.
+--
+-- Every case runs TWICE from the same reset -- once per lane -- and the whole
+-- screen is digested after each, along with the draw state the verb is
+-- allowed to move (palette, transparency, clip, camera) and the pen and
+-- cursor, which live in the machine's memory on one side and in a local on
+-- the other. The states are swept ACROSS the ops rather than beside them,
+-- because that is where the bugs are: a dropped floor shows up only at a
+-- fractional coordinate, a skipped palette map only with a palette set, a
+-- lost camera only with a camera.
+local m_pix, m_line = pix, line
+local m_rect, m_rectb = rect, rectb
+local m_circ, m_circb = circ, circb
+local m_oval, m_ovalb = oval, ovalb
+local m_spr, m_sspr, m_map = spr, sspr, map
+local m_pal, m_palt, m_fillp = pal, palt, fillp
+local m_camera, m_clip, m_cls = camera, clip, cls
+local m_p8print = __moy_p8print
+local mtype_ = math.type
+
+local L_pen, L_cx, L_cy = 6, 0, 0
+local L_pat, L_transp = 0, false
+local L_camx, L_camy = 0, 0
+local L_spal = {}
+
+local function L_pcol(c) return L_fl(c == nil and L_pen or c) & 15 end
+local function L_scol(c)
+  c = L_fl(c or 0)
+  if c >= 128 then return 16 + (c & 15) end
+  return c & 15
+end
+local function L_shape_col(c)
+  c = L_fl(c == nil and L_pen or c)
+  if L_pat ~= 0 then m_fillp(L_pat, L_transp and -1 or ((c >> 4) & 15)) end
+  return c & 15
+end
+local function L_fill_skip() return L_transp and L_pat == 0xffff end
+
+local function L_pset(x, y, c) m_pix(L_fl(x), L_fl(y), L_pcol(c)) end
+local function L_pget(x, y) return m_pix(L_fl(x), L_fl(y)) end
+
+local function L_line(x0, y0, x1, y1, c)
+  if L_fill_skip() then return end
+  m_line(L_fl(x0), L_fl(y0), L_fl(x1), L_fl(y1), L_shape_col(c))
+end
+
+local function L_rectfill(x0, y0, x1, y1, c)
+  if L_fill_skip() then return end
+  x0 = L_fl(x0) y0 = L_fl(y0) x1 = L_fl(x1) y1 = L_fl(y1)
+  if x1 < x0 then x0, x1 = x1, x0 end
+  if y1 < y0 then y0, y1 = y1, y0 end
+  m_rect(x0, y0, x1 - x0 + 1, y1 - y0 + 1, L_shape_col(c))
+end
+
+local function L_rect(x0, y0, x1, y1, c)
+  if L_fill_skip() then return end
+  x0 = L_fl(x0) y0 = L_fl(y0) x1 = L_fl(x1) y1 = L_fl(y1)
+  if x1 < x0 then x0, x1 = x1, x0 end
+  if y1 < y0 then y0, y1 = y1, y0 end
+  m_rectb(x0, y0, x1 - x0 + 1, y1 - y0 + 1, L_shape_col(c))
+end
+
+local function L_circfill(x, y, r, c)
+  if L_fill_skip() then return end
+  m_circ(L_fl(x), L_fl(y), L_fl(r), L_shape_col(c))
+end
+
+local function L_circ(x, y, r, c)
+  if L_fill_skip() then return end
+  m_circb(L_fl(x), L_fl(y), L_fl(r), L_shape_col(c))
+end
+
+local function L_oval_box(x0, y0, x1, y1)
+  x0, y0, x1, y1 = L_fl(x0), L_fl(y0), L_fl(x1), L_fl(y1)
+  if x1 < x0 then x0, x1 = x1, x0 end
+  if y1 < y0 then y0, y1 = y1, y0 end
+  return x0, y0, x1 - x0 + 1, y1 - y0 + 1
+end
+
+local function L_oval(x0, y0, x1, y1, col)
+  if L_fill_skip() then return end
+  local x, y, w, h = L_oval_box(x0, y0, x1, y1)
+  m_ovalb(x, y, w, h, L_shape_col(col))
+end
+
+local function L_ovalfill(x0, y0, x1, y1, col)
+  if L_fill_skip() then return end
+  local x, y, w, h = L_oval_box(x0, y0, x1, y1)
+  m_oval(x, y, w, h, L_shape_col(col))
+end
+
+local function L_spr(n, x, y, w, h, fx, fy)
+  local flip = (fx and 1 or 0) + (fy and 2 or 0)
+  n = L_fl(n)
+  x = L_fl(x)
+  y = L_fl(y)
+  w = w or 1
+  h = h or 1
+  if w == 1 and h == 1 then
+    m_spr(n, x, y, -1, 1, flip)
+  else
+    for ty = 0, h - 1 do
+      for tx = 0, w - 1 do
+        local cx = fx and (w - 1 - tx) or tx
+        local cy = fy and (h - 1 - ty) or ty
+        m_spr(n + cx + cy * 16, x + tx * 8, y + ty * 8, -1, 1, flip)
+      end
+    end
+  end
+end
+
+local function L_sspr(sx, sy, sw, sh, dx, dy, dw, dh, fx, fy)
+  local f = 0
+  if fx then f = f + 1 end
+  if fy then f = f + 2 end
+  m_sspr(sx, sy, sw, sh, dx, dy, dw or sw, dh or sh, -1, f)
+end
+
+local function L_camera(cx, cy)
+  L_camx, L_camy = L_fl(cx), L_fl(cy)
+  m_camera(L_camx, L_camy)
+end
+
+local function L_map(celx, cely, sx, sy, cw, ch, mask)
+  celx = mfloor(celx or 0)
+  cely = mfloor(cely or 0)
+  sx = mfloor(sx or 0)
+  sy = mfloor(sy or 0)
+  cw = mfloor(cw or 128)
+  ch = mfloor(ch or 64)
+  mask = mask or 0
+  local i0 = (L_camx - sx) // 8
+  local i1 = (L_camx + 127 - sx) // 8
+  if i0 > 0 then celx, sx, cw = celx + i0, sx + i0 * 8, cw - i0 i1 = i1 - i0 end
+  if i1 + 1 < cw then cw = i1 + 1 end
+  local j0 = (L_camy - sy) // 8
+  local j1 = (L_camy + 127 - sy) // 8
+  if j0 > 0 then cely, sy, ch = cely + j0, sy + j0 * 8, ch - j0 j1 = j1 - j0 end
+  if j1 + 1 < ch then ch = j1 + 1 end
+  if cw <= 0 or ch <= 0 then return end
+  m_map(celx, cely, cw, ch, sx, sy, -1, 1, mask)
+end
+
+local function L_p8str(v)
+  if mtype_(v) == "float" and v == mfloor(v) and v > -2147483648 and v < 2147483648 then
+    return tostring(mfloor(v))
+  end
+  return tostring(v)
+end
+
+local function L_print(s, x, y, c)
+  s = L_p8str(s)
+  if y == nil then
+    c = x
+    x, y = L_cx, L_cy
+    L_cy = L_cy + 6
+  end
+  c = L_pcol(c)
+  local lx = L_fl(x)
+  return m_p8print(s, lx, L_fl(y), c)
+end
+
+local function L_palt_default() m_palt() m_palt(0, true) end
+local function L_spal_set(c0, c1) L_spal[c0] = c1 m_pal(c0, c1, 1) end
+
+local function L_pal(a, b, p)
+  if a == nil then m_pal() L_spal = {} L_palt_default() return end
+  if type(a) == "table" then
+    local shift = (a[0] ~= nil) and 0 or 1
+    local screen = (b == 1)
+    for k, v in pairs(a) do
+      if type(k) == "number" and type(v) == "number" then
+        if screen then L_spal_set(L_fl(k) - shift, L_scol(v))
+        else m_pal(L_fl(k) - shift, L_pcol(v)) end
+      end
+    end
+    return
+  end
+  if p == 1 then L_spal_set(L_fl(a) & 15, L_scol(b)) return end
+  m_pal(L_fl(a) & 15, L_pcol(b))
+end
+
+local function L_palt(c, t)
+  if c == nil then L_palt_default() return end
+  if t == nil then
+    local bits = L_fl(c)
+    m_palt()
+    for i = 0, 15 do m_palt(i, (bits >> (15 - i)) & 1 == 1) end
+    return
+  end
+  m_palt(L_fl(c) & 15, t and true or false)
+end
+
+local function L_fillp(p)
+  p = p or 0
+  if type(p) ~= "number" then p = tonumber(p) or 0 end
+  L_pat = mfloor(p) & 0xffff
+  L_transp = (p % 1) >= 0.5
+  if L_pat == 0 then m_fillp() end
+end
+
+local function L_color(c) L_pen = L_fl(c or 6) & 0x8f end
+local function L_cursor(x, y, c)
+  L_cx, L_cy = L_fl(x or 0), L_fl(y or 0)
+  if c ~= nil then L_pen = L_fl(c) & 0x8f end
+end
+
+local function L_sget(x, y)
+  x, y = L_fl(x), L_fl(y)
+  if x < 0 or x > 127 or y < 0 or y > 127 then return 0 end
+  local b = cpeek(y * 64 + (x >> 1))
+  if x & 1 == 1 then return b >> 4 end
+  return b & 15
+end
+
+local function L_sset(x, y, c)
+  x, y = L_fl(x), L_fl(y)
+  if x < 0 or x > 127 or y < 0 or y > 127 then return end
+  c = L_fl(c or 6) % 16
+  local a = y * 64 + (x >> 1)
+  local b = cpeek(a)
+  if x & 1 == 1 then cpoke(a, (b & 0x0f) | (c << 4))
+  else cpoke(a, (b & 0xf0) | c) end
+end
+
+-- ---- the two lanes ------------------------------------------------------
+local LANE_C = {
+  name = "C",
+  pset = __moy_p8_pset, pget = __moy_p8_pget, line = __moy_p8_line,
+  rect = __moy_p8_rect, rectfill = __moy_p8_rectfill,
+  circ = __moy_p8_circ, circfill = __moy_p8_circfill,
+  oval = __moy_p8_oval, ovalfill = __moy_p8_ovalfill,
+  spr = __moy_p8_spr, sspr = __moy_p8_sspr, map = __moy_p8_map,
+  print = __moy_p8_print, pal = __moy_p8_pal, palt = __moy_p8_palt,
+  fillp = __moy_p8_fillp, color = __moy_p8_color, cursor = __moy_p8_cursor,
+  camera = __moy_p8_camera, sget = __moy_p8_sget, sset = __moy_p8_sset,
+  -- the pen and the cursor, from where this lane keeps them
+  pen = function() return cpeek(0x5f25) end,
+  cur = function() return cpeek(0x5f26) .. "," .. cpeek(0x5f27) end,
+}
+local LANE_L = {
+  name = "Lua",
+  pset = L_pset, pget = L_pget, line = L_line,
+  rect = L_rect, rectfill = L_rectfill,
+  circ = L_circ, circfill = L_circfill,
+  oval = L_oval, ovalfill = L_ovalfill,
+  spr = L_spr, sspr = L_sspr, map = L_map,
+  print = L_print, pal = L_pal, palt = L_palt,
+  fillp = L_fillp, color = L_color, cursor = L_cursor,
+  camera = L_camera, sget = L_sget, sset = L_sset,
+  pen = function() return L_pen & 0xff end,
+  cur = function() return (L_cx & 0xff) .. "," .. (L_cy & 0xff) end,
+}
+
+-- Both lanes draw on ONE canvas, so every case starts from the same reset:
+-- the console's draw state, the machine's bytes, and the Lua lane's locals.
+local function reset_draw()
+  m_clip() m_camera() m_fillp() m_pal() m_palt() m_palt(0, true)
+  for i = 0, 15 do cpoke(0x5f10 + i, i) end
+  cpoke(0x5f25, 6) cpoke(0x5f26, 0) cpoke(0x5f27, 0)
+  cpoke(0x5f31, 0) cpoke(0x5f32, 0) cpoke(0x5f33, 0)
+  L_pen, L_cx, L_cy = 6, 0, 0
+  L_pat, L_transp = 0, false
+  L_camx, L_camy = 0, 0
+  L_spal = {}
+end
+
+-- The screen, then the draw state a verb may move. 0x5f24-0x5f27 and
+-- 0x5f31-0x5f33 are LEFT OUT on purpose: those are the machine's own bytes
+-- and the Lua lane has no equivalent to peek -- they are compared through the
+-- lane's pen()/cur() instead.
+local function draw_digest(sheet)
+  local h = 0
+  for a = 0x6000, 0x7fff do h = (h * 31 + cpeek(a)) & 0x7fffffff end
+  for a = 0x5f00, 0x5f23 do h = (h * 31 + cpeek(a)) & 0x7fffffff end
+  for a = 0x5f28, 0x5f2b do h = (h * 31 + cpeek(a)) & 0x7fffffff end
+  if sheet then
+    for a = 0x0000, 0x1fff do h = (h * 31 + cpeek(a)) & 0x7fffffff end
+  end
+  return h
+end
+
+local STATES = {
+  {"plain", function() end},
+  {"pen 9", function(V) V.color(9) end},
+  {"pen 0x83", function(V) V.color(0x83) end},
+  {"draw palette", function(V) V.pal(1, 7) V.pal(3, 11) V.pal(12, 2) end},
+  {"palette table", function(V) V.pal({[0] = 5, [1] = 6, [7] = 8}) end},
+  {"transparency", function(V) V.palt(0, false) V.palt(11, true) end},
+  {"palt bitfield", function(V) V.palt(0x8421) end},
+  {"screen palette", function(V) V.pal(2, 0x8c, 1) V.pal(4, 9, 1) end},
+  {"fillp", function(V) V.fillp(0x5a5a) end},
+  {"fillp transparent", function(V) V.fillp(0x5a5a + 0.5) end},
+  {"fillp all transparent", function(V) V.fillp(0xffff + 0.5) end},
+  {"camera", function(V) V.camera(-7, 13) end},
+  -- A camera far enough left and up that a NEGATIVE coordinate lands on
+  -- screen, which is the only place a floor and a truncation part company.
+  {"camera off the origin", function(V) V.camera(-40, -30) end},
+  {"clip", function() m_clip(10, 12, 60, 40) end},
+  {"cursor", function(V) V.cursor(11.5, 60.5) end},
+  {"all at once", function(V)
+    V.camera(5.5, -9.5) m_clip(3, 4, 100, 90) V.fillp(0x33cc)
+    V.color(0x2b) V.pal(2, 14) V.palt(3, true) V.cursor(9, 40)
+  end},
+}
+
+-- name, body, and whether the SHEET has to be digested too (sset writes it).
+local OPS = {
+  {"pset", function(V) V.pset(3.7, 5.2, 9) end},
+  {"pset with no colour", function(V) V.pset(9, 5) end},
+  {"pset negative", function(V) V.pset(-2.5, -1.5, 12) end},
+  {"pset off screen", function(V) V.pset(200, 200, 3) end},
+  {"pset a numeric string", function(V) V.pset(4, 6, "5") end},
+  {"pset a bad colour", function(V) V.pset(5, 7, true) end},
+  {"pset colour 0x83", function(V) V.pset(6, 8, 0x83) end},
+  -- A colour byte is FOUR bits at the draw end, so 0x27 is 7 and not 39 --
+  -- 39 is a real palette index here and would have drawn.
+  {"pset colour 0x27", function(V) V.pset(7, 9, 0x27) end},
+  {"pset with no arguments", function(V) V.pset() end},
+  {"pget", function(V) V.pset(10, 11, 12) return V.pget(10.9, 11.9) end},
+  {"pget off screen", function(V) return V.pget(-3, 400) end},
+  {"line", function(V) V.line(1.5, 2.5, 30.7, 40.2, 8) end},
+  {"line backwards", function(V) V.line(30, 40, 1, 2) end},
+  {"line negative", function(V) V.line(-5.5, -5.5, 20, 20, 3) end},
+  {"line horizontal", function(V) V.line(2, 9, 60, 9, 14) end},
+  {"line negative fractional", function(V) V.line(-5.5, -9.5, 20, 20, 3) end},
+  {"line one pixel", function(V) V.line(9, 9, 9, 9, 14) end},
+  {"line with no arguments", function(V) V.line() end},
+  {"rectfill", function(V) V.rectfill(10.5, 12.5, 40.2, 30.9, 7) end},
+  {"rectfill reversed", function(V) V.rectfill(40, 30, 10, 12, 0x27) end},
+  {"rectfill with no colour", function(V) V.rectfill(2, 2, 20, 20) end},
+  {"rectfill negative", function(V) V.rectfill(-6.5, -4.5, 5, 6, 3) end},
+  {"rectfill whole screen", function(V) V.rectfill(0, 0, 127, 127, 0x51) end},
+  {"rect", function(V) V.rect(10.5, 12.5, 40.2, 30.9, 7) end},
+  {"rect reversed", function(V) V.rect(40, 30, 10, 12, 0x27) end},
+  {"rect one pixel", function(V) V.rect(5, 5, 5, 5) end},
+  {"circfill", function(V) V.circfill(30.5, 30.5, 12.9, 11) end},
+  {"circfill r=0", function(V) V.circfill(20, 20, 0, 3) end},
+  {"circfill r=-1", function(V) V.circfill(20, 20, -1, 3) end},
+  {"circfill oversized", function(V) V.circfill(64, 64, 80, 0x35) end},
+  {"circfill negative", function(V) V.circfill(-2.5, -2.5, 20, 3) end},
+  {"circ", function(V) V.circ(30.5, 30.5, 12.9, 11) end},
+  {"circ with no colour", function(V) V.circ(40, 40, 7) end},
+  {"ovalfill", function(V) V.ovalfill(5.5, 6.5, 60.2, 30.7, 4) end},
+  {"ovalfill reversed", function(V) V.ovalfill(60, 30, 5, 6, 0x14) end},
+  {"oval", function(V) V.oval(5.5, 6.5, 60.2, 30.7, 4) end},
+  {"oval flat", function(V) V.oval(10, 10, 40, 10) end},
+  {"ovalfill negative", function(V) V.ovalfill(-3.5, -2.5, 30, 20, 4) end},
+  {"spr", function(V) V.spr(1, 3.5, 4.5) end},
+  {"spr negative", function(V) V.spr(1, -2.5, -1.5) end},
+  {"spr 2x2", function(V) V.spr(1, 10, 12, 2, 2) end},
+  {"spr 2x2 flipped both ways", function(V) V.spr(1, 10, 12, 2, 2, true, true) end},
+  {"spr 3x1 flipped in x", function(V) V.spr(17, 20.5, 30.5, 3, 1, true, false) end},
+  {"spr with a fractional size", function(V) V.spr(2, 8, 8, 2.5, 1.5) end},
+  {"spr with no arguments", function(V) V.spr() end},
+  {"spr off the sheet", function(V) V.spr(600, 5, 5) end},
+  {"sspr", function(V) V.sspr(0, 0, 8, 8, 10, 10) end},
+  {"sspr scaled", function(V) V.sspr(8, 8, 8, 8, 10.5, 10.5, 24, 24) end},
+  {"sspr flipped", function(V) V.sspr(0, 0, 16, 8, 4, 40, 32, 16, true, true) end},
+  {"sspr negative", function(V) V.sspr(0, 0, 8, 8, -4, -4, 20, 20) end},
+  {"map", function(V) V.map() end},
+  {"map a window", function(V) V.map(2, 3, 8.5, 9.5, 6, 5) end},
+  {"map masked", function(V) V.map(0, 0, 0, 0, 16, 16, 1) end},
+  {"map off the left", function(V) V.map(0, 0, -13, -5, 4, 4) end},
+  {"print", function(V) return V.print("Ag!", 3.5, 4.5, 9) end},
+  {"print with no colour", function(V) return V.print("Ag!", 3, 4) end},
+  {"print negative", function(V) return V.print("Ag!", -2.5, -1.5, 9) end},
+  {"print at the cursor", function(V)
+     local a = V.print("one") return a .. "," .. V.print("two") end},
+  {"print at the cursor with a colour", function(V) return V.print("hi", 9) end},
+  {"print an integral float", function(V) return V.print(12.0, 3, 4, 7) end},
+  {"print a fraction", function(V) return V.print(1.5, 3, 4, 7) end},
+  {"print a boolean", function(V) return V.print(true, 3, 4, 7) end},
+  {"print colour 0x27", function(V) return V.print("Ag!", 3, 4, 0x27) end},
+  {"print P8SCII", function(V) return V.print(E6 .. "wA" .. E6 .. "tB", 2, 2, 8) end},
+  {"color", function(V) V.color(9) V.pset(3, 3) end},
+  {"color with no argument", function(V) V.color() V.pset(3, 3) end},
+  {"color 0x83", function(V) V.color(0x83) V.rectfill(1, 1, 4, 4) end},
+  {"color fractional", function(V) V.color(3.9) V.pset(3, 3) end},
+  {"cursor", function(V) V.cursor(20.5, 30.5) return V.print("x") end},
+  {"cursor with a colour", function(V) V.cursor(2, 3, 12) return V.print("x") end},
+  {"cursor with no arguments", function(V) V.cursor() return V.print("x") end},
+  {"pal one entry", function(V) V.pal(1, 7) V.rectfill(0, 0, 8, 8, 1) end},
+  {"pal to the secret sixteen", function(V) V.pal(1, 0x87) V.rectfill(0, 0, 8, 8, 1) end},
+  {"pal screen", function(V) V.pal(1, 0x87, 1) V.rectfill(0, 0, 8, 8, 1) end},
+  {"pal a table", function(V) V.pal({[0] = 3, [1] = 4, [7] = 2}) V.rectfill(0, 0, 8, 8, 1) end},
+  {"pal an array", function(V) V.pal({7, 6, 5}) V.rectfill(0, 0, 8, 8, 1) end},
+  {"pal a table onto the screen", function(V) V.pal({[1] = 2, [2] = 3}, 1) V.rectfill(0, 0, 8, 8, 1) end},
+  {"pal reset", function(V) V.pal() V.spr(1, 0, 0) end},
+  {"palt one", function(V) V.palt(0, false) V.spr(1, 0, 0) end},
+  {"palt a bitfield", function(V) V.palt(0x8421) V.spr(1, 0, 0) end},
+  {"palt reset", function(V) V.palt() V.spr(1, 0, 0) end},
+  {"fillp on", function(V) V.fillp(0x5a5a) V.rectfill(0, 0, 30, 30, 0x74) end},
+  {"fillp transparent", function(V) V.fillp(0x5a5a + 0.5) V.circfill(20, 20, 15, 9) end},
+  {"fillp off", function(V) V.fillp(0) V.rectfill(0, 0, 30, 30, 0x74) end},
+  {"fillp a numeric string", function(V) V.fillp("23130") V.rectfill(0, 0, 30, 30, 3) end},
+  {"fillp a negative fraction", function(V) V.fillp(-0.5) V.rectfill(0, 0, 30, 30, 3) end},
+  {"fillp then a sprite", function(V) V.fillp(0x5a5a) V.spr(1, 4, 4) end},
+  {"camera", function(V) V.camera(10.5, -3.5) V.rectfill(0, 0, 40, 40, 6) end},
+  {"camera reset", function(V) V.camera() V.rectfill(0, 0, 40, 40, 6) end},
+  {"sget", function(V)
+     return V.sget(3.5, 4.5) .. "," .. V.sget(4, 4) .. "," ..
+            V.sget(-1, 0) .. "," .. V.sget(200, 3) end},
+  {"sset", function(V)
+     V.sset(3.5, 4.5, 9) V.sset(4, 4) V.sset(5, 4, -1) V.sset(200, 3, 1)
+     V.spr(0, 0, 0) end, true},
+}
+
+function draw_checks()
+  check("the draw verbs are the C ones",
+        __moy_p8_pset ~= nil and __moy_p8_map ~= nil and __moy_p8_fillp ~= nil)
+
+  -- A sheet and a map to draw FROM, seeded through the machine so both lanes
+  -- see one picture: 0x0000-0x1fff is the sheet (and its top half doubles as
+  -- map rows 32-63), 0x2000-0x2fff is the rest of the map.
+  for a = 0x0000, 0x2fff do cpoke(a, (a * 37 + (a >> 5)) & 0xff) end
+  for t = 0, 255 do m_fset(t, (t * 13) & 0xff) end
+
+  local function lane(V, st, op, sheet)
+    reset_draw()
+    st(V)
+    m_cls(0)
+    local ok, r = pcall(op, V)
+    return (ok and "ok" or "ERR") .. ":" .. tostring(r) .. ":" ..
+           draw_digest(sheet) .. ":" .. V.pen() .. ":" .. V.cur()
+  end
+
+  for _, s in ipairs(STATES) do
+    for _, o in ipairs(OPS) do
+      same(o[1] .. " under " .. s[1],
+           lane(LANE_C, s[2], o[2], o[3]), lane(LANE_L, s[2], o[2], o[3]))
+    end
+  end
+
+  -- The state the shim kept in Lua locals is the MEMORY MAP's now, so the
+  -- verbs and peek/poke agree about it -- which is the whole reason it moved.
+  reset_draw()
+  __moy_p8_color(0x8b)
+  check("color() writes the pen at 0x5f25", cpeek(0x5f25) == 0x8b)
+  cpoke(0x5f25, 4)
+  m_cls(0)
+  __moy_p8_pset(3, 3)
+  check("a poke at 0x5f25 IS the pen", __moy_p8_pget(3, 3) == 4)
+  __moy_p8_cursor(17, 42)
+  check("cursor() writes 0x5f26/0x5f27",
+        cpeek(0x5f26) == 17 and cpeek(0x5f27) == 42)
+  cpoke(0x5f26, 8) cpoke(0x5f27, 9)
+  m_cls(0)
+  __moy_p8_print("x")
+  check("a poke at 0x5f26 moves the cursor", cpeek(0x5f27) == 15)
+  __moy_p8_fillp(0x5a5a + 0.5)
+  check("fillp() writes 0x5f31-0x5f33", cpeek(0x5f31) == 0x5a
+        and cpeek(0x5f32) == 0x5a and cpeek(0x5f33) == 1)
+  cpoke(0x5f31, 0xff) cpoke(0x5f32, 0xff)
+  m_cls(3)
+  __moy_p8_rectfill(0, 0, 20, 20, 7)
+  check("a poke at 0x5f31 IS the fill pattern", __moy_p8_pget(0, 0) == 3)
+  cpoke(0x5f33, 0)
+  m_cls(3)
+  __moy_p8_rectfill(0, 0, 20, 20, 0x27)
+  check("and 0x5f33 is its transparency", __moy_p8_pget(0, 0) == 2)
+
+  -- The SCREEN palette is memory too, so it survives the frame the console
+  -- resets draw state on -- __moy_p8_frame is what puts it back.
+  reset_draw()
+  __moy_p8_pal(3, 0x8c, 1)
+  check("pal(c, d, 1) writes 0x5f10", cpeek(0x5f13) == 0x8c)
+  m_pal()                                     -- the console's per-frame reset
+  __moy_p8_frame()
+  check("the frame verb re-applies it", cpeek(0x5f13) == 0x8c)
+  reset_draw()
+end
+
 function _init()
   font_checks()
   check("the machine is open", __moy_all ~= nil and __moy_foreach ~= nil)
@@ -739,6 +1218,7 @@ function _init()
   bit_checks()
   map_checks()
   span_checks()
+  draw_checks()
 end
 
 function _draw() cls(1) print("p8 stdlib: ok", 4, 60, 11) quit() end
