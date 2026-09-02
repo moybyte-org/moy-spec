@@ -178,9 +178,12 @@ spr-sweep: $(SPRSWEEP)
 	./$(SPRSWEEP)
 
 # The PICO-8 machine: a cart asserts every mirrored region of the memory map
-# both ways (test/p8mem.moy), and the C font is held equal to the shim's.
+# both ways (test/p8mem.moy), the C font is held equal to the shim's, and the
+# stdlib verbs promoted out of the shim are held equal to the Lua they replace
+# (test/p8lib.moy) -- a cart may reach either lane, so there is one answer.
 p8-test: $(RUNCART)
 	./$(RUNCART) test/p8mem.moy build/p8mem.bin --frames 2
+	./$(RUNCART) test/p8lib.moy build/p8lib.bin --frames 2
 	python3 test/p8_font_check.py
 
 test: conform conform-lua ext-test audio-test lowres spr-sweep p8-test p8-carts

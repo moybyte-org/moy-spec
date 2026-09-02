@@ -1843,6 +1843,20 @@ do
     for i = 1, #t do if t[i] == v then n = n + 1 end end
     return n
   end
+  function deli(t, i)
+    if t == nil then return nil end
+    if i == nil then i = #t end
+    local v = t[i]
+    table.remove(t, i)
+    return v
+  end
+  -- The console's own, where it has them (moy_p8.c). all()'s iterator is the
+  -- one that pays: a Lua closure costs a VM re-entry per element, and it was
+  -- half of one measured cart's Lua time. Same delete tolerance, in C.
+  if __moy_all ~= nil then
+    all, foreach = __moy_all, __moy_foreach
+    add, del, deli, count = __moy_add, __moy_del, __moy_deli, __moy_count
+  end
 
   -- p8 INDEXES STRINGS: `s[i]` is the i-th character, and `#s` its length.
   -- Lua gives strings a metatable whose __index is the string library, so
@@ -2018,13 +2032,6 @@ do
     cocreate, coresume, costatus, yield = coroutine.create, coroutine.resume,
                                           coroutine.status, coroutine.yield
     coclose = coroutine.close
-  end
-  function deli(t, i)
-    if t == nil then return nil end
-    if i == nil then i = #t end
-    local v = t[i]
-    table.remove(t, i)
-    return v
   end
   unpack = table.unpack
   function pack(...) return {n = select("#", ...), ...} end

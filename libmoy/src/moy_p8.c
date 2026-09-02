@@ -533,6 +533,141 @@ static int l_p8print(lua_State *L)
     return 1;
 }
 
+/* -- the p8 table verbs ---------------------------------------------------
+ *
+ * No machine behind these -- they are the shim's own Lua, promoted because
+ * all()'s iterator was half of one cart's Lua time: a Lua closure per element
+ * is a VM re-entry per element.
+ *
+ * The DELETE TOLERANCE is the semantics that has to survive. A p8 cart
+ * destroys the object it is iterating (celeste's foreach over its object
+ * list), so the cursor advances only when the element it last handed out is
+ * still where it left it; when the table shifted under it, the slot already
+ * holds the next one. Kept as `t[i]` and `==` (lua_geti / lua_compare) rather
+ * than raw access, so a table with __index or __eq answers as it did in Lua.
+ */
+
+static int l_nil_iter(lua_State *L)
+{
+    lua_pushnil(L);
+    return 1;
+}
+
+/* upvalues: 1 the table, 2 the cursor, 3 the element last handed out */
+static int l_all_iter(lua_State *L)
+{
+    lua_Integer i = lua_tointeger(L, lua_upvalueindex(2));
+    lua_settop(L, 0);
+    lua_geti(L, lua_upvalueindex(1), i);
+    if (lua_compare(L, 1, lua_upvalueindex(3), LUA_OPEQ)) {
+        lua_settop(L, 0);
+        lua_geti(L, lua_upvalueindex(1), ++i);
+        lua_pushinteger(L, i);
+        lua_replace(L, lua_upvalueindex(2));
+    }
+    lua_pushvalue(L, 1);
+    lua_replace(L, lua_upvalueindex(3));
+    return 1;
+}
+
+static int l_all(lua_State *L)
+{
+    if (lua_isnoneornil(L, 1)) {          /* p8's all(nil) is an empty loop */
+        lua_pushcfunction(L, l_nil_iter);
+        return 1;
+    }
+    lua_settop(L, 1);
+    lua_pushinteger(L, 0);
+    lua_pushnil(L);
+    lua_pushcclosure(L, l_all_iter, 3);
+    return 1;
+}
+
+static int l_foreach(lua_State *L)
+{
+    lua_Integer i = 0;
+    if (lua_isnoneornil(L, 1)) return 0;
+    lua_settop(L, 2);
+    lua_pushnil(L);                       /* 3: the element last handed out */
+    for (;;) {
+        lua_geti(L, 1, i);
+        if (lua_compare(L, -1, 3, LUA_OPEQ)) {
+            lua_pop(L, 1);
+            lua_geti(L, 1, ++i);
+        }
+        if (lua_isnil(L, -1)) break;
+        lua_replace(L, 3);
+        lua_pushvalue(L, 2);
+        lua_pushvalue(L, 3);
+        lua_call(L, 1, 0);
+    }
+    return 0;
+}
+
+static int l_add(lua_State *L)
+{
+    lua_settop(L, 2);
+    lua_pushvalue(L, 2);
+    lua_seti(L, 1, luaL_len(L, 1) + 1);
+    return 1;                             /* p8's add returns what it added */
+}
+
+/* table.remove(t, pos), transcribed: the shift, then the hole. */
+static void tbl_remove(lua_State *L, int t, lua_Integer pos)
+{
+    lua_Integer size = luaL_len(L, t);
+    if (pos != size)
+        luaL_argcheck(L, (lua_Unsigned)pos - 1u <= (lua_Unsigned)size, 2,
+                      "position out of bounds");
+    for (; pos < size; pos++) {
+        lua_geti(L, t, pos + 1);
+        lua_seti(L, t, pos);
+    }
+    lua_pushnil(L);
+    lua_seti(L, t, pos);
+}
+
+static int l_del(lua_State *L)
+{
+    lua_Integer n = luaL_len(L, 1), i;
+    lua_settop(L, 2);
+    for (i = 1; i <= n; i++) {
+        lua_geti(L, 1, i);
+        if (lua_compare(L, -1, 2, LUA_OPEQ)) {
+            lua_pop(L, 1);
+            tbl_remove(L, 1, i);
+            return 0;
+        }
+        lua_pop(L, 1);
+    }
+    return 0;
+}
+
+static int l_deli(lua_State *L)
+{
+    lua_Integer i;
+    if (lua_isnoneornil(L, 1)) { lua_pushnil(L); return 1; }
+    i = luaL_optinteger(L, 2, luaL_len(L, 1));
+    lua_settop(L, 1);
+    lua_geti(L, 1, i);
+    tbl_remove(L, 1, i);
+    return 1;
+}
+
+static int l_count(lua_State *L)
+{
+    lua_Integer n = luaL_len(L, 1), i, c = 0;
+    if (lua_isnoneornil(L, 2)) { lua_pushinteger(L, n); return 1; }
+    lua_settop(L, 2);
+    for (i = 1; i <= n; i++) {
+        lua_geti(L, 1, i);
+        if (lua_compare(L, -1, 2, LUA_OPEQ)) c++;
+        lua_pop(L, 1);
+    }
+    lua_pushinteger(L, c);
+    return 1;
+}
+
 /* -- installation --------------------------------------------------------- */
 
 /* The ROM half of the map: sheet, map and flag bytes as PICO-8 lays them out,
@@ -571,6 +706,12 @@ int moy_p8_open(struct lua_State *Ls, moy_console *con, moy_p8 *p,
         {"__moy_reload", l_reload}, {"__moy_cstore", l_cstore},
         {"__moy_p8print", l_p8print},
     };
+    /* The stdlib half: no machine behind it, so no upvalue to carry. */
+    static const struct { const char *name; lua_CFunction fn; } S[] = {
+        {"__moy_all", l_all}, {"__moy_foreach", l_foreach},
+        {"__moy_add", l_add}, {"__moy_del", l_del},
+        {"__moy_deli", l_deli}, {"__moy_count", l_count},
+    };
     size_t i;
     if (!con || !p || !mem) return 1;
     p->con = con;
@@ -582,6 +723,10 @@ int moy_p8_open(struct lua_State *Ls, moy_console *con, moy_p8 *p,
         lua_pushlightuserdata(L, p);
         lua_pushcclosure(L, T[i].fn, 1);
         lua_setglobal(L, T[i].name);
+    }
+    for (i = 0; i < sizeof S / sizeof S[0]; i++) {
+        lua_pushcfunction(L, S[i].fn);
+        lua_setglobal(L, S[i].name);
     }
     return 0;
 }
