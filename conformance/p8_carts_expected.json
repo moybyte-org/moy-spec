@@ -38,8 +38,8 @@
     },
     "lowmemsky-1": {
       "animates": true,
-      "note": "runs and animates",
-      "responds": false,
+      "note": "runs and animates; takes input",
+      "responds": true,
       "runs": true,
       "verdict": "gaps"
     },

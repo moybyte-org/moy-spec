@@ -273,7 +273,7 @@ gate.
 | petal_quest | runs | yes | yes | yes | **plays** from the title into its coroutine cutscenes, with its map (2026-09-02: coroutines, a `btnp` edge visible in `_draw`, `map()`'s whole-map default) |
 | dungeons_and_diagrams | gaps | yes | yes | yes | **plays**; its packed-flag bit trick reads right now (16.16 bit verbs) |
 | mossmoss | gaps | yes | yes | yes | **plays** (2026-09-02: integral floats print as integers, its wall keys are `x..","..y`); slows at its later levels on the S3 boards (~20 fps) |
-| lowmemsky | gaps | yes | yes | no | runs; no input — which is the cart, it makes no `btn` calls |
+| lowmemsky | gaps | yes | yes | yes | **plays** (2026-09-03: it reads its buttons as `btn"1"`, the size-coder's string form, which both lanes now coerce the way PICO-8 does) |
 | dank_tomb | gaps | yes | yes | yes | **plays** (2026-09-02: 16.16 bit verbs on its data parser, integer printing, the raw map bytes, the P8SCII outline, the draw-palette bit 7; its lighting loop is one `__moy_lut_span`); 15–22 fps on the T-Deck |
 | terra_1cart | gaps | no | no | no | *(not played — generates its world past the harness's 45 s)* |
 | celeste_classic_2 | refused | yes | yes | yes | starts; nothing moves, only the clouds draw — its levels are px9-packed 16.16 |

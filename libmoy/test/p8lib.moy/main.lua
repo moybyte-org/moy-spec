@@ -93,6 +93,12 @@ local KILLS = {
 local cpeek, cpoke = __moy_peek, __moy_poke
 local mfloor = math.floor
 
+-- btn/btnp coerce a numeric string (the size-coder's btn"1"); a string that
+-- is no number is the no-argument bitfield form, never the O button.
+local pb, pbp = rawget(_G, "__moy_p8_btn"), rawget(_G, "__moy_p8_btnp")
+check("btn(\"1\") is button 1, not O", pb ~= nil and type(pb("1")) == "boolean" and pb("1") == pb(1))
+check("btnp(\"5\") is button 5", pbp ~= nil and type(pbp("5")) == "boolean" and pbp("5") == pbp(5))
+check("btn(\"zz\") is the bitfield form", pb ~= nil and type(pb("zz")) == "number" and pb("zz") == pb())
 local function fl(v)
   if type(v) ~= "number" then v = tonumber(v) or 0 end
   return mfloor(v)
