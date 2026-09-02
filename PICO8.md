@@ -290,7 +290,10 @@ a line in this table.
 
 The living ledger is moybyte's issue #66; this is the state on 2026-09-02,
 after the machine took the shim's cost (above), with the carts imported with
-`--zoom`, WiFi off, medians of a scripted run (title · play fps):
+`--zoom`, WiFi off, medians of a scripted run (title · play fps; the last four
+rows 2026-09-03, same images). The S3 boards hold 30 fps on four of the eight,
+sit just under on mossmoss and dank_tomb, and fall to 15–20 in play on the two
+draw-bound ones, picooffroad and crimson_night:
 
 | cart (rate) | ESP32-P4 | T-Deck (S3) | Guition (S3) |
 |---|---|---|---|
@@ -298,6 +301,10 @@ after the machine took the shim's cost (above), with the carts imported with
 | mossmoss (30) | 30 · 28 | 26 · 25 | 25 · 23 |
 | dank_tomb (60) | 35 · 35 | 21 · 24 | 26 · 26 |
 | picooffroad (30) | 62 · 30 | 32 · 15 | 36 · 19 |
+| bunnysurvivor (60) | 61 · 62 | 49 · 40 | 54 · 50 |
+| crimson_night (60) | 63 · 38 | 26 · 16 | 62 · 20 |
+| dungeons_and_diagrams (60) | 63 · 63 | 59 · 58 | 63 · 61 |
+| lowmemsky (60) | 62 · 62 | 41 · 43 | 56 · 53 |
 
 Where the S3 frame goes for a 30 fps cart like mossmoss: ~27 ms is the cart's
 own Lua (its entity loops; the shim is under a fifth of it now), ~6 ms the
