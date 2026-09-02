@@ -18,11 +18,11 @@
       "sha256": "38e7942982ec5ea37fe328b894f7042c660024f6ce39f965e58981407a467383"
     }
   },
-  "inputs_sha256": "eb170b79f0e48aed93a3e5ebc0afe2179560b8644ada209d95955d2e6e93d648",
+  "inputs_sha256": "86960b0221764e0b0927d768e8616a0fb73210db7466cebcc81fd68c097379a5",
   "source": {
     "branch": "p8-verbs",
-    "commit": "6e5e1ab754f44160bebc59e0ee55a0bd6fb26c4e",
-    "dirty": true
+    "commit": "ab040eab84621412a55626130cb9744e35db15fa",
+    "dirty": false
   },
   "toolchain": "emscripten 6.0.4"
 }
