@@ -120,7 +120,12 @@ typedef struct {
     /* SPEC.md 6 fill pattern: 16 bits, row-major from the top-left of a 4x4
      * cell anchored to the SCREEN, a set bit is a hole. A hole pixel takes
      * colour fillp_col (through pal, at draw time) when that is >= 0 and is
-     * left alone otherwise. 0 is solid, and the only test on a hot path. */
+     * left alone otherwise. 0 is solid, and the only test on a hot path.
+     *
+     * A host that fills a moy_canvas BY HAND for a kernel call, instead of
+     * through moy_canvas_init, must set these two (0 and -1): every shape
+     * verb reads them, and an uninitialised pattern is a circle full of
+     * holes. That is exactly how the reference console found out. */
     uint16_t fillp;
     int      fillp_col;
     /* What a colour index becomes in the buffer, with pal already folded in.
