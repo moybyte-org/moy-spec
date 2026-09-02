@@ -63,6 +63,16 @@ NOTES = {
                "sprites under camera and clip.",
     "tilemap": "map() regions, screen offsets, scale, colorkey, camera, clip,\n"
                "and a region starting outside the map.",
+    "oval": "oval and ovalb (SPEC.md 6): round, wide, tall and flat boxes, the\n"
+            "1x1/2x2/3x3 sizes, zero and negative sizes, edges, camera, clip\n"
+            "and pal, and the outline drawn over its own fill.",
+    "fillp": "The fill pattern (SPEC.md 6): a set bit is a hole, a hole takes\n"
+             "the second colour or nothing, the pattern is anchored to the\n"
+             "SCREEN through camera and clip, every shape verb honours it and\n"
+             "pix, print, sprites and the map do not.",
+    "sheet": "sset (SPEC.md 7.1): a sheet write is what spr, sspr and map draw\n"
+             "next; the index is masked to 0-15; writes off the sheet are\n"
+             "dropped.",
     "provisional": "SPEC.md 6.1 verbs. NOT part of conformance -- SPEC.md 11\n"
                    "excludes 6.1 until its promotion gates clear. Kept so the\n"
                    "golden already exists when they do.",

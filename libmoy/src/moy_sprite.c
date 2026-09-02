@@ -67,6 +67,12 @@ int moy_sheet_pget(const moy_sheet *s, int x, int y)
     return s->pix[y * MOY_SHEET_W + x];
 }
 
+void moy_sheet_pset(moy_sheet *s, int x, int y, int c)
+{
+    if (x < 0 || x >= MOY_SHEET_W || y < 0 || y >= MOY_SHEET_H) return;
+    s->pix[y * MOY_SHEET_W + x] = (uint8_t)(c & 15);
+}
+
 void moy_spr(moy_canvas *c, const moy_sheet *s, int n, int x, int y,
              int colorkey, int scale, int flip)
 {

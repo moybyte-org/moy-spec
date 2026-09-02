@@ -413,7 +413,9 @@ at any rate.
 ## 6. Drawing
 
 All coordinates are canvas pixels, all colors palette indices. Every verb clips to the
-canvas and honours the current `camera`, `clip` and `pal` state.
+canvas and honours the current `camera`, `clip` and `pal` state; the **shape** verbs
+(`line`, `rect`, `rectb`, `circ`, `circb`, `oval`, `ovalb`, `tri`, `trib`) also honour
+the fill pattern `fillp`.
 
 | verb | effect |
 |---|---|
@@ -426,6 +428,8 @@ canvas and honours the current `camera`, `clip` and `pal` state.
 | `rectb(x, y, w, h, c)` | rectangle **outline** |
 | `circ(cx, cy, r, c)` | **filled** circle |
 | `circb(cx, cy, r, c)` | circle **outline** |
+| `oval(x, y, w, h, c)` | **filled** ellipse inscribed in the `w × h` box at `x, y` |
+| `ovalb(x, y, w, h, c)` | ellipse **outline** — the rim of the same fill, pixel for pixel |
 | `tri(x1, y1, x2, y2, x3, y3, c)` | **filled** triangle — provisional, see §6.1 |
 | `trib(x1, y1, x2, y2, x3, y3, c)` | triangle **outline** — provisional, see §6.1 |
 | `tline(x0, y0, x1, y1, u, v, du, dv, ck)` | textured line sampled from the map — provisional, see §6.1 |
@@ -434,9 +438,27 @@ canvas and honours the current `camera`, `clip` and `pal` state.
 | `clip(x, y, w, h)` | clip subsequent draws to a rect. No args resets |
 | `pal(c0, c1)` | draw color `c0` as `c1`. No args resets |
 | `palt(c, on)` | mark index `c` transparent. No args resets |
+| `fillp(p, c)` | a 4 × 4 fill pattern for the shape verbs: a set bit is a hole, a hole takes colour `c` or is left alone when `c` is absent or negative. No args resets to solid |
 
 `pal` is **draw-time only** — it remaps colors as they are written to the canvas.
 There is no display-time palette (§12.1).
+
+**`fillp(p, c)`** is the dither. `p` is sixteen bits read as a 4 × 4 cell, row by
+row from the top-left, bit 15 first; a **set bit is a hole**. The cell is anchored to
+the **screen** — pixel `(x, y)` after the camera is a hole when bit
+`15 − 4·(y mod 4) − (x mod 4)` is set — so a scrolling world does not crawl its
+dither, and `clip` does not shift its phase. A hole pixel takes `c` (through `pal`,
+like any colour) when `c` is given and not negative, and is **left untouched**
+otherwise, which is how a shape fades over what is already there. It applies to the
+nine shape verbs and to nothing else: `pix` is the cart's own per-pixel statement,
+`print`, sprites and the map carry their own pixels, and `cls` is a reset. Bits above
+15 are ignored; `0` is solid. Like every other piece of draw state it resets at the
+start of each frame.
+
+`oval` and `ovalb` are one walk (an integer midpoint ellipse, no division, no
+float, so every host performs identical arithmetic): the fill is the rows between the
+outline's extremes, so `ovalb` drawn over `oval` rings it exactly. A `w` or `h` of
+zero or less draws nothing; `1 × 1` is a single pixel.
 
 `print` has no scale parameter; text is always 8px. The 8 × 8 font must be
 byte-identical across implementations or all text conformance fails — it ships as
@@ -622,6 +644,8 @@ needs a `~= nil` guard.
 |---|---|
 | `spr(n, x, y, colorkey, scale, flip)` | draw sheet tile `n` at `x, y` |
 | `sspr(sx, sy, sw, sh, dx, dy, dw, dh, colorkey, flip)` | stretch a sheet **pixel** region to `dw × dh` at `dx, dy` — provisional, see §6.1 |
+| `sget(x, y)` | the index at sheet **pixel** `x, y`; `0` off the sheet |
+| `sset(x, y, c)` | write a sheet pixel; `c` is masked to 0–15 (§2.3), a write off the sheet is dropped |
 
 `n` is a sheet tile, **0–511**. `colorkey` is the transparent palette index, `-1` for
 opaque (default). `scale` is an integer enlargement, default 1. `flip`: `0` none, `1`
@@ -630,6 +654,12 @@ tiles — adjacent `spr` calls.
 
 `sspr` addresses the sheet in **pixels, not tiles**, and its scale is arbitrary rather
 than integer.
+
+`sget` and `sset` make the sheet readable and writable at runtime — generated art,
+art as data, a texture baked from the screen. What `sset` writes is what the next
+`spr`, `sspr`, `map` or `tline` of that tile draws; a host that caches tiles owes
+exactly that. The sheet outlives a frame — nothing resets it — so a cart that edits
+it and wants its art back must write it back.
 
 **Drawing sprites needs only `spr`.** Many tiles is a plain loop over it — a
 conforming host makes that loop cheap (§6.1's batching note), and the batch verb

@@ -174,6 +174,28 @@ static int l_palt(lua_State *L)
     return 0;
 }
 
+static int l_fillp(lua_State *L)
+{
+    moy_canvas *c = con_of(L)->canvas;
+    if (lua_gettop(L) == 0) moy_fillp_reset(c);
+    else moy_fillp(c, argi(L, 1, 0), argi(L, 2, -1));
+    return 0;
+}
+
+static int l_oval(lua_State *L)
+{
+    moy_oval(con_of(L)->canvas, argi(L, 1, 0), argi(L, 2, 0),
+             argi(L, 3, 0), argi(L, 4, 0), argi(L, 5, 0));
+    return 0;
+}
+
+static int l_ovalb(lua_State *L)
+{
+    moy_ovalb(con_of(L)->canvas, argi(L, 1, 0), argi(L, 2, 0),
+              argi(L, 3, 0), argi(L, 4, 0), argi(L, 5, 0));
+    return 0;
+}
+
 /* -- sprites and map ----------------------------------------------------- */
 
 /* moy_console's sheet and map are POINTERS, so a host may legitimately supply
@@ -235,6 +257,23 @@ static int l_map(lua_State *L)
     moy_map_draw(con->canvas, con->map, con->sheet, mx, my,
                  argi(L, 3, con->map->w - mx), argi(L, 4, con->map->h - my),
                  argi(L, 5, 0), argi(L, 6, 0), argi(L, 7, -1), argi(L, 8, 1));
+    return 0;
+}
+
+static int l_sget(lua_State *L)
+{
+    moy_console *con = con_of(L);
+    /* 0 is what an unpainted sheet reads, so "no sheet" needs no second case. */
+    lua_pushinteger(L, con->sheet
+                    ? moy_sheet_pget(con->sheet, argi(L, 1, 0), argi(L, 2, 0)) : 0);
+    return 1;
+}
+
+static int l_sset(lua_State *L)
+{
+    moy_console *con = con_of(L);
+    if (!con->sheet) return 0;
+    moy_sheet_pset(con->sheet, argi(L, 1, 0), argi(L, 2, 0), argi(L, 3, 0));
     return 0;
 }
 
@@ -509,8 +548,9 @@ typedef struct {
 static const luaL_Reg LAYER_VERBS[] = {
     {"cls", l_cls}, {"pix", l_pix}, {"line", l_line}, {"rect", l_rect},
     {"rectb", l_rectb}, {"circ", l_circ}, {"circb", l_circb},
+    {"oval", l_oval}, {"ovalb", l_ovalb},
     {"print", l_print}, {"camera", l_camera}, {"clip", l_clip},
-    {"pal", l_pal}, {"palt", l_palt},
+    {"pal", l_pal}, {"palt", l_palt}, {"fillp", l_fillp},
     {"spr", l_spr}, {"map", l_map},
     {"tri", l_tri}, {"trib", l_trib}, {"sspr", l_sspr}, {"tline", l_tline},
     {NULL, NULL}
@@ -646,9 +686,11 @@ static void open_host_verbs(lua_State *L, moy_console *con)
 static const luaL_Reg VERBS[] = {
     {"cls", l_cls}, {"pix", l_pix}, {"line", l_line}, {"rect", l_rect},
     {"rectb", l_rectb}, {"circ", l_circ}, {"circb", l_circb},
+    {"oval", l_oval}, {"ovalb", l_ovalb},
     {"print", l_print}, {"camera", l_camera}, {"clip", l_clip},
-    {"pal", l_pal}, {"palt", l_palt},
+    {"pal", l_pal}, {"palt", l_palt}, {"fillp", l_fillp},
     {"spr", l_spr}, {"map", l_map}, {"mget", l_mget}, {"mset", l_mset},
+    {"sget", l_sget}, {"sset", l_sset},
     {"btn", l_btn}, {"btnp", l_btnp}, {"players", l_players},
     {"time", l_time}, {"pmem", l_pmem}, {"cfg", l_cfg},
     {"rnd", l_rnd}, {"srand", l_srand}, {"flr", l_flr}, {"quit", l_quit},

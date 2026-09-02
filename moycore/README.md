@@ -85,8 +85,9 @@ python3 conformance/parity.py --ref /path/to/moybyte
 ```
 
 replays every conformance scene through both rasterizers and compares the
-framebuffers byte for byte. All 10 scenes are currently identical — the eight
-core ones and both provisional ones.
+framebuffers byte for byte. Every scene was identical when the reference
+console last carried every verb; a verb the spec gains ahead of the console
+shows up here first, as a scene the console cannot yet draw.
 
 ## Portability rules
 

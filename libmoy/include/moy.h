@@ -112,6 +112,12 @@ typedef struct {
     int      clip_x1, clip_y1;
     uint8_t  pal[MOY_PALETTE];   /* draw-time index remap */
     uint8_t  palt[MOY_PALETTE];  /* per-index sprite transparency */
+    /* SPEC.md 6 fill pattern: 16 bits, row-major from the top-left of a 4x4
+     * cell anchored to the SCREEN, a set bit is a hole. A hole pixel takes
+     * colour fillp_col (through pal, at draw time) when that is >= 0 and is
+     * left alone otherwise. 0 is solid, and the only test on a hot path. */
+    uint16_t fillp;
+    int      fillp_col;
     /* What a colour index becomes in the buffer, with pal already folded in.
      * The ONE thing the two builds disagree about on the hot path, and it is
      * precomputed: every verb writes store[index], so the per-pixel cost is a
@@ -198,6 +204,15 @@ void moy_pal   (moy_canvas *c, int c0, int c1);
 void moy_pal_reset(moy_canvas *c);
 void moy_palt  (moy_canvas *c, int col, int on);
 void moy_palt_reset(moy_canvas *c);
+/* The fill pattern (SPEC.md 6): honoured by line, rect, rectb, circ, circb,
+ * tri, trib, oval and ovalb; never by pix, print, cls, sprites or the map.
+ * `col` < 0 leaves hole pixels untouched. */
+void moy_fillp (moy_canvas *c, int p, int col);
+void moy_fillp_reset(moy_canvas *c);
+/* The ellipse inscribed in the w x h box at x, y -- FILLED, and its outline,
+ * which is the fill's own rim pixel for pixel (one walk produces both). */
+void moy_oval  (moy_canvas *c, int x, int y, int w, int h, int col);
+void moy_ovalb (moy_canvas *c, int x, int y, int w, int h, int col);
 
 /* PROVISIONAL -- SPEC.md 6.1 is unsettled and these are not part of core 0.2. */
 void moy_tri   (moy_canvas *c, int x1, int y1, int x2, int y2, int x3, int y3, int col);
@@ -207,6 +222,9 @@ void moy_trib  (moy_canvas *c, int x1, int y1, int x2, int y2, int x3, int y3, i
 
 void moy_sheet_init(moy_sheet *s, uint8_t *pix);
 int  moy_sheet_pget(const moy_sheet *s, int x, int y);
+/* SPEC.md 7.1 sset: the index is masked to 0-15, a write off the sheet is
+ * dropped, and the next spr of that tile draws it. */
+void moy_sheet_pset(moy_sheet *s, int x, int y, int c);
 
 /* Tile `n` of 0..511 at x,y. `colorkey` is the transparent index or -1 for
  * opaque; `scale` an integer enlargement; `flip` one of MOY_FLIP_*. A tile id

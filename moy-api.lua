@@ -85,6 +85,23 @@ function circ(cx, cy, r, c) end
 ---@param c integer
 function circb(cx, cy, r, c) end
 
+---Filled ellipse inscribed in the w x h box at (x, y). w or h <= 0 draws
+---nothing; 1x1 is a pixel.
+---@param x integer
+---@param y integer
+---@param w integer
+---@param h integer
+---@param c integer
+function oval(x, y, w, h, c) end
+
+---Ellipse outline: the rim of oval()'s fill, pixel for pixel.
+---@param x integer
+---@param y integer
+---@param w integer
+---@param h integer
+---@param c integer
+function ovalb(x, y, w, h, c) end
+
 ---Filled triangle. Provisional (SPEC.md 6.1).
 ---@param x1 integer
 ---@param y1 integer
@@ -173,6 +190,19 @@ function mget(x, y) end
 ---@param tile integer
 function mset(x, y, tile) end
 
+---The palette index at sheet PIXEL (x, y); 0 off the sheet.
+---@param x integer
+---@param y integer
+---@return integer
+function sget(x, y) end
+
+---Write a sheet pixel (masked to 0-15). What you write is what the next spr
+---of that tile draws. Nothing resets the sheet between frames.
+---@param x integer
+---@param y integer
+---@param c integer
+function sset(x, y, c) end
+
 -- --- text / draw state ------------------------------------------------------
 
 ---Print `s` at (x,y) in the 8x8 system font.
@@ -203,6 +233,15 @@ function pal(c0, c1) end
 ---@param c? integer
 ---@param on? boolean
 function palt(c, on) end
+
+---A 4x4 fill pattern for the shape verbs (line, rect, rectb, circ, circb,
+---oval, ovalb, tri, trib): 16 bits in reading order from the top-left, a SET
+---bit is a hole. Holes take colour `c`, or are left untouched when `c` is
+---absent or negative. Anchored to the screen, not the camera. No args resets
+---to solid; it also resets at the start of every frame like all draw state.
+---@param p? integer 0-0xFFFF
+---@param c? integer hole colour, or -1
+function fillp(p, c) end
 
 -- --- input ------------------------------------------------------------------
 

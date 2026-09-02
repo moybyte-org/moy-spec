@@ -14,11 +14,11 @@
 local CORE = {
   -- SPEC.md 6, drawing
   "cls", "background", "view", "pix", "line", "rect", "rectb", "circ",
-  "circb", "print", "camera", "clip", "pal", "palt",
+  "circb", "oval", "ovalb", "print", "camera", "clip", "pal", "palt", "fillp",
   -- SPEC.md 6, layers: core since 1.1's floor reserves one full-screen buffer
   "make_layer", "draw_layer",
   -- SPEC.md 7.1 / 7.2, sprites and map
-  "spr", "map", "mget", "mset",
+  "spr", "map", "mget", "mset", "sget", "sset",
   -- SPEC.md 7.3, input. touch/key/keyp/textmode are hardware-optional and are
   -- deliberately absent here; a host without a pointer owes you nothing.
   "btn", "btnp", "players",

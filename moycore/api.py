@@ -300,6 +300,16 @@ def make_api(canvas, cart=None, input=None, audio=None, pmem=None,
     def mget(x, y):
         return tilemap.mget(x, y) if tilemap is not None else -1
 
+    def sget(x, y):
+        # SPEC.md 7.1: the sheet pixel's index, 0 off the sheet or without one.
+        return sheet.pget(int(x), int(y)) if sheet is not None else 0
+
+    def sset(x, y, c):
+        # A write is what spr() draws next; SpriteSheet.pset bumps its gen so
+        # a host's tile cache sees it.
+        if sheet is not None:
+            sheet.pset(int(x), int(y), c)
+
     def mset(x, y, tile):
         if tilemap is not None:
             tilemap.mset(x, y, tile)
@@ -399,11 +409,16 @@ def make_api(canvas, cart=None, input=None, audio=None, pmem=None,
         "clip": canvas.clip,
         "pal": canvas.pal,
         "palt": canvas.palt,
+        "fillp": canvas.fillp,
+        "oval": canvas.oval,
+        "ovalb": canvas.ovalb,
         # sprites and map
         "spr": spr,
         "map": map_,
         "mget": mget,
         "mset": mset,
+        "sget": sget,
+        "sset": sset,
         # input
         "btn": inp.btn,
         "btnp": inp.btnp,

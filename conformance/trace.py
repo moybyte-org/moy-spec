@@ -132,6 +132,28 @@ class RecordingCanvas:
             return self._c.palt()
         self._rec("palt", c, bool(on)); return self._c.palt(c, on)
 
+    def fillp(self, p=None, c=None):
+        if p is None:
+            self._rec("fillp")
+            return self._c.fillp()
+        # The hole colour is resolved now: a trace carries concrete numbers,
+        # and -1 is the spec's own spelling of "untouched".
+        col = -1 if c is None or int(c) < 0 else int(c)
+        self._rec("fillp", p, col); return self._c.fillp(p, col)
+
+    def oval(self, x, y, w, h, c):
+        self._rec("oval", x, y, w, h, c); return self._c.oval(x, y, w, h, c)
+
+    def ovalb(self, x, y, w, h, c):
+        self._rec("ovalb", x, y, w, h, c); return self._c.ovalb(x, y, w, h, c)
+
+    def sset(self, x, y, c):
+        # A SHEET write, recorded like a draw call: what it changes is the
+        # next spr() of that tile, which is the whole point of the verb.
+        self._rec("sset", x, y, c)
+        if self._sheet is not None:
+            self._sheet.pset(x, y, c)
+
     # Verbs whose cart signature drops the asset argument.
     def spr_tile(self, sheet, tile, x, y, colorkey=-1, scale=1, flip=0):
         self._rec("spr", tile, x, y, colorkey, scale, flip)
@@ -166,6 +188,7 @@ ARITY = {
     "circ": (4,), "circb": (4,), "print": (4,), "camera": (0, 2),
     "clip": (0, 4), "pal": (0, 2), "palt": (0, 2), "spr": (6,),
     "map": (8,), "tri": (7,), "trib": (7,), "sspr": (10,), "tline": (9,),
+    "fillp": (0, 2), "oval": (5,), "ovalb": (5,), "sset": (3,),
 }
 
 
@@ -203,6 +226,15 @@ def replay(calls, canvas, sheet=None, tilemap=None):
             canvas.pal(*a)
         elif verb == "palt":
             canvas.palt(*a)
+        elif verb == "fillp":
+            canvas.fillp(*a)
+        elif verb == "oval":
+            canvas.oval(a[0], a[1], a[2], a[3], a[4])
+        elif verb == "ovalb":
+            canvas.ovalb(a[0], a[1], a[2], a[3], a[4])
+        elif verb == "sset":
+            if sheet is not None:
+                sheet.pset(a[0], a[1], a[2])
         elif verb == "spr":
             canvas.spr_tile(sheet, a[0], a[1], a[2], a[3], a[4], a[5])
         elif verb == "sspr":

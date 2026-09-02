@@ -57,9 +57,9 @@
       "unstable": true
     },
     "picooffroad-5": {
-      "animates": false,
-      "note": "runs, but the frame never changed",
-      "responds": false,
+      "animates": true,
+      "note": "runs and animates; takes input (the track streams out of map ROM through reload(), and its fades are fillp holes -- both since 2026-09)",
+      "responds": true,
       "runs": true
     },
     "poom_0-9": {

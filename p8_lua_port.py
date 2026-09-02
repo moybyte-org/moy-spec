@@ -1264,6 +1264,10 @@ do
   local m_camera = camera
   local m_rect, m_rectb = rect, rectb
   local m_circ, m_circb = circ, circb
+  -- The 2026-09 core verbs: nil on a host that predates them, and every use
+  -- below is guarded so the cart still runs there.
+  local m_oval, m_ovalb, m_fillp = oval, ovalb, fillp
+  local m_sget, m_sset, m_palt = sget, sset, palt
   local m_sfx = sfx
   local m_music, m_music_stop = music, music_stop
   -- The data tables (emitted ABOVE the shim) and the stdlib verbs, captured
@@ -1354,6 +1358,31 @@ do
   -- code that tested green by doing nothing. A test that filled the screen
   -- and looked at it is what caught that.
   local fill_pattern, fill_transparent = 0, false
+  -- p8's pen: the colour a draw verb uses when the cart passes none.
+  local p8_pen = 6
+
+  -- A p8 COLOUR argument is a byte: the low nibble draws; bit 7 picks the
+  -- secret palette, which this port ships at indices 16-31 (SPEC.md 2.2);
+  -- and, when a fill pattern is set, the high nibble is the colour the
+  -- pattern's holes take -- unless the pattern's 0x0.8 bit says they are
+  -- transparent. On a host with the console's fillp that is one call per
+  -- shape; the older host keeps its transparent-pattern-draws-nothing.
+  local function pcol(c)
+    c = fl(c == nil and p8_pen or c)
+    if c >= 128 then return 16 + (c & 15) end
+    return c & 15
+  end
+  local function shape_col(c)
+    c = fl(c == nil and p8_pen or c)
+    if fill_pattern ~= 0 and m_fillp ~= nil then
+      m_fillp(fill_pattern, fill_transparent and -1 or ((c >> 4) & 15))
+    end
+    if c >= 128 then return 16 + (c & 15) end
+    return c & 15
+  end
+  local function fill_skip()
+    return fill_transparent and (m_fillp == nil or fill_pattern == 0xffff)
+  end
 
   -- Every P8SCII picture character, as a global holding its own code. The
   -- porter renames a glyph in the cart's code to one of these, so a cart that
@@ -1393,13 +1422,13 @@ do
     w = w or 1
     h = h or 1
     if w == 1 and h == 1 then
-      m_spr(n, x, y, 0, 1, flip)               -- p8 color 0 is transparent
+      m_spr(n, x, y, -1, 1, flip)              -- transparency is palt state
     else
       for ty = 0, h - 1 do
         for tx = 0, w - 1 do
           local cx = fx and (w - 1 - tx) or tx
           local cy = fy and (h - 1 - ty) or ty
-          m_spr(n + cx + cy * 16, x + tx * 8, y + ty * 8, 0, 1, flip)
+          m_spr(n + cx + cy * 16, x + tx * 8, y + ty * 8, -1, 1, flip)
         end
       end
     end
@@ -1407,23 +1436,27 @@ do
 
   -- p8 rect/circ are OUTLINES and rectangles take the far corner
   function rectfill(x0, y0, x1, y1, c)
-    if fill_transparent then return end
+    if fill_skip() then return end
     x0 = fl(x0) y0 = fl(y0) x1 = fl(x1) y1 = fl(y1)
     if x1 < x0 then x0, x1 = x1, x0 end
     if y1 < y0 then y0, y1 = y1, y0 end
-    m_rect(x0, y0, x1 - x0 + 1, y1 - y0 + 1, fl(c))
+    m_rect(x0, y0, x1 - x0 + 1, y1 - y0 + 1, shape_col(c))
   end
   function rect(x0, y0, x1, y1, c)
+    if fill_skip() then return end
     x0 = fl(x0) y0 = fl(y0) x1 = fl(x1) y1 = fl(y1)
     if x1 < x0 then x0, x1 = x1, x0 end
     if y1 < y0 then y0, y1 = y1, y0 end
-    m_rectb(x0, y0, x1 - x0 + 1, y1 - y0 + 1, fl(c))
+    m_rectb(x0, y0, x1 - x0 + 1, y1 - y0 + 1, shape_col(c))
   end
   function circfill(x, y, r, c)
-    if fill_transparent then return end
-    m_circ(fl(x), fl(y), fl(r), fl(c))
+    if fill_skip() then return end
+    m_circ(fl(x), fl(y), fl(r), shape_col(c))
   end
-  function circ(x, y, r, c) m_circb(fl(x), fl(y), fl(r), fl(c)) end
+  function circ(x, y, r, c)
+    if fill_skip() then return end
+    m_circb(fl(x), fl(y), fl(r), shape_col(c))
+  end
   -- SPEC.md 6 gives `print` fixed 8px glyphs -- TWICE the size p8 meant on a
   -- native 128px raster, and celeste's memorial letters its text at the p8
   -- 4px advance (8px glyphs smear into each other). So the port carries the
@@ -1508,8 +1541,14 @@ do
   end
 
   local m_pal = pal
+  -- p8's pal() with no arguments resets BOTH palettes and the transparency
+  -- (colour 0 transparent, the rest opaque); the console's resets one.
+  local function p8_palt_default()
+    m_palt()
+    m_palt(0, true)
+  end
   function pal(a, b)
-    if a == nil then m_pal() return end
+    if a == nil then m_pal() p8_palt_default() return end
     if type(a) == "table" then
       -- p8 0.2.0's TABLE form: a whole palette in one call. A table with a
       -- [0] entry keys by colour directly; a plain array maps its i-th entry
@@ -1518,18 +1557,33 @@ do
       local shift = (a[0] ~= nil) and 0 or 1
       for k, v in pairs(a) do
         if type(k) == "number" and type(v) == "number" then
-          m_pal(fl(k) - shift, fl(v))
+          m_pal(fl(k) - shift, pcol(v))
         end
       end
       return
     end
-    m_pal(fl(a), fl(b))
+    m_pal(fl(a) & 15, pcol(b))
   end
-  function pset(x, y, c) m_pix(fl(x), fl(y), fl(c == nil and p8_pen or c)) end
+  -- palt(): p8's default is colour 0 transparent; palt(c, t) sets one;
+  -- palt(bits) (0.2.0) sets all sixteen from a bitfield, bit 15 = colour 0.
+  -- Transparency is STATE here rather than a colorkey on every spr, so
+  -- `palt(0, false)` really does draw a sprite's black pixels.
+  function palt(c, t)
+    if c == nil then p8_palt_default() return end
+    if t == nil then
+      local bits = fl(c)
+      m_palt()
+      for i = 0, 15 do m_palt(i, (bits >> (15 - i)) & 1 == 1) end
+      return
+    end
+    m_palt(fl(c) & 15, t and true or false)
+  end
+  function pset(x, y, c) m_pix(fl(x), fl(y), pcol(c)) end
   function pget(x, y) return m_pix(fl(x), fl(y)) end
   local m_line = line
   function line(x0, y0, x1, y1, c)
-    m_line(fl(x0), fl(y0), fl(x1), fl(y1), fl(c))
+    if fill_skip() then return end
+    m_line(fl(x0), fl(y0), fl(x1), fl(y1), shape_col(c))
   end
 
   function sfx(n) if n and n >= 0 then m_sfx(fl(n)) end end
@@ -1714,8 +1768,26 @@ do
       prev = dx
     end
   end
-  function oval(x0, y0, x1, y1, col) _oval(x0, y0, x1, y1, col, false) end
-  function ovalfill(x0, y0, x1, y1, col) _oval(x0, y0, x1, y1, col, true) end
+  -- The console's own kernel where it has one (SPEC.md 6, 2026-09); the
+  -- row-by-row Lua above on a host that predates it.
+  local function _oval_box(x0, y0, x1, y1)
+    x0, y0, x1, y1 = fl(x0), fl(y0), fl(x1), fl(y1)
+    if x1 < x0 then x0, x1 = x1, x0 end
+    if y1 < y0 then y0, y1 = y1, y0 end
+    return x0, y0, x1 - x0 + 1, y1 - y0 + 1
+  end
+  function oval(x0, y0, x1, y1, col)
+    if m_ovalb == nil then _oval(x0, y0, x1, y1, col, false) return end
+    if fill_skip() then return end
+    local x, y, w, h = _oval_box(x0, y0, x1, y1)
+    m_ovalb(x, y, w, h, shape_col(col))
+  end
+  function ovalfill(x0, y0, x1, y1, col)
+    if m_oval == nil then _oval(x0, y0, x1, y1, col, true) return end
+    if fill_skip() then return end
+    local x, y, w, h = _oval_box(x0, y0, x1, y1)
+    m_oval(x, y, w, h, shape_col(col))
+  end
 
   -- The rest of PICO-8's surface that is plain Lua or plain arithmetic. None
   -- of these needed a console verb; they were simply never written down, so a
@@ -1795,7 +1867,7 @@ do
     local f = 0
     if fx then f = f + 1 end
     if fy then f = f + 2 end
-    m_sspr(sx, sy, sw, sh, dx, dy, dw or sw, dh or sh, 0, f)
+    m_sspr(sx, sy, sw, sh, dx, dy, dw or sw, dh or sh, -1, f)
   end
 
   -- map + flags: the map DATA now ships as map.moymap (the console's own
@@ -1925,8 +1997,12 @@ do
   -- than the flat fill everything else gets.
   function fillp(p)
     p = p or 0
-    fill_pattern = p
+    if type(p) ~= "number" then p = tonumber(p) or 0 end
+    fill_pattern = mfloor(p) & 0xffff
     fill_transparent = (p % 1) >= 0.5
+    -- The console holds the pattern as draw state; a shape re-applies a live
+    -- one before it draws (shape_col), so only the RESET needs saying now.
+    if fill_pattern == 0 and m_fillp ~= nil then m_fillp() end
   end
 
   -- The SHEET is a file here, not memory. sget reads back 0 rather than
@@ -1953,6 +2029,12 @@ do
     local row = sheet[y + 1]
     sheet[y + 1] = string.sub(row, 1, x) .. string.sub(HEXD, c + 1, c + 1)
                    .. string.sub(row, x + 2)
+  end
+  if m_sget ~= nil then
+    -- The console's own sheet verbs (SPEC.md 7.1, 2026-09): what sset writes
+    -- is what spr draws, and the baked copy above is only for older hosts.
+    function sget(x, y) return m_sget(fl(x), fl(y)) end
+    function sset(x, y, c) m_sset(fl(x), fl(y), fl(c == nil and p8_pen or c)) end
   end
   if __moy_poke ~= nil then
     -- The sheet IS memory here (0x0000..0x1fff, two pixels a byte), so an
@@ -1996,7 +2078,7 @@ do
   function flip() end
   function holdframe() end
   -- p8's persistent draw colour, and its print cursor.
-  function color(c) p8_pen = fl(c or 6) end
+  function color(c) p8_pen = fl(c or 6) & 0x8f end
   function cursor(x, y, c) p8_cx, p8_cy = fl(x or 0), fl(y or 0)
     if c ~= nil then p8_pen = fl(c) end end
 
@@ -2076,7 +2158,7 @@ do
         local tile = p8map[rowb + celx + cx + 1] or 0
         if tile > 0 and (mask == 0
                          or ((gff[tile] or 0) & mask) ~= 0) then
-          m_spr(tile, sx + cx * 8, sy + cy * 8, 0, 1, 0)
+          m_spr(tile, sx + cx * 8, sy + cy * 8, -1, 1, 0)
         end
       end
     end
@@ -2152,9 +2234,11 @@ do
   end
   function _draw()
     if ticked and p8_draw then
-      -- the console resets camera/clip/pal after every cart frame; re-park the
-      -- p8 camera so a cart that trusts persistent camera state draws at origin
+      -- the console resets camera/clip/pal/palt after every cart frame;
+      -- re-park the p8 camera and restore p8's default transparency (colour
+      -- 0) so a cart that trusts persistent draw state gets PICO-8's.
       camera()
+      p8_palt_default()
       p8_draw()
       ticked = false
     end
@@ -2359,6 +2443,11 @@ def build_manifest(title, icon=None, fps=30):
         # paths read the answer instead of inferring it from `ported_from`.
         "safe_to_share": False,
         "ported_from": "pico-8",
+        # SPEC.md 2.2: the cart's own 64-entry table -- PICO-8's sixteen, then
+        # its sixteen SECRET colours at 16-31 (pal(c, 128 + i) in the shim
+        # lands there), then the base sixteen again to fill the table. A
+        # ported cart never reaches past 31.
+        "palette": P8_PALETTE,
     }
     if icon is not None:
         # SPEC.md 3.4: the tiles a launcher shows the cart by. p8 has no icon
@@ -2374,7 +2463,19 @@ def build_manifest(title, icon=None, fps=30):
 # the same cart ported on two tiers differs by field order alone, which is both
 # an unreadable diff and the end of any byte-for-byte check between them.
 MANIFEST_KEYS = ("format", "title", "version", "main", "fps", "canvas",
-                 "input", "safe_to_share", "ported_from", "icon")
+                 "input", "safe_to_share", "ported_from", "palette", "icon")
+
+# PICO-8's palette (its base sixteen are SPEC.md 2's 0-15 byte for byte) and
+# its secret sixteen, as the manifest ships them.
+P8_PALETTE = (
+    "000000 1D2B53 7E2553 008751 AB5236 5F574F C2C3C7 FFF1E8 "
+    "FF004D FFA300 FFEC27 00E436 29ADFF 83769C FF77A8 FFCCAA "
+    "291814 111D35 422136 125359 742F29 49333B A28879 F3EF7D "
+    "BE1250 FF6C24 A8E72E 00B543 065AB5 754665 FF6E59 FF9D81 "
+    "000000 1D2B53 7E2553 008751 AB5236 5F574F C2C3C7 FFF1E8 "
+    "FF004D FFA300 FFEC27 00E436 29ADFF 83769C FF77A8 FFCCAA "
+    "000000 1D2B53 7E2553 008751 AB5236 5F574F C2C3C7 FFF1E8 "
+    "FF004D FFA300 FFEC27 00E436 29ADFF 83769C FF77A8 FFCCAA").split()
 
 
 def manifest_text(man):

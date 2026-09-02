@@ -6,10 +6,12 @@ file is the normative answer to "what exactly does circ(cx, cy, r, c) light up".
 That is the point of it existing in readable form: prose cannot specify a
 midpoint circle to the pixel, and a .wasm blob will not tell you.
 
-Draw state is the four things SPEC.md 6 lists -- camera, clip, pal, palt. Every
-primitive funnels through `_put` (per-pixel verbs) or `rect` (span verbs), and
-those two apply all four, so a verb added later inherits them by construction
-rather than by remembering to.
+Draw state is the five things SPEC.md 6 lists -- camera, clip, pal, palt and
+the fill pattern. Every primitive funnels through `_put` (per-pixel verbs) or
+`rect` (span verbs), and those two apply the first four, so a verb added later
+inherits them by construction rather than by remembering to. The pattern is
+the one piece that applies to SHAPES only -- `_put_shape` and `rect` honour
+it; sprites, text, cls and pix go round it through `_put` and `_fill_rect`.
 
 WHAT IS NOT HERE, on purpose: sprite batching, tilemap caching, sub-rect
 viewports, partial-frame restore. Those are host performance work -- real and
@@ -45,6 +47,71 @@ class Image:
         self.h = height
         self.pix = pix
         self.transparent = transparent
+
+
+def ellipse(x0, y0, x1, y1, put, span):
+    """The ellipse inscribed in the box (x0, y0)-(x1, y1), corners inclusive.
+
+    Zingl's integer midpoint walk ("A Rasterizing Algorithm for Drawing
+    Curves", 2012): four quadrant pixels per step, no division, no float, so
+    every host performs identical arithmetic and the goldens are enforceable.
+    With `put` it emits the OUTLINE (ovalb); with `span` it emits one inclusive
+    row (xa, xb, y) per canvas row the FIRST time the walk reaches that row --
+    x only ever moves inward, so the first visit is the widest, and the fill is
+    exactly the rows between the outline's extremes. The tail loop finishes
+    the tips of ellipses too flat for the main walk to reach them."""
+    a = abs(x1 - x0)
+    b = abs(y1 - y0)
+    b1 = b & 1
+    dx = 4 * (1 - a) * b * b
+    dy = 4 * (b1 + 1) * a * a
+    err = dx + dy + b1 * a * a
+    if x0 > x1:
+        x0 = x1
+        x1 += a
+    if y0 > y1:
+        y0 = y1
+    y0 += (b + 1) // 2
+    y1 = y0 - b1
+    a = 8 * a * a
+    b1 = 8 * b * b
+    last = None
+    while True:
+        if span is not None:
+            if last != y0:
+                span(x0, x1, y0)
+                if y1 != y0:
+                    span(x0, x1, y1)
+                last = y0
+        else:
+            put(x1, y0)
+            put(x0, y0)
+            put(x0, y1)
+            put(x1, y1)
+        e2 = 2 * err
+        if e2 <= dy:
+            y0 += 1
+            y1 -= 1
+            dy += a
+            err += dy
+        if e2 >= dx or 2 * err > dy:
+            x0 += 1
+            x1 -= 1
+            dx += b1
+            err += dx
+        if x0 > x1:
+            break
+    while y0 - y1 <= b:
+        if span is not None:
+            span(x0 - 1, x1 + 1, y0)
+            span(x0 - 1, x1 + 1, y1)
+        else:
+            put(x0 - 1, y0)
+            put(x1 + 1, y0)
+            put(x0 - 1, y1)
+            put(x1 + 1, y1)
+        y0 += 1
+        y1 -= 1
 
 
 def tri_spans(x1, y1, x2, y2, x3, y3):
@@ -119,6 +186,8 @@ class Canvas:
         self._clip_y1 = self.h
         self._pal_map[:] = _PAL_IDENTITY
         self._palt[:] = _PALT_OPAQUE
+        self._fillp = 0
+        self._fillp_col = -1
 
     def camera(self, x=None, y=None):
         """SPEC.md 6: offset subsequent draws by -x, -y. No args resets.
@@ -175,6 +244,23 @@ class Canvas:
             return
         self._palt[int(c) & 63] = 1 if on else 0
 
+    def fillp(self, p=None, c=None):
+        """SPEC.md 6: a 4x4 fill pattern for the shape verbs. No args resets
+        to solid.
+
+        `p` is 16 bits, row-major from the top-left, bit 15 first; a SET bit
+        is a hole. A hole pixel takes colour `c`, or is left untouched when
+        `c` is absent or negative. Anchored to the SCREEN, not the camera, so
+        a scrolling world does not crawl its dither. Shapes only: line, rect,
+        rectb, circ, circb, tri, trib, oval, ovalb -- never pix, print, cls,
+        sprites or the map."""
+        if p is None:
+            self._fillp = 0
+            self._fillp_col = -1
+            return
+        self._fillp = int(p) & 0xFFFF
+        self._fillp_col = -1 if c is None or int(c) < 0 else int(c) & 63
+
     # -- primitives (SPEC.md 6) ---------------------------------------------
 
     def _put(self, x, y, ci):
@@ -185,6 +271,19 @@ class Canvas:
         if not (self._clip_x0 <= x < self._clip_x1
                 and self._clip_y0 <= y < self._clip_y1):
             return
+        self.buf[y * self.w + x] = self._pal_map[ci & 63]
+
+    def _put_shape(self, x, y, ci):
+        """_put for the shape verbs: the fill pattern applies here."""
+        x = x - self._cam_x
+        y = y - self._cam_y
+        if not (self._clip_x0 <= x < self._clip_x1
+                and self._clip_y0 <= y < self._clip_y1):
+            return
+        if self._fillp and (self._fillp >> (15 - ((y & 3) << 2) - (x & 3))) & 1:
+            if self._fillp_col < 0:
+                return
+            ci = self._fillp_col
         self.buf[y * self.w + x] = self._pal_map[ci & 63]
 
     def cls(self, c=0):
@@ -224,8 +323,9 @@ class Canvas:
         sx = 1 if x0 < x1 else -1
         sy = 1 if y0 < y1 else -1
         err = dx + dy
+        put = self._put_shape
         while True:
-            self._put(x0, y0, ci)
+            put(x0, y0, ci)
             if x0 == x1 and y0 == y1:
                 break
             e2 = 2 * err
@@ -236,12 +336,11 @@ class Canvas:
                 err += dx
                 y0 += sy
 
-    def rect(self, x, y, w, h, c):
-        """FILLED rectangle (SPEC.md 6 -- rectb is the outline).
-
-        The span path: camera-offset the corner, intersect with the clip rect,
-        write whole rows. Every span-shaped verb (circ, tri, scaled spr) routes
-        through here so they clip identically."""
+    def _fill_rect(self, x, y, w, h, c):
+        """The span path, pattern-free: camera-offset the corner, intersect
+        with the clip rect, write whole rows. Scaled sprites route through
+        here so they clip exactly like a rect and never pick up a fill
+        pattern; the shape verbs go through rect() below."""
         x = int(x) - self._cam_x
         y = int(y) - self._cam_y
         x0 = max(self._clip_x0, x)
@@ -257,6 +356,38 @@ class Canvas:
         for yy in range(y0, y1):
             base = yy * width + x0
             buf[base:base + n] = row
+
+    def rect(self, x, y, w, h, c):
+        """FILLED rectangle (SPEC.md 6 -- rectb is the outline).
+
+        Every span-shaped SHAPE verb (circ, tri, oval) routes through here so
+        they clip identically and honour the fill pattern identically."""
+        if not self._fillp:
+            self._fill_rect(x, y, w, h, c)
+            return
+        x = int(x) - self._cam_x
+        y = int(y) - self._cam_y
+        x0 = max(self._clip_x0, x)
+        y0 = max(self._clip_y0, y)
+        x1 = min(self._clip_x1, x + int(w))
+        y1 = min(self._clip_y1, y + int(h))
+        if x1 <= x0 or y1 <= y0:
+            return
+        on = self._pal_map[int(c) & 63]
+        hole = self._fillp_col
+        off = self._pal_map[hole] if hole >= 0 else None
+        pat = self._fillp
+        buf = self.buf
+        width = self.w
+        for yy in range(y0, y1):
+            base = yy * width
+            rowbits = pat >> (12 - ((yy & 3) << 2))    # this row's 4 bits, MSB = x%4 == 0
+            for xx in range(x0, x1):
+                if (rowbits >> (3 - (xx & 3))) & 1:
+                    if off is not None:
+                        buf[base + xx] = off
+                else:
+                    buf[base + xx] = on
 
     def rectb(self, x, y, w, h, c):
         """Rectangle OUTLINE: four one-pixel rects, so the corners are written
@@ -285,16 +416,45 @@ class Canvas:
         x = r
         y = 0
         err = 0
+        put = self._put_shape
         while x >= y:
             for px, py in ((x, y), (y, x), (-y, x), (-x, y),
                            (-x, -y), (-y, -x), (y, -x), (x, -y)):
-                self._put(cx + px, cy + py, ci)
+                put(cx + px, cy + py, ci)
             y += 1
             if err <= 0:
                 err += 2 * y + 1
             else:
                 x -= 1
                 err -= 2 * x + 1
+
+    def oval(self, x, y, w, h, c):
+        """FILLED ellipse inscribed in the w x h box at (x, y). w or h of 0
+        or less draws nothing; 1 x 1 is a single pixel. See ellipse()."""
+        x = int(x); y = int(y); w = int(w); h = int(h)
+        if w <= 0 or h <= 0:
+            return
+        rect = self.rect
+
+        def span(xa, xb, yy):
+            rect(xa, yy, xb - xa + 1, 1, c)
+
+        ellipse(x, y, x + w - 1, y + h - 1, None, span)
+
+    def ovalb(self, x, y, w, h, c):
+        """Ellipse OUTLINE in the w x h box at (x, y): the boundary rows of
+        oval(), pixel for pixel -- the one fill/outline pair that IS the same
+        rasterization, because both come out of one walk."""
+        x = int(x); y = int(y); w = int(w); h = int(h)
+        if w <= 0 or h <= 0:
+            return
+        ci = int(c) & 63
+        put = self._put_shape
+
+        def emit(px, py):
+            put(px, py, ci)
+
+        ellipse(x, y, x + w - 1, y + h - 1, emit, None)
 
     def tri(self, x1, y1, x2, y2, x3, y3, c):
         """FILLED triangle. PROVISIONAL -- SPEC.md 6.1, not part of core 0.2."""
@@ -364,7 +524,7 @@ class Canvas:
                 p = pix[base + ssx]
                 if p == t or p < 0 or palt[p & 63]:
                     continue
-                self.rect(x + sx * scale, y + sy * scale, scale, scale, p)
+                self._fill_rect(x + sx * scale, y + sy * scale, scale, scale, p)
 
     def spr_tile(self, sheet, tile, x, y, colorkey=-1, scale=1, flip=0):
         """Blit sheet tile `tile` -- what the cart-facing spr(n, ...) resolves

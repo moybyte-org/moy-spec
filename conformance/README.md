@@ -3,7 +3,7 @@
 > SPEC.md 11: *An implementation conforms when it runs the conformance suite and
 > produces pixel-identical output.*
 
-This is that suite. Ten scenes, eight of them counted; each is a real moy cart
+This is that suite. Thirteen scenes, eleven of them counted; each is a real moy cart
 plus a golden frame.
 
 ```
@@ -85,6 +85,9 @@ golden/hashes.json   sha256 per frame, plus the suite manifest
 | `pal_palt` | draw-time remap and sprite transparency together; `pal` must not touch pixels already drawn |
 | `sprites` | flips, integer scales, colorkeys, out-of-range tile ids, sprites under camera and clip |
 | `tilemap` | `map()` regions, offsets, scale, colorkey, and a region starting out of range |
+| `oval` | `oval` / `ovalb` at every box shape the walk branches on, the tiny sizes, zero and negative sizes, edges, camera, clip, pal — and the outline over its own fill, which must ring it exactly |
+| `fillp` | holes untouched vs. holes in a second colour, the cell's phase under a moved camera and a clip, all nine shape verbs — and `pix`, `print`, a sprite and a `map` drawn with a pattern live, which must come out solid |
+| `sheet` | `sset` then `spr`/`sspr`/`map` of the edited tile, the 0–15 mask, writes off the sheet; the scene restores its own edits first, since a second frame sees the first frame's sheet |
 | `provisional` | SPEC.md 6.1's `tri` / `trib` / `sspr` — **not counted**, SPEC.md 11 excludes 6.1 until it settles |
 | `provisional_tline` | SPEC.md 6.1's `tline`: the map sampled through 16.16 texture steps — **not counted**, same reason. The scene that caught a real board failing by 2773 pixels (below) |
 
@@ -163,7 +166,7 @@ python3 conformance/run.py --player \
   "python3 /path/to/moybyte/tools/p4_conformance.py {cart} {out}"
 ```
 
-**All ten scenes match there too.** That is the tier where the C `moy_gfx`
+**Every scene of that day's suite matched there too.** That is the tier where the C `moy_gfx`
 kernel, the RGB565 framebuffer and §1.1's memory floor actually live, and it had
 never been checked against the spec before.
 

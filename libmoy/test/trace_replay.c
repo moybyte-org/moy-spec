@@ -292,6 +292,10 @@ int main(int argc, char **argv)
             else if (!strcmp(verb, "clip"))   { if (n) moy_clip(&c, N(0), N(1), N(2), N(3)); else moy_clip_reset(&c); }
             else if (!strcmp(verb, "pal"))    { if (n) moy_pal(&c, N(0), N(1)); else moy_pal_reset(&c); }
             else if (!strcmp(verb, "palt"))   { if (n) moy_palt(&c, N(0), N(1)); else moy_palt_reset(&c); }
+            else if (!strcmp(verb, "fillp"))  { if (n) moy_fillp(&c, N(0), N(1)); else moy_fillp_reset(&c); }
+            else if (!strcmp(verb, "oval"))   moy_oval(&c, N(0), N(1), N(2), N(3), N(4));
+            else if (!strcmp(verb, "ovalb"))  moy_ovalb(&c, N(0), N(1), N(2), N(3), N(4));
+            else if (!strcmp(verb, "sset"))   moy_sheet_pset(&sheet, N(0), N(1), N(2));
             else if (!strcmp(verb, "spr"))    moy_spr(&c, &sheet, N(0), N(1), N(2), N(3), N(4), N(5));
             else if (!strcmp(verb, "sspr"))   moy_sspr(&c, &sheet, N(0), N(1), N(2), N(3), N(4), N(5), N(6), N(7), N(8), N(9));
             else if (!strcmp(verb, "map"))    moy_map_draw(&c, &map, &sheet, N(0), N(1), N(2), N(3), N(4), N(5), N(6), N(7));

@@ -38,6 +38,14 @@ local function s_shapes()
   end
   rect(130, 150, 80, 30, 2)
   print("rect", 148, 160, 7)
+  oval(220, 130, 70, 40, 13)                    -- oval / ovalb
+  ovalb(220, 130, 70, 40, 7)
+  fillp(0xA5A5)                                 -- fillp: a checker dither
+  rect(230, 180, 60, 30, 4)                     -- holes show the background
+  fillp(0x5A5A, 1)                              -- ... or take a second colour
+  circ(120, 200, 18, 9)
+  fillp()
+  print("oval fillp", 220, 216, 6)
 end
 
 -- 2 ------------------------------------------------------- sprites, map -----

@@ -325,6 +325,136 @@ def provisional_tline(c, sheet, tilemap):
     c.tline(tilemap, sheet, 8, 160, 300, 160, 0, 90 * F, F, 0)
 
 
+def oval_scene(c, sheet, tilemap):
+    """oval and ovalb (SPEC.md 6): every shape of box the walk has a branch
+    for -- round, wide, tall, the tips of flat ones, and the degenerate
+    sizes -- plus the outline drawn over its own fill, which must ring it
+    exactly."""
+    c.cls(1)
+    c.oval(8, 8, 40, 40, 8)                # round
+    c.ovalb(8, 8, 40, 40, 7)               # ... the outline is its rim, exactly
+    c.oval(56, 8, 60, 24, 11)              # wide
+    c.ovalb(56, 36, 60, 24, 10)
+    c.oval(124, 8, 24, 60, 12)             # tall
+    c.ovalb(156, 8, 24, 60, 14)
+    c.oval(190, 8, 60, 3, 9)               # flat: the tail loop finishes the tips
+    c.ovalb(190, 16, 60, 3, 9)
+    c.oval(190, 24, 3, 40, 15)
+    c.ovalb(198, 24, 3, 40, 15)
+    c.oval(210, 30, 1, 1, 7)               # a single pixel
+    c.ovalb(214, 30, 1, 1, 7)
+    c.oval(218, 30, 2, 2, 7)
+    c.ovalb(222, 30, 2, 2, 7)
+    c.oval(226, 30, 3, 3, 7)
+    c.ovalb(230, 30, 3, 3, 7)
+    c.oval(234, 30, 0, 10, 8)              # zero width: nothing
+    c.oval(240, 30, 10, 0, 8)              # zero height: nothing
+    c.ovalb(246, 30, -5, 5, 8)             # negative: nothing
+    c.oval(260, 8, 51, 33, 3)              # odd sizes: both middle rows
+    c.ovalb(260, 44, 51, 33, 3)
+    c.oval(8, 90, 33, 51, 2)
+    c.ovalb(48, 90, 33, 51, 2)
+    c.oval(-20, 180, 80, 50, 4)            # hanging off the left edge
+    c.ovalb(280, 200, 80, 60, 5)           # ... and the bottom-right corner
+    c.camera(-100, -100)                    # camera and clip like any shape
+    c.clip(110, 110, 60, 40)
+    c.oval(0, 0, 80, 60, 13)
+    c.ovalb(0, 0, 80, 60, 7)
+    c.camera()
+    c.clip()
+    c.pal(6, 10)                            # pal remaps it like any shape
+    c.oval(200, 100, 40, 30, 6)
+    c.pal()
+
+
+def fillp_scene(c, sheet, tilemap):
+    """The fill pattern (SPEC.md 6): a set bit is a hole, a hole takes the
+    second colour or nothing, the pattern is anchored to the screen, every
+    shape verb honours it, and nothing else does."""
+    c.cls(1)
+    c.rect(8, 8, 40, 24, 8)                        # solid, for reference
+    c.fillp(0xA5A5)                                # checkerboard, holes untouched
+    c.rect(56, 8, 40, 24, 8)
+    c.fillp(0xA5A5, 12)                            # ... holes in a second colour
+    c.rect(104, 8, 40, 24, 8)
+    c.fillp(0xF0F0)                                # stripes: rows 0-1 of each 4 are holes
+    c.rect(152, 8, 40, 24, 8)
+    c.fillp(0x8000, 0)                             # one hole per 4x4 cell, black
+    c.rect(200, 8, 40, 24, 8)
+    c.fillp(0xFFFF)                                # every pixel a hole: draws nothing
+    c.rect(248, 8, 40, 24, 8)
+    c.fillp(0xFFFF, 11)                            # ... unless the holes have a colour
+    c.rect(248, 36, 40, 24, 8)
+    c.fillp(0x5A5A, 5)                             # every shape verb
+    c.circ(28, 70, 20, 10)
+    c.circb(76, 70, 20, 10)
+    c.tri(100, 50, 140, 60, 110, 90, 10)
+    c.trib(150, 50, 190, 60, 160, 90, 10)
+    c.line(200, 50, 240, 90, 10)
+    c.line(200, 90, 240, 50, 10)
+    c.rectb(250, 50, 40, 40, 10)
+    c.oval(8, 100, 50, 30, 10)
+    c.ovalb(64, 100, 50, 30, 10)
+    c.fillp(0x0F0F)                                # NOT these: pix, print, sprites, map, cls
+    c.pix(130, 100, 7)
+    c.pix(131, 101, 7)
+    c.print("SOLID", 136, 100, 7)
+    c.spr_tile(sheet, 1, 190, 100, -1, 3)
+    c.map(tilemap, sheet, 0, 0, 3, 2, 230, 100)
+    c.fillp(0xA5A5, 12)                            # anchored to the SCREEN:
+    c.camera(1, 1)                                 # a shifted camera moves the rect,
+    c.rect(8, 140, 40, 24, 8)                      # not the dither
+    c.camera()
+    c.rect(56, 140, 40, 24, 8)                     # ... so this one is in phase with it
+    c.clip(110, 145, 30, 14)                       # clip keeps the phase too
+    c.rect(104, 140, 40, 24, 8)
+    c.clip()
+    c.pal(12, 14)                                  # the hole colour goes through pal
+    c.rect(152, 140, 40, 24, 8)
+    c.pal()
+    c.fillp()                                      # reset: solid again
+    c.rect(200, 140, 40, 24, 8)
+    c.fillp(0xA5A5, -1)                            # -1 spells "untouched" explicitly
+    c.rect(248, 140, 40, 24, 8)
+    c.fillp(0x1A5A5)                               # bits above 15 are ignored
+    c.rect(8, 180, 40, 24, 8)
+    c.fillp()
+
+
+def sheet_scene(c, sheet, tilemap):
+    """sset (SPEC.md 7.1): a write to the sheet is what spr draws next, the
+    index is masked to 0-15, and a write off the sheet is dropped.
+
+    The sheet OUTLIVES a frame, so the scene restores every pixel it edits
+    before it starts: a player that renders frame two must see the same
+    frame as one that renders frame one."""
+    c.cls(1)
+    for i in range(8):
+        c.sset(16 + i, i, 7)                              # tile 2's diagonal: checker value
+        c.sset(8 + i, 8 + i, 0)                           # tile 17: blank
+    c.sset(16, 7, 12)                                    # tile 2's masked-write pixel
+    c.sset(0, 0, 0)                                      # tile 0: blank
+    c.sset(8, 0, 8)                                      # tile 1: solid 8
+    c.spr_tile(sheet, 2, 8, 8, -1, 4)                    # the checker as shipped
+    for i in range(8):
+        c.sset(16 + i, i, 8)                               # a red diagonal on tile 2
+    c.spr_tile(sheet, 2, 48, 8, -1, 4)                   # ... visible on the next draw
+    c.sset(16, 7, 24)                                    # 24 & 15 = 8: masked
+    c.sset(-1, 0, 8)                                     # off the sheet: dropped
+    c.sset(0, 999, 8)
+    c.sset(128, 0, 8)
+    c.spr_tile(sheet, 2, 88, 8, -1, 4)
+    for i in range(8):
+        c.sset(8 + i, 8 + i, 9)                           # tile 17, blank until now
+    c.spr_tile(sheet, 17, 128, 8, -1, 4)
+    c.sset(0, 0, 11)                                     # tile 0's corner
+    c.spr_tile(sheet, 0, 168, 8, -1, 4)
+    c.sspr(sheet, 16, 0, 8, 8, 208, 8, 32, 32)           # the same edit through sspr
+    c.map(tilemap, sheet, 3, 0, 2, 1, 8, 60)             # two cells of tile 1, as shipped
+    c.sset(8, 0, 12)                                     # tile 1 (solid 8) gets a blue pixel
+    c.map(tilemap, sheet, 3, 0, 2, 1, 8, 72)             # ... and the map draws the edit
+
+
 SCENES = (
     ("primitives", primitives),
     ("edges", edges),
@@ -334,6 +464,9 @@ SCENES = (
     ("pal_palt", pal_palt),
     ("sprites", sprites),
     ("tilemap", tilemap_scene),
+    ("oval", oval_scene),
+    ("fillp", fillp_scene),
+    ("sheet", sheet_scene),
     ("provisional", provisional),
     ("provisional_tline", provisional_tline),
 )

@@ -395,6 +395,10 @@ colours byte for byte — and 16–63 extend them (§2).
   change. There is no display-time palette to flash the screen with (§12.1); to
   flash, draw differently for a few frames.
 - `palt(c, on)` marks an index transparent for sprites.
+- `fillp(p, c)` sets a 4 × 4 dither for the shape verbs — `line`, `rect`,
+  `circ`, `oval`, `tri` and their outlines. A set bit in `p` is a hole; holes
+  take `c`, or are left alone without it, which is how a shape fades over
+  what is under it. Sprites, text and `pix` ignore it.
 - Both reset when called with no arguments — do that rather than tracking what
   you set, especially before drawing your HUD.
 - A cart may replace the whole 64-entry table from its manifest (§2.2) if the
@@ -405,6 +409,9 @@ colours byte for byte — and 16–63 extend them (§2).
 it at draw time.
 
 ### Sprites
+
+`sget(x, y)` reads a sheet pixel and `sset(x, y, c)` writes one; what you write
+is what `spr` draws next, and nothing puts it back for you.
 
 The sheet is 512 tiles of 8 × 8, sixteen to a row, and it is a text file of hex
 nibbles. §3.2 has the arithmetic that turns a tile id into a position on it —
