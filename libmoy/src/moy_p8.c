@@ -36,6 +36,7 @@
  * for the sparse table the shim keeps for hosts without this.
  */
 
+#include <math.h>
 #include <string.h>
 
 #include "lua.h"
@@ -53,12 +54,62 @@ static inline moy_p8 *p8_of(lua_State *L)
     return (moy_p8 *)lua_touserdata(L, lua_upvalueindex(1));
 }
 
+/* uint32 -> the int32 with the same bits, without leaning on the
+ * implementation-defined narrowing conversion. */
+static inline int32_t u2i(uint32_t v)
+{
+    return (v & 0x80000000u) ? (int32_t)(v & 0x7fffffffu) - 2147483647 - 1
+                             : (int32_t)v;
+}
+
+/* float -> int32, wrapping instead of trapping. C leaves the cast UNDEFINED
+ * out of range and a p8 cart reaches out of it routinely -- a garbage
+ * address, a multiply that overflows -- so the answer is pinned here rather
+ * than left to the CPU. fmod is exact, so every build agrees on it. */
+static int32_t f2i(lua_Number f)
+{
+    double d = (double)f;
+    if (d >= -2147483648.0 && d < 2147483648.0) return (int32_t)d;
+    if (!(d == d)) return 0;                             /* NaN */
+    d = fmod(d, 4294967296.0);
+    if (d < 0) d += 4294967296.0;
+    if (d >= 2147483648.0) d -= 4294967296.0;
+    return (int32_t)d;
+}
+
 static inline int32_t iarg(lua_State *L, int i)
 {
     int isnum;
     lua_Integer v = lua_tointegerx(L, i, &isnum);
     if (isnum) return (int32_t)v;
-    return (int32_t)lua_tonumber(L, i);
+    return f2i(lua_tonumber(L, i));
+}
+
+/* The shim spelled the multi-byte forms `cpeek(a + i)`, so the offset lands
+ * on the ARGUMENT and is truncated after -- and on this VM (LUA_32BITS) that
+ * addition wraps at 32 bits. Reproduced rather than simplified, because
+ * trunc(a) + i and trunc(a + i) part company for a negative fraction. */
+static int32_t iarg_off(lua_State *L, int i, int32_t off)
+{
+    int isnum;
+    lua_Integer v = lua_tointegerx(L, i, &isnum);
+    if (isnum) return u2i((uint32_t)(int32_t)v + (uint32_t)off);
+    return f2i((lua_Number)(lua_tonumber(L, i) + (lua_Number)off));
+}
+
+/* The shim's fl(): p8 coerces every API number argument -- nil is 0, a
+ * numeric string is its number, and anything else (`pset(x, y, color)`, the
+ * API function, in picooffroad) is 0 rather than an error -- and then floors.
+ * An integer keeps every bit; only the float lane goes through lua_Number,
+ * which is a SINGLE-PRECISION float here. */
+static int32_t p8_fl(lua_State *L, int i)
+{
+    int isnum;
+    lua_Number f;
+    if (lua_isinteger(L, i)) return (int32_t)lua_tointeger(L, i);
+    f = lua_tonumberx(L, i, &isnum);
+    if (!isnum) return 0;
+    return f2i((lua_Number)floor((double)f));
 }
 
 /* -- the screen: the canvas IS the screen region ------------------------- */
@@ -188,23 +239,106 @@ static inline uint8_t rd(const moy_p8 *p, uint32_t a)
 
 /* -- the verbs ------------------------------------------------------------ */
 
+static void poke_byte(moy_p8 *p, uint32_t a, uint8_t v)
+{
+    a &= 0xffffu;                                  /* p8 wraps addresses */
+    p->mem[a] = v;
+    apply(p, a, v);
+}
+
+static inline uint8_t peek_byte(moy_p8 *p, uint32_t a)
+{
+    return rd(p, a & 0xffffu);
+}
+
+/* poke(a, v, b1, b2, ...): p8 0.2 pokes a whole run from one call, and the
+ * shim's Lua paid a select() per byte for it. */
 static int l_poke(lua_State *L)
 {
     moy_p8 *p = p8_of(L);
-    uint32_t a = (uint32_t)iarg(L, 1) & 0xffffu;   /* p8 wraps addresses */
-    uint8_t v = (uint8_t)iarg(L, 2);
-    if (a >= MOY_P8_MEM) return 0;
-    p->mem[a] = v;
-    apply(p, a, v);
+    int top = lua_gettop(L), i;
+    poke_byte(p, (uint32_t)iarg(L, 1), (uint8_t)iarg(L, 2));
+    for (i = 3; i <= top; i++)
+        poke_byte(p, (uint32_t)iarg_off(L, 1, (int32_t)(i - 2)), (uint8_t)iarg(L, i));
     return 0;
 }
 
+/* peek(a) and peek(a, n): n bytes as n RESULTS, which is what the shim built
+ * a table and unpacked to get. */
 static int l_peek(lua_State *L)
 {
     moy_p8 *p = p8_of(L);
-    uint32_t a = (uint32_t)iarg(L, 1) & 0xffffu;   /* p8 wraps addresses */
-    lua_pushinteger(L, a < MOY_P8_MEM ? rd(p, a) : 0);
+    int32_t k, i;
+    if (!lua_isnoneornil(L, 2)) {
+        lua_Number n = luaL_checknumber(L, 2);
+        if (!(n <= 1)) {                     /* NaN takes the multi path too */
+            k = p8_fl(L, 2);
+            if (k <= 0) return 0;
+            if (!lua_checkstack(L, k))
+                return luaL_error(L, "too many results to unpack");
+            for (i = 0; i < k; i++)
+                lua_pushinteger(L, peek_byte(p, (uint32_t)iarg_off(L, 1, i)));
+            return k;
+        }
+    }
+    lua_pushinteger(L, peek_byte(p, (uint32_t)iarg(L, 1)));
     return 1;
+}
+
+/* peek2/poke2 are int16 LE; peek4/poke4 are the 16.16 fixed-point word, which
+ * is the only place a p8 number's real representation surfaces in this API.
+ * Both address every byte separately, so a read at 0xffff wraps to 0. */
+static int l_peek2(lua_State *L)
+{
+    moy_p8 *p = p8_of(L);
+    uint32_t a = (uint32_t)p8_fl(L, 1);
+    int32_t v = peek_byte(p, a) | (peek_byte(p, a + 1u) << 8);
+    lua_pushinteger(L, v >= 0x8000 ? v - 0x10000 : v);
+    return 1;
+}
+
+static int l_poke2(lua_State *L)
+{
+    moy_p8 *p = p8_of(L);
+    uint32_t a = (uint32_t)p8_fl(L, 1);
+    uint32_t v = (uint32_t)p8_fl(L, 2) & 0xffffu;
+    poke_byte(p, a, (uint8_t)v);
+    poke_byte(p, a + 1u, (uint8_t)(v >> 8));
+    return 0;
+}
+
+static int l_peek4(lua_State *L)
+{
+    moy_p8 *p = p8_of(L);
+    uint32_t a = (uint32_t)p8_fl(L, 1);
+    uint32_t v = (uint32_t)peek_byte(p, a)
+               | ((uint32_t)peek_byte(p, a + 1u) << 8)
+               | ((uint32_t)peek_byte(p, a + 2u) << 16)
+               | ((uint32_t)peek_byte(p, a + 3u) << 24);
+    lua_pushnumber(L, (lua_Number)((lua_Number)u2i(v) / (lua_Number)65536.0));
+    return 1;
+}
+
+static int l_poke4(lua_State *L)
+{
+    moy_p8 *p = p8_of(L);
+    uint32_t a = (uint32_t)p8_fl(L, 1), raw;
+    /* fl(v * 65536): an INTEGER v multiplies and wraps as an integer, a float
+     * multiplies as a float and is floored after. The two round differently
+     * past 24 bits, and the shim's Lua parts them the same way. */
+    if (lua_isinteger(L, 2)) {
+        raw = (uint32_t)(int32_t)lua_tointeger(L, 2) * 65536u;
+    } else {
+        int isnum;
+        lua_Number f = lua_tonumberx(L, 2, &isnum);
+        raw = isnum ? (uint32_t)f2i((lua_Number)floor(
+                          (double)(lua_Number)(f * (lua_Number)65536.0))) : 0u;
+    }
+    poke_byte(p, a, (uint8_t)raw);
+    poke_byte(p, a + 1u, (uint8_t)(raw >> 8));
+    poke_byte(p, a + 2u, (uint8_t)(raw >> 16));
+    poke_byte(p, a + 3u, (uint8_t)(raw >> 24));
+    return 0;
 }
 
 /* A range's mirrored bytes are only ever current on the console side: pull
@@ -703,6 +837,8 @@ int moy_p8_open(struct lua_State *Ls, moy_console *con, moy_p8 *p,
     static const struct { const char *name; lua_CFunction fn; } T[] = {
         {"__moy_poke", l_poke}, {"__moy_peek", l_peek},
         {"__moy_memcpy", l_memcpy}, {"__moy_memset", l_memset},
+        {"__moy_peek2", l_peek2}, {"__moy_poke2", l_poke2},
+        {"__moy_peek4", l_peek4}, {"__moy_poke4", l_poke4},
         {"__moy_reload", l_reload}, {"__moy_cstore", l_cstore},
         {"__moy_p8print", l_p8print},
     };

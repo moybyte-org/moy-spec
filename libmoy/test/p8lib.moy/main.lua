@@ -86,6 +86,130 @@ local KILLS = {
   ["the first"]    = function(t, _, _, _, deli_) if #t > 0 then deli_(t, 1) end end,
 }
 
+-- ---- the memory verbs ---------------------------------------------------
+-- The shim's Lua over the one-byte C, against the C that now takes the whole
+-- form. Both lanes write the same scratch region (0x3100-0x5eff is plain RAM),
+-- so each case runs twice from the same seed and the bytes are compared.
+local cpeek, cpoke = __moy_peek, __moy_poke
+local mfloor = math.floor
+
+local function fl(v)
+  if type(v) ~= "number" then v = tonumber(v) or 0 end
+  return mfloor(v)
+end
+local function L_peek(a, n)
+  if n == nil or n <= 1 then return cpeek(a) end
+  local out = {}
+  for i = 0, fl(n) - 1 do out[i + 1] = cpeek(a + i) end
+  return table.unpack(out)
+end
+local function L_poke(a, v, ...)
+  cpoke(a, v or 0)
+  local n = select("#", ...)
+  for i = 1, n do cpoke(a + i, select(i, ...) or 0) end
+end
+local function L_peek2(a) a = fl(a) local v = cpeek(a) | (cpeek(a + 1) << 8)
+  if v >= 0x8000 then v = v - 0x10000 end return v end
+local function L_poke2(a, v) a, v = fl(a), fl(v or 0) & 0xffff
+  cpoke(a, v & 0xff) cpoke(a + 1, (v >> 8) & 0xff) end
+local function L_peek4(a) a = fl(a)
+  local v = cpeek(a) | (cpeek(a+1) << 8) | (cpeek(a+2) << 16) | (cpeek(a+3) << 24)
+  return v / 65536.0 end
+local function L_poke4(a, v) a = fl(a)
+  local raw = fl((v or 0) * 65536) & 0xffffffff
+  cpoke(a, raw & 0xff) cpoke(a+1, (raw>>8) & 0xff)
+  cpoke(a+2, (raw>>16) & 0xff) cpoke(a+3, (raw>>24) & 0xff) end
+
+local SCRATCH = 0x4400
+local function seed()
+  for i = 0, 31 do cpoke(SCRATCH + i, (i * 37) & 0xff) end
+end
+local function snap()
+  local s = ""
+  for i = 0, 31 do s = s .. cpeek(SCRATCH + i) .. "," end
+  return s
+end
+-- Two runs from the same seed: what each lane WROTE and what it RETURNED.
+local function lane(f, ...)
+  seed()
+  local r = {f(...)}
+  local out = "#" .. #r
+  for i = 1, #r do out = out .. ":" .. tostring(r[i]) end
+  return out .. " " .. snap()
+end
+
+function mem_checks()
+  check("the memory verbs are the C ones", __moy_peek2 ~= nil and __moy_poke4 ~= nil)
+
+  -- poke: one byte, a run, and every coercion p8 does on the way in. `n` is
+  -- the ARGUMENT COUNT, because a trailing nil the caller typed and one it
+  -- did not are different calls to poke's vararg tail.
+  local POKES = {
+    {n = 2, SCRATCH, 1}, {n = 2, SCRATCH}, {n = 2, SCRATCH, 300},
+    {n = 2, SCRATCH, -1}, {n = 2, SCRATCH, 3.7}, {n = 2, SCRATCH, "12"},
+    {n = 2, SCRATCH, true}, {n = 1, SCRATCH},
+    {n = 5, SCRATCH, 1, 2, 3, 4}, {n = 4, SCRATCH, 1, nil, 3},
+    {n = 6, SCRATCH + 2, 9, 9, 9, 9, 9},
+    {n = 3, SCRATCH + 0.5, 7, 8}, {n = 3, SCRATCH - 0.5, 7, 8},
+    {n = 2, SCRATCH + 0.5, 7}, {n = 2, "17408", 5},
+    {n = 2, SCRATCH + 65536, 6}, {n = 2, -1, 4},
+  }
+  for k, c in ipairs(POKES) do
+    same("poke case " .. k, lane(__moy_poke, table.unpack(c, 1, c.n)),
+                            lane(L_poke, table.unpack(c, 1, c.n)))
+  end
+
+  -- peek: the single form, the multi form, and n's own coercions
+  for _, n in ipairs({-1, 0, 1, 2, 2.9, 5, 0.5}) do
+    same("peek(a, " .. n .. ")",
+         lane(__moy_peek, SCRATCH, n), lane(L_peek, SCRATCH, n))
+  end
+  same("peek(a)", lane(__moy_peek, SCRATCH), lane(L_peek, SCRATCH))
+  same("peek(a) at the top of memory", lane(__moy_peek, 0xffff), lane(L_peek, 0xffff))
+  same("peek(a, n) over the wrap", lane(__moy_peek, 0xfffe, 4), lane(L_peek, 0xfffe, 4))
+
+  -- peek2 / poke2: int16 LE, and its wrap
+  for _, v in ipairs({0, 1, -1, 32767, -32768, 65535, 70000, 1.75, -1.75}) do
+    same("poke2(" .. v .. ")", lane(L_poke2, SCRATCH, v), lane(__moy_poke2, SCRATCH, v))
+    L_poke2(SCRATCH, v)
+    same("peek2 of " .. v, __moy_peek2(SCRATCH), L_peek2(SCRATCH))
+  end
+  same("poke2 of nil", lane(__moy_poke2, SCRATCH), lane(L_poke2, SCRATCH))
+
+  -- peek4 / poke4: the 16.16 word, where a p8 number's representation shows
+  -- An INTEGER out of 16.16's range wraps in both lanes (Lua multiplies
+  -- integers with a 32-bit wrap, and so does the C). A FLOAT out of range
+  -- parts them: math.floor hands back the float it cannot make an integer of
+  -- and `&` refuses it, so the shim RAISES where the C wraps -- its own case
+  -- below, since a raise is not a semantics worth keeping.
+  for _, v in ipairs({0, 1, -1, 0.5, -0.5, 1/256, 255.99, -255.99,
+                      32767.5, -32768.0, 3, 100000, -100000}) do
+    same("poke4(" .. v .. ")", lane(L_poke4, SCRATCH, v), lane(__moy_poke4, SCRATCH, v))
+    L_poke4(SCRATCH, v)
+    same("peek4 of " .. v, __moy_peek4(SCRATCH), L_peek4(SCRATCH))
+    check("peek4 of " .. v .. " keeps its type",
+          math.type(__moy_peek4(SCRATCH)) == math.type(L_peek4(SCRATCH)))
+  end
+  same("poke4 of nil", lane(__moy_poke4, SCRATCH), lane(L_poke4, SCRATCH))
+  same("poke4 of an integer", lane(__moy_poke4, SCRATCH, 3), lane(L_poke4, SCRATCH, 3))
+  __moy_poke4(SCRATCH, 100000)          -- past 16.16: defined, and no error
+  check("poke4 past 16.16 wraps into the signed word",
+        __moy_peek4(SCRATCH) == ((100000 + 32768) % 65536) - 32768)
+  __moy_poke4(SCRATCH, -32768.5)
+  check("a FLOAT past 16.16 wraps too", __moy_peek4(SCRATCH) == 32767.5)
+  check("the Lua it replaced raised instead", not pcall(L_poke4, SCRATCH, -32768.5))
+
+  -- memcpy / memset kept their `len or 0`
+  seed()
+  local fresh = snap()
+  __moy_memcpy(SCRATCH + 8, SCRATCH, nil)
+  __moy_memset(SCRATCH + 8, 1, nil)
+  same("memcpy/memset of no length write nothing", snap(), fresh)
+  __moy_memset(SCRATCH, 0x5a, 4)
+  check("memset writes", cpeek(SCRATCH) == 0x5a and cpeek(SCRATCH + 3) == 0x5a
+        and cpeek(SCRATCH + 4) ~= 0x5a)
+end
+
 function _init()
   check("the machine is open", __moy_all ~= nil and __moy_foreach ~= nil)
 
@@ -168,6 +292,8 @@ function _init()
   end
   same("__index feeds the walk", index_lane(__moy_all), index_lane(L_all))
   check("__index really was the only source", index_lane(__moy_all) == "|a|b|c")
+
+  mem_checks()
 end
 
 function _draw() cls(1) print("p8 stdlib: ok", 4, 60, 11) quit() end

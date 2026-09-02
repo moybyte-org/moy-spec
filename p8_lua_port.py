@@ -2186,21 +2186,12 @@ do
   local _mrd, _mwr
   if __moy_poke ~= nil then
     local cpeek, cpoke = __moy_peek, __moy_poke
-    local cmemcpy, cmemset = __moy_memcpy, __moy_memset
     _mrd, _mwr = cpeek, cpoke
-    function peek(a, n)
-      if n == nil or n <= 1 then return cpeek(a) end
-      local out = {}
-      for i = 0, fl(n) - 1 do out[i + 1] = cpeek(a + i) end
-      return table.unpack(out)
-    end
-    function poke(a, v, ...)
-      cpoke(a, v or 0)
-      local n = select("#", ...)
-      for i = 1, n do cpoke(a + i, select(i, ...) or 0) end
-    end
-    function memcpy(dst, src, len) cmemcpy(dst, src, len or 0) end
-    function memset(dst, val, len) cmemset(dst, val or 0, len or 0) end
+    -- Straight through, no wrapper: the C takes p8's multi-byte forms
+    -- (peek(a, n) returns n results, poke(a, b1, b2, ...) writes a run) and
+    -- reads a missing length as 0, which is all the Lua here ever added.
+    peek, poke = cpeek, cpoke
+    memcpy, memset = __moy_memcpy, __moy_memset
     if __p8_map_raw ~= nil then
       -- The map region as the CART stored it: the console's map dropped
       -- every cell 255 on the way in (SPEC.md 3.3), so put those bytes back
@@ -2257,6 +2248,10 @@ do
     local raw = fl((v or 0) * 65536) & 0xffffffff
     _mwr(a, raw & 0xff) _mwr(a+1, (raw>>8) & 0xff)
     _mwr(a+2, (raw>>16) & 0xff) _mwr(a+3, (raw>>24) & 0xff) end
+  if __moy_peek2 ~= nil then
+    peek2, poke2 = __moy_peek2, __moy_poke2
+    peek4, poke4 = __moy_peek4, __moy_poke4
+  end
 
   -- SAVE DATA is the one that can be honest all the way down: p8's 64 cartdata
   -- slots and the console's pmem are the same shape, so a cart's progress
