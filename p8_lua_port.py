@@ -2340,6 +2340,14 @@ def data_tables_lua(sections, want_sheet=False):
              "  -- (moybyte's __moy_map_flags, #66 M0); the Lua table above",
              "  -- stays -- fget reads it either way.",
              "  if __moy_map_flags ~= nil then __moy_map_flags(gff) end",
+             "  -- A host that carries the flags on the console (SPEC.md 3.5)",
+             "  -- but did not read flags.moyflags for this cart gets them",
+             "  -- from here, once; a host that did reads the same bytes.",
+             "  if fset ~= nil then",
+             "    for i = 0, 255 do",
+             "      if __p8_gff[i] ~= 0 then fset(i, __p8_gff[i]) end",
+             "    end",
+             "  end",
              "end",
               ""]
     if want_sheet:
