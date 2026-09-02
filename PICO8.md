@@ -272,9 +272,9 @@ gate.
 | picooffroad | runs | yes | yes | yes | **plays** — races, with its shadow and its fades, on the reference boards (2026-09) |
 | petal_quest | runs | yes | yes | yes | **plays** from the title into its coroutine cutscenes, with its map (2026-09-02: coroutines, a `btnp` edge visible in `_draw`, `map()`'s whole-map default) |
 | dungeons_and_diagrams | gaps | yes | yes | yes | **plays**; its packed-flag bit trick reads right now (16.16 bit verbs) |
-| mossmoss | gaps | yes | yes | yes | starts; moss placement keys its walls by `x..","..y`, which needed integral floats to print as integers — to be re-played |
+| mossmoss | gaps | yes | yes | yes | **plays** (2026-09-02: integral floats print as integers, its wall keys are `x..","..y`); slows at its later levels on the S3 boards (~20 fps) |
 | lowmemsky | gaps | yes | yes | no | runs; no input — which is the cart, it makes no `btn` calls |
-| dank_tomb | gaps | yes | yes | yes | boots to its title and takes input (2026-09-02: 16.16 bit verbs on its data parser, integer printing, the raw map bytes); to be played |
+| dank_tomb | gaps | yes | yes | yes | **plays** (2026-09-02: 16.16 bit verbs on its data parser, integer printing, the raw map bytes, the P8SCII outline, the draw-palette bit 7; its lighting loop is one `__moy_lut_span`); 15–22 fps on the T-Deck |
 | terra_1cart | gaps | no | no | no | *(not played — generates its world past the harness's 45 s)* |
 | celeste_classic_2 | refused | yes | yes | yes | starts; nothing moves, only the clouds draw — its levels are px9-packed 16.16 |
 | nimudazus | refused | no | no | no | *(not played — errors decoding its bytecode)* |
@@ -285,6 +285,35 @@ sat on a shelf looking broken. Of the nine that import, one the verdict calls
 "gaps" still fails — on time, not on a verb — which is the honest edge of a
 static reading. If you convert a cart and play it, the useful contribution is
 a line in this table.
+
+## Performance on the reference boards — a dated snapshot
+
+The living ledger is moybyte's issue #66; this is the state on 2026-09-02,
+after the machine took the shim's cost (above), with the carts imported with
+`--zoom`, WiFi off, medians of a scripted run (title · play fps):
+
+| cart (rate) | ESP32-P4 | T-Deck (S3) | Guition (S3) |
+|---|---|---|---|
+| petal_quest (60) | 63 · 63 | 53 · 57 | 61 · 62 |
+| mossmoss (30) | 30 · 28 | 26 · 25 | 25 · 23 |
+| dank_tomb (60) | 35 · 35 | 21 · 24 | 26 · 26 |
+| picooffroad (30) | 62 · 30 | 32 · 15 | 36 · 19 |
+
+Where the S3 frame goes for a 30 fps cart like mossmoss: ~27 ms is the cart's
+own Lua (its entity loops; the shim is under a fifth of it now), ~6 ms the
+console's composite and chrome, ~4 ms its input and loop. The day's levers, in
+the order they paid: the console's scale fold (petal_quest 34 → 62 fps on the
+Guition alone), every draw verb one call into the machine, the shim's helpers in
+C, a small-object pool under the VM's allocator (an IDF malloc is ~9 µs there),
+the VM loop in instruction RAM. What did not pay: more internal SRAM for the
+VM's data (slower), `-O3` on the VM (null). What is left is structural — the
+tick overlapped with the console's frame on the second core — and a Xtensa JIT
+only if the perf counters say instructions, not memory, are the cost.
+
+A cart that plays on the host and fails only on a board, only sometimes, is
+usually the frame cadence the replayer cannot reproduce (`run_cart --dt`), not
+the architecture: dank_tomb's "nil position at init" was the shim drawing
+before the first update.
 
 ## Licensing
 
