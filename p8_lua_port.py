@@ -1426,6 +1426,11 @@ do
     if type(v) ~= "number" then v = tonumber(v) or 0 end
     return mfloor(v)
   end
+  -- The console's own where it has one (moy_p8.c). fl sits on the argument of
+  -- every draw verb, and in Lua it is a call, an _ENV lookup for type() and a
+  -- second call into floor(). Swapped here rather than at the definitions
+  -- below, which close over the VARIABLE and so follow it.
+  if __moy_fl ~= nil then fl = __moy_fl end
 
   -- Declared HERE, above the fill verbs that read it. It was declared beside
   -- fillp() further down, which is after rectfill -- so rectfill closed over
@@ -1510,6 +1515,16 @@ do
   function max(a, b) return mmax(a or 0, b or 0) end
   sqrt = math.sqrt
   function atan2(dx, dy) return matan(-(dy or 0), dx or 0) / 6.283185307179586 % 1 end
+  function sgn(x) if (x or 0) < 0 then return -1 end return 1 end
+  function mid(a, b, c) return max(min(a, b), min(max(a, b), c)) end
+  -- The console's own where it has them. sqrt and ceil are absent on purpose:
+  -- they are already math.sqrt and math.ceil with no wrapper to remove, and
+  -- so is rnd, which would have to carry math.random's state to move.
+  if __moy_flr ~= nil then
+    flr, abs = __moy_flr, __moy_abs
+    min, max, mid, sgn = __moy_min, __moy_max, __moy_mid, __moy_sgn
+    sin, cos, atan2 = __moy_sin, __moy_cos, __moy_atan2
+  end
 
   function spr(n, x, y, w, h, fx, fy)
     local flip = (fx and 1 or 0) + (fy and 2 or 0)
@@ -1883,8 +1898,6 @@ do
     end
     return p8str(v)
   end
-  function sgn(x) if (x or 0) < 0 then return -1 end return 1 end
-  function mid(a, b, c) return max(min(a, b), min(max(a, b), c)) end
   -- rnd(t) on a TABLE returns a random ELEMENT of it (p8 0.2.0), which is not
   -- a variant of the numeric form -- it is a different verb wearing the same
   -- name, and carts use it for exactly the kind of pick-one that appears in
@@ -1935,6 +1948,7 @@ do
     if type(v) == "number" then return v end
     return tonumber(v)
   end
+  if __moy_tonum ~= nil then tonum = __moy_tonum end
   -- split(s, [sep], [convert]) -- sep defaults to ",", a NUMBER sep cuts fixed
   -- width chunks, and numeric-looking parts become numbers unless told not to.
   function split(s, sep, num)

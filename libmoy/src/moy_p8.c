@@ -667,6 +667,192 @@ static int l_p8print(lua_State *L)
     return 1;
 }
 
+/* -- the p8 number verbs --------------------------------------------------
+ *
+ * The shim's own Lua again, and the reason it is worth C is not the
+ * arithmetic: fl() costs a Lua call, an _ENV lookup for type() and a second
+ * call into math.floor, and it sits on the argument of every draw verb. flr()
+ * is the same shape and was 13% of dank tomb's Lua time, because the porter
+ * emits it around every operand of a native bit operator.
+ *
+ * lua_Number is a SINGLE-PRECISION float on this VM (LUA_32BITS, which
+ * SPEC.md 4.2 requires) and lua_Integer a 32-bit int, and the two are not
+ * interchangeable: math.floor of a float hands back an INTEGER when one fits
+ * and the float itself when it does not, and the p8 shim reads that type back
+ * (p8str prints 3 rather than 3.0; the bit verbs branch on math.type). So
+ * every one of these keeps the result type the Lua would have produced, and
+ * every float expression is cast back to lua_Number so a wider intermediate
+ * cannot change where it lands.
+ *
+ * sqrt and ceil are NOT here: the shim aliases them straight to math.sqrt and
+ * math.ceil, so there is no wrapper to remove. Neither is rnd -- it draws
+ * from math.random's own state, and reimplementing that would move the
+ * sequence a cart's world is built from.
+ */
+
+#define P8_TAU ((lua_Number)6.283185307179586)
+
+/* Lua's own pushnumint: the floor of a float is an integer when one fits. */
+static void push_numint(lua_State *L, lua_Number d)
+{
+    lua_Integer n;
+    if (lua_numbertointeger(d, &n)) lua_pushinteger(L, n);
+    else lua_pushnumber(L, d);
+}
+
+/* `v or 0`, pushed. lua_toboolean is false for none, nil and false, which is
+ * exactly the set Lua's `or` replaces. */
+static void push_or0(lua_State *L, int i)
+{
+    if (lua_toboolean(L, i)) lua_pushvalue(L, i);
+    else lua_pushinteger(L, 0);
+}
+
+/* `v or 0` as a number, raising on the things the shim's Lua raised on. */
+static lua_Number num_or0(lua_State *L, int i)
+{
+    if (!lua_toboolean(L, i)) return 0;
+    return luaL_checknumber(L, i);
+}
+
+/* fl(v): p8 coerces every API number argument -- nil is 0, a numeric string
+ * is its number, anything else is 0 rather than an error -- and floors. */
+static int l_fl(lua_State *L)
+{
+    int isnum;
+    lua_Number f;
+    if (lua_isinteger(L, 1)) { lua_settop(L, 1); return 1; }
+    f = lua_tonumberx(L, 1, &isnum);
+    if (!isnum) { lua_pushinteger(L, 0); return 1; }
+    push_numint(L, (lua_Number)l_mathop(floor)(f));
+    return 1;
+}
+
+/* flr(v) is NOT fl(v): it is math.floor(v or 0), so a string that is not a
+ * number raises here where fl() reads 0. */
+static int l_flr(lua_State *L)
+{
+    if (lua_isinteger(L, 1)) { lua_settop(L, 1); return 1; }
+    if (!lua_toboolean(L, 1)) { lua_pushinteger(L, 0); return 1; }
+    push_numint(L, (lua_Number)l_mathop(floor)(luaL_checknumber(L, 1)));
+    return 1;
+}
+
+static int l_abs(lua_State *L)
+{
+    if (lua_isinteger(L, 1)) {
+        lua_Integer n = lua_tointeger(L, 1);
+        if (n < 0) n = (lua_Integer)((lua_Unsigned)0 - (lua_Unsigned)n);
+        lua_pushinteger(L, n);
+        return 1;
+    }
+    if (!lua_toboolean(L, 1)) { lua_pushinteger(L, 0); return 1; }
+    lua_pushnumber(L, (lua_Number)l_mathop(fabs)(luaL_checknumber(L, 1)));
+    return 1;
+}
+
+/* math.min/math.max return the ARGUMENT, not a converted copy, so min(1, 1.0)
+ * is the integer 1 and the type survives. Compared with `<` for the same
+ * reason all() compares with `==`: a cart's __lt is its own. */
+static int l_min(lua_State *L)
+{
+    lua_settop(L, 2);            /* a push moves what index 2 names */
+    push_or0(L, 1);
+    push_or0(L, 2);
+    lua_pushvalue(L, lua_compare(L, -1, -2, LUA_OPLT) ? -1 : -2);
+    return 1;
+}
+
+static int l_max(lua_State *L)
+{
+    lua_settop(L, 2);
+    push_or0(L, 1);
+    push_or0(L, 2);
+    lua_pushvalue(L, lua_compare(L, -2, -1, LUA_OPLT) ? -1 : -2);
+    return 1;
+}
+
+/* mid(a, b, c) = max(min(a, b), min(max(a, b), c)), the shim's spelling, so
+ * every `or 0` lands where it did. */
+static int l_mid(lua_State *L)
+{
+    int lo, hi, inner;
+    lua_settop(L, 3);
+    push_or0(L, 1);                              /* 4 */
+    push_or0(L, 2);                              /* 5 */
+    push_or0(L, 3);                              /* 6 */
+    lo = lua_compare(L, 5, 4, LUA_OPLT) ? 5 : 4;
+    hi = lua_compare(L, 4, 5, LUA_OPLT) ? 5 : 4;
+    inner = lua_compare(L, 6, hi, LUA_OPLT) ? 6 : hi;
+    lua_pushvalue(L, lua_compare(L, lo, inner, LUA_OPLT) ? inner : lo);
+    return 1;
+}
+
+static int l_sgn(lua_State *L)
+{
+    push_or0(L, 1);
+    lua_pushinteger(L, 0);
+    lua_pushinteger(L, lua_compare(L, -2, -1, LUA_OPLT) ? -1 : 1);
+    return 1;
+}
+
+/* p8 angles are TURNS (0..1) and its sin is flipped (+y is down). */
+static int l_sin(lua_State *L)
+{
+    lua_Number t = num_or0(L, 1);
+    lua_pushnumber(L, (lua_Number)(-(lua_Number)l_mathop(sin)(
+                       (lua_Number)(t * P8_TAU))));
+    return 1;
+}
+
+static int l_cos(lua_State *L)
+{
+    lua_Number t = num_or0(L, 1);
+    lua_pushnumber(L, (lua_Number)l_mathop(cos)((lua_Number)(t * P8_TAU)));
+    return 1;
+}
+
+static int l_atan2(lua_State *L)
+{
+    lua_Number x, y, m;
+    lua_settop(L, 2);
+    /* -(dy or 0) negates as an INTEGER when it is one, and that is not simply
+     * -num_or0 twice over: negating the 32-bit minimum wraps to itself where
+     * negating the float it becomes does not, and a missing dy is -(integer
+     * 0), which is +0 rather than the -0.0 a float negation gives. */
+    if (!lua_toboolean(L, 2)) {
+        y = 0;
+    } else if (lua_isinteger(L, 2)) {
+        lua_Integer v = lua_tointeger(L, 2);
+        y = (lua_Number)(lua_Integer)((lua_Unsigned)0 - (lua_Unsigned)v);
+    } else {
+        y = (lua_Number)(-luaL_checknumber(L, 2));
+    }
+    x = num_or0(L, 1);
+    m = (lua_Number)l_mathop(fmod)(
+            (lua_Number)((lua_Number)l_mathop(atan2)(y, x) / P8_TAU),
+            (lua_Number)1);
+    if (m < 0) m = (lua_Number)(m + (lua_Number)1);   /* Lua's % is floored */
+    lua_pushnumber(L, m);
+    return 1;
+}
+
+/* tonum(v): a number passes, anything else goes through tonumber, which keeps
+ * an integer-looking string an INTEGER. */
+static int l_tonum(lua_State *L)
+{
+    size_t len;
+    const char *s;
+    lua_settop(L, 1);            /* the shim declared the parameter, so a
+                                    missing argument reaches tonumber as nil */
+    if (lua_type(L, 1) == LUA_TNUMBER) return 1;
+    s = lua_tolstring(L, 1, &len);
+    if (s != NULL && lua_stringtonumber(L, s) == len + 1) return 1;
+    luaL_checkany(L, 1);
+    lua_pushnil(L);
+    return 1;
+}
+
 /* -- the p8 table verbs ---------------------------------------------------
  *
  * No machine behind these -- they are the shim's own Lua, promoted because
@@ -847,6 +1033,10 @@ int moy_p8_open(struct lua_State *Ls, moy_console *con, moy_p8 *p,
         {"__moy_all", l_all}, {"__moy_foreach", l_foreach},
         {"__moy_add", l_add}, {"__moy_del", l_del},
         {"__moy_deli", l_deli}, {"__moy_count", l_count},
+        {"__moy_fl", l_fl}, {"__moy_flr", l_flr}, {"__moy_abs", l_abs},
+        {"__moy_min", l_min}, {"__moy_max", l_max}, {"__moy_mid", l_mid},
+        {"__moy_sgn", l_sgn}, {"__moy_sin", l_sin}, {"__moy_cos", l_cos},
+        {"__moy_atan2", l_atan2}, {"__moy_tonum", l_tonum},
     };
     size_t i;
     if (!con || !p || !mem) return 1;

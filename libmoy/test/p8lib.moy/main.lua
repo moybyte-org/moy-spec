@@ -210,6 +210,97 @@ function mem_checks()
         and cpeek(SCRATCH + 4) ~= 0x5a)
 end
 
+-- ---- the number verbs ---------------------------------------------------
+-- Value AND type: math.floor hands back an integer when one fits and a float
+-- when it does not, and the shim reads that difference back (p8str prints 3
+-- rather than 3.0, the bit verbs branch on math.type).
+local msin, mcos, matan = math.sin, math.cos, math.atan
+local mabs, mmin, mmax = math.abs, math.min, math.max
+
+local function L_fl(v)
+  if type(v) ~= "number" then v = tonumber(v) or 0 end
+  return mfloor(v)
+end
+local function L_flr(v) return mfloor(v or 0) end
+local function L_abs(v) return mabs(v or 0) end
+local function L_min(a, b) return mmin(a or 0, b or 0) end
+local function L_max(a, b) return mmax(a or 0, b or 0) end
+local function L_mid(a, b, c) return L_max(L_min(a, b), L_min(L_max(a, b), c)) end
+local function L_sgn(x) if (x or 0) < 0 then return -1 end return 1 end
+local function L_sin(t) return -msin((t or 0) * 6.283185307179586) end
+local function L_cos(t) return mcos((t or 0) * 6.283185307179586) end
+local function L_atan2(dx, dy)
+  return matan(-(dy or 0), dx or 0) / 6.283185307179586 % 1
+end
+local function L_tonum(v)
+  if type(v) == "number" then return v end
+  return tonumber(v)
+end
+
+-- Everything a p8 cart puts through these, the coercions included.
+local ARGS = {
+  0, 1, -1, 2, 7, 255, 3.7, -3.7, 0.5, -0.5, 0.25, 1/3,
+  32767, -32768, 2147483647, -2147483648, 16777217, 1e30, -1e30,
+  1/0, -1/0, "3", "3.7", "0x10", "abc", "", true, false, {},
+}
+local NARGS = 29                   -- #ARGS stops at the first nil; there is none
+
+local function call1(f, ...)
+  local ok, v = pcall(f, ...)
+  if not ok then return "ERR" end
+  return tostring(v) .. "/" .. tostring(math.type(v))
+end
+
+function num_checks()
+  check("the number verbs are the C ones", __moy_flr ~= nil and __moy_mid ~= nil)
+
+  local ONE = {
+    {"fl", __moy_fl, L_fl}, {"flr", __moy_flr, L_flr}, {"abs", __moy_abs, L_abs},
+    {"sgn", __moy_sgn, L_sgn}, {"sin", __moy_sin, L_sin},
+    {"cos", __moy_cos, L_cos}, {"tonum", __moy_tonum, L_tonum},
+  }
+  for _, v in ipairs(ONE) do
+    for i = 1, NARGS do
+      same(v[1] .. "(" .. tostring(ARGS[i]) .. ")",
+           call1(v[2], ARGS[i]), call1(v[3], ARGS[i]))
+    end
+    same(v[1] .. "() with no argument at all", call1(v[2]), call1(v[3]))
+  end
+
+  local TWO = {
+    {"min", __moy_min, L_min}, {"max", __moy_max, L_max},
+    {"atan2", __moy_atan2, L_atan2},
+  }
+  for _, v in ipairs(TWO) do
+    for i = 1, NARGS do
+      for j = 1, NARGS do
+        same(v[1] .. "(" .. tostring(ARGS[i]) .. ", " .. tostring(ARGS[j]) .. ")",
+             call1(v[2], ARGS[i], ARGS[j]), call1(v[3], ARGS[i], ARGS[j]))
+      end
+      same(v[1] .. "(" .. tostring(ARGS[i]) .. ")", call1(v[2], ARGS[i]), call1(v[3], ARGS[i]))
+    end
+  end
+
+  -- mid takes three, so sweep the numeric ones in all orders rather than the
+  -- full cube of coercions.
+  for i = 1, 20 do
+    for j = 1, 20 do
+      for k = 1, 20 do
+        same("mid", call1(__moy_mid, ARGS[i], ARGS[j], ARGS[k]),
+                    call1(L_mid, ARGS[i], ARGS[j], ARGS[k]))
+      end
+    end
+  end
+  for i = 1, NARGS do
+    same("mid of one", call1(__moy_mid, ARGS[i]), call1(L_mid, ARGS[i]))
+    same("mid of two", call1(__moy_mid, ARGS[i], 5), call1(L_mid, ARGS[i], 5))
+  end
+
+  -- min/max hand back the ARGUMENT, so an integer stays an integer
+  check("min keeps the argument's type", math.type(__moy_min(1, 1.0)) == "integer")
+  check("max keeps the argument's type", math.type(__moy_max(1.0, 1)) == "float")
+end
+
 function _init()
   check("the machine is open", __moy_all ~= nil and __moy_foreach ~= nil)
 
@@ -294,6 +385,7 @@ function _init()
   check("__index really was the only source", index_lane(__moy_all) == "|a|b|c")
 
   mem_checks()
+  num_checks()
 end
 
 function _draw() cls(1) print("p8 stdlib: ok", 4, 60, 11) quit() end
