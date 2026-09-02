@@ -2454,16 +2454,111 @@ def _strip_lua(body):
     return "".join(out)
 
 
+def _call_sites(code, name):
+    """The index just past the `(` of every `name(` call in `code`, at a word
+    boundary and not a method or field (`x:name(`, `t.name(`). Hand-walked
+    like _calls_verb, and for the same reason: this file runs on MicroPython,
+    whose `re` has no lookbehind and no word boundary."""
+    out = []
+    i = 0
+    n = len(name)
+    while True:
+        j = code.find(name, i)
+        if j < 0:
+            return out
+        i = j + n
+        prev = code[j - 1] if j > 0 else " "
+        k = j + n
+        while k < len(code) and code[k] in " \t":
+            k += 1
+        if not (_ident_char(prev) or prev in "._:") and code[k:k + 1] == "(":
+            out.append(k + 1)
+
+
+def _call_args(code, at):
+    """The argument list of the call whose `(` precedes `at`, split at the
+    commas of its own level; the text of each, stripped."""
+    depth = 0
+    args = []
+    start = at
+    i = at
+    while i < len(code):
+        ch = code[i]
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            if depth == 0:
+                args.append(code[start:i].strip())
+                return args
+            depth -= 1
+        elif ch == "," and depth == 0:
+            args.append(code[start:i].strip())
+            start = i + 1
+        i += 1
+    return args
+
+
+def _num(text):
+    """A numeric literal's value, or None: `0x5f2c`, `24364`."""
+    t = text.strip().lower()
+    try:
+        if t.startswith("0x"):
+            return int(t[2:].split(".")[0], 16)
+        if t and t.replace(".", "", 1).isdigit():
+            return int(float(t))
+    except ValueError:
+        pass
+    return None
+
+
 def _hex_addr_calls(code, verb):
     """Every first argument of `verb(` that is a number, as an int."""
     out = []
-    for m in re.finditer(r"\b%s\s*\(\s*(0x[0-9a-fA-F]+|\d+)" % verb, code):
-        s = m.group(1)
-        try:
-            out.append(int(s, 16) if s.lower().startswith("0x") else int(s))
-        except ValueError:
-            pass
+    for at in _call_sites(code, verb):
+        args = _call_args(code, at)
+        if args:
+            v = _num(args[0])
+            if v is not None:
+                out.append(v)
     return out
+
+
+def _shifts_by_16(code):
+    """A `>> 16`, `<< 16`, `shr(x, 16)`, `shl(x, 16)` or `lshr(x, 16)`."""
+    for op in (">>", "<<"):
+        i = 0
+        while True:
+            j = code.find(op, i)
+            if j < 0:
+                break
+            i = j + 2
+            k = i
+            while k < len(code) and code[k] in " \t":
+                k += 1
+            if code[k:k + 2] == "16" and not (code[k + 2:k + 3].isdigit()
+                                             or code[k + 2:k + 3] == "."):
+                return True
+    for fn in ("shr", "shl", "lshr"):
+        for at in _call_sites(code, fn):
+            args = _call_args(code, at)
+            if len(args) >= 2 and args[1] == "16":
+                return True
+    return False
+
+
+_BIT_FNS = ("band", "bor", "bxor", "bnot", "shl", "shr", "lshr", "rotl", "rotr")
+
+
+def _frac_hex_bits(line):
+    """A fractional hex constant on a line that also does bit arithmetic."""
+    if not re.search(r"0x[0-9a-fA-F]*\.[0-9a-fA-F]+", line):
+        return False
+    if "&" in line or "|" in line or "~" in line or "<<" in line or ">>" in line:
+        return True
+    for fn in _BIT_FNS:
+        if _call_sites(line, fn):
+            return True
+    return False
 
 
 def classify_body(body):
@@ -2471,14 +2566,15 @@ def classify_body(body):
     CONVERTED cart code (what p8_lua_to_lua54 emits). Reasons are the
     sentences a host shows; the refusing ones come first."""
     code = _strip_lua(body)
+    lines = code.split("\n")
     refused = []
     gaps = []
 
     # -- will not run --------------------------------------------------------
-    if re.search(r"^\s*#include\b", code, re.M):
+    if any(ln.lstrip().startswith("#include") for ln in lines):
         refused.append("it #includes another file, which does not travel with the cart")
     # PICO-8's load() swaps carts; a cart's own `board:load()` is not it.
-    if not _defines_function(body, "load") and re.search(r"(?<![\w.:])load\s*\(", code):
+    if not _defines_function(body, "load") and _call_sites(code, "load"):
         refused.append("it loads other carts (load) -- a multi-cart game; this console "
                        "runs one cart at a time")
     # The 16.16 class. A shift by sixteen is how a cart reads the integer
@@ -2486,53 +2582,50 @@ def classify_body(body):
     # unpacking its data that way (celeste 2's px9, nimudazus's bytecode) --
     # a decoder is a peek2/peek4/ord next to the shifts. Without one it is a
     # hash or a mask that comes out wrong, which is a gap, not a death.
-    shifts = bool(re.search(r">>\s*16\b|<<\s*16\b", code)
-                  or re.search(r"\b(?:shr|shl|lshr)\s*\([^,()]+,\s*16\s*\)", code))
-    decoder = bool(re.search(r"\b(?:peek2|peek4|ord)\s*\(", code))
+    shifts = _shifts_by_16(code)
+    decoder = bool(_call_sites(code, "peek2") or _call_sites(code, "peek4")
+                   or _call_sites(code, "ord"))
     if shifts and decoder:
         refused.append("it unpacks its data with 16.16 fixed-point shifts that this "
                        "console's float numbers cannot reproduce")
     elif shifts:
         gaps.append("it shifts numbers by 16 bits, which loses the fixed-point precision "
                     "PICO-8 has; a hash or a mask may come out wrong")
-    frac_bits = [ln for ln in code.split("\n")
-                 if re.search(r"\b0x[0-9a-fA-F]*\.[0-9a-fA-F]+", ln)
-                 and re.search(r"[&|~]|<<|>>|\b(?:band|bor|bxor|bnot|shl|shr|lshr|rotl|rotr)\s*\(", ln)]
-    if frac_bits:
+    if any(_frac_hex_bits(ln) for ln in lines):
         gaps.append("it does bit arithmetic on fractional hex constants (0x0.0001 and "
                     "the like); those bits are lost on floats, so a packed flag may read wrong")
     has_loop = (_defines_function(body, "p8_update") or _defines_function(body, "p8_update60")
                 or _defines_function(body, "p8_draw"))
-    if re.search(r"\bflip\s*\(", code) and not _defines_function(body, "flip"):
+    if _call_sites(code, "flip") and not _defines_function(body, "flip"):
         if not has_loop:
             refused.append("it runs its own loop on flip() instead of _update/_draw, "
                            "and the console owns the frame")
         else:
             gaps.append("flip() does nothing here; the console draws each frame itself")
-    for a in _hex_addr_calls(code, "poke"):
-        if a == 0x5f2c:
-            m = re.search(r"\bpoke\s*\(\s*(?:0x5f2c|24364)\s*,\s*([0-9]+)", code)
-            if m and int(m.group(1)) & 7:
+    for at in _call_sites(code, "poke"):
+        args = _call_args(code, at)
+        if len(args) >= 2 and _num(args[0]) == 0x5f2c:
+            v = _num(args[1])
+            if v is not None and v & 7:
                 refused.append("it switches to a 64x64 or rotated screen mode (poke 0x5f2c) "
                                "this console has no screen for")
-            break
+                break
 
     # -- runs, with gaps -----------------------------------------------------
-    if re.search(r"\bmenuitem\s*\(", code) and not _defines_function(body, "menuitem"):
+    if _call_sites(code, "menuitem") and not _defines_function(body, "menuitem"):
         gaps.append("its pause-menu entries (menuitem) are not shown; the console owns the menu")
+    stat_sites = _call_sites(code, "stat")
     stat_ids = _hex_addr_calls(code, "stat")
-    stat_calls = len(re.findall(r"\bstat\s*\(", code))
-    if stat_calls and not _defines_function(body, "stat") and (
-            len(stat_ids) < stat_calls or any(not 32 <= i <= 36 for i in stat_ids)):
+    if stat_sites and not _defines_function(body, "stat") and (
+            len(stat_ids) < len(stat_sites) or any(not 32 <= i <= 36 for i in stat_ids)):
         gaps.append("stat() reads zero: clock, CPU and audio counters are not measured")
-    audio_ram = [a for v in ("poke", "poke2", "poke4", "memcpy", "memset")
-                 for a in _hex_addr_calls(code, v) if 0x3100 <= a < 0x4300]
-    if audio_ram:
+    regs = []
+    for v in ("poke", "poke2", "poke4", "memcpy", "memset"):
+        regs.extend(_hex_addr_calls(code, v))
+    if any(0x3100 <= a < 0x4300 for a in regs):
         gaps.append("it writes sound data into sfx/music memory at runtime; the imported "
                     "sounds play instead")
-    regs = [a for v in ("poke", "poke2", "poke4", "memcpy", "memset")
-            for a in _hex_addr_calls(code, v)]
-    if any(a == 0x5f2d for a in regs) or re.search(r"\bstat\s*\(\s*3[2-6]\s*\)", code):
+    if any(a == 0x5f2d for a in regs) or any(32 <= i <= 36 for i in stat_ids):
         gaps.append("it reads the mouse; there is no pointer in a PICO-8 port's input")
     if any(a in (0x5f54, 0x5f55) for a in regs):
         gaps.append("it remaps the sheet or screen (0x5f54/0x5f55); the remap is remembered, "
@@ -2541,13 +2634,14 @@ def classify_body(body):
         gaps.append("it uses bitplane masks (0x5f5e); the mask is remembered, not applied")
     if any(0x5600 <= a < 0x5e00 for a in regs):
         gaps.append("it installs a custom font (0x5600); text draws in the system font")
-    if re.search(r"\bsfx\s*\([^()]*,[^()]*,", code):
+    if any(len(_call_args(code, at)) >= 3 for at in _call_sites(code, "sfx")):
         gaps.append("sfx() with an offset or length plays the whole sound")
-    if re.search(r"\bcstore\s*\(", code):
+    if _call_sites(code, "cstore"):
         gaps.append("cstore() writes a copy in memory; nothing is saved back to the cart file")
-    if re.search(r"\bserial\s*\(", code):
+    if _call_sites(code, "serial"):
         gaps.append("serial() has nothing on the other end")
-    if re.search(r"\bpal\s*\([^()]*,[^()]*,\s*2\s*\)", code):
+    if any(len(a) >= 3 and a[2] == "2"
+           for a in (_call_args(code, at) for at in _call_sites(code, "pal"))):
         gaps.append("the secondary palette (pal(..., 2)) is treated as the draw palette")
 
     if refused:
