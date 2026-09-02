@@ -429,6 +429,107 @@ function bit_checks()
   check("rotl and rotr come back", __moy_rotr(__moy_rotl(0.5, 7), 7) == 0.5)
 end
 
+-- ---- the map and flag verbs ---------------------------------------------
+-- mget/mset walk the machine's map memory; fget/fset the console's flag
+-- table, which the machine keeps in step with 0x3000.
+local m_fget, m_fset = fget, fset
+
+local function L_maddr(x, y)
+  if y < 32 then return 0x2000 + y * 128 + x end
+  return 0x1000 + (y - 32) * 128 + x
+end
+local function L_mget(x, y)
+  x, y = mfloor(x or 0), mfloor(y or 0)
+  if x < 0 or x > 127 or y < 0 or y > 63 then return 0 end
+  return cpeek(L_maddr(x, y))
+end
+local function L_mset(x, y, v)
+  x, y = mfloor(x or 0), mfloor(y or 0)
+  if x < 0 or x > 127 or y < 0 or y > 63 then return end
+  cpoke(L_maddr(x, y), v or 0)
+end
+local function L_fget(n, f)
+  n = L_fl(n)
+  if f == nil then return m_fget(n) end
+  return m_fget(n, L_fl(f))
+end
+local function L_fset(n, f, v)
+  n = L_fl(n)
+  if v == nil then m_fset(n, L_fl(f)) else m_fset(n, L_fl(f), v and true or false) end
+end
+
+local COORDS = {
+  0, 1, 5, 31, 32, 33, 63, 64, 127, 128, -1, -128,
+  0.5, -0.5, 127.9, 63.9, 1e30, -1e30, 0/0, nil, false, "5", "abc", {},
+}
+local NCOORDS = 24
+
+function map_checks()
+  check("the map verbs are the C ones", __moy_mget ~= nil and __moy_fget ~= nil)
+
+  -- a pattern the whole map region can be read back from
+  for a = 0x1000, 0x2fff, 1 do cpoke(a, (a * 31) & 0xff) end
+  for i = 1, NCOORDS do
+    for j = 1, NCOORDS do
+      same("mget(" .. tostring(COORDS[i]) .. ", " .. tostring(COORDS[j]) .. ")",
+           call1(__moy_mget, COORDS[i], COORDS[j]),
+           call1(L_mget, COORDS[i], COORDS[j]))
+    end
+    same("mget of one coordinate", call1(__moy_mget, COORDS[i]), call1(L_mget, COORDS[i]))
+  end
+
+  -- mset: the same case list through each lane, then the whole region digested
+  local function mset_lane(f)
+    for a = 0x1000, 0x2fff do cpoke(a, (a * 31) & 0xff) end
+    for i = 1, NCOORDS do
+      for j = 1, NCOORDS do
+        pcall(f, COORDS[i], COORDS[j], (i * 7 + j) & 0xff)
+      end
+      pcall(f, COORDS[i], 3)                       -- no value: p8 writes 0
+    end
+    local h = 0
+    for a = 0x1000, 0x2fff do h = (h * 31 + cpeek(a)) & 0x7fffffff end
+    return h
+  end
+  same("mset writes the same bytes", mset_lane(__moy_mset), mset_lane(L_mset))
+
+  -- fget / fset
+  for a = 0, 255 do m_fset(a, (a * 13) & 0xff) end
+  for i = 1, NCOORDS do
+    for j = 1, NCOORDS do
+      same("fget(" .. tostring(COORDS[i]) .. ", " .. tostring(COORDS[j]) .. ")",
+           call1(__moy_fget, COORDS[i], COORDS[j]),
+           call1(L_fget, COORDS[i], COORDS[j]))
+    end
+    same("fget of one", call1(__moy_fget, COORDS[i]), call1(L_fget, COORDS[i]))
+  end
+
+  local function fset_lane(f)
+    for a = 0, 255 do m_fset(a, (a * 13) & 0xff) end
+    for i = 1, NCOORDS do
+      for j = 1, NCOORDS do
+        pcall(f, COORDS[i], COORDS[j])                    -- the byte form
+        pcall(f, COORDS[i], COORDS[j], (i + j) % 2 == 0)  -- the bit form
+        pcall(f, COORDS[i], COORDS[j], nil)               -- an explicit nil
+      end
+    end
+    local h = 0
+    for a = 0, 255 do h = (h * 31 + m_fget(a)) & 0x7fffffff end
+    return h
+  end
+  same("fset writes the same flags", fset_lane(__moy_fset), fset_lane(L_fset))
+
+  -- the flags are the memory map's, both ways
+  __moy_fset(9, 0x81)
+  check("fset shows at 0x3000", cpeek(0x3009) == 0x81)
+  cpoke(0x300a, 0x42)
+  check("a poke at 0x3000 shows in fget", __moy_fget(10) == 0x42
+        and __moy_fget(10, 6) == true and __moy_fget(10, 0) == false)
+  -- and the shared rows really are shared
+  __moy_mset(3, 40, 0x5c)
+  check("map rows 32-63 live under the sheet", cpeek(0x1000 + 8 * 128 + 3) == 0x5c)
+end
+
 function _init()
   check("the machine is open", __moy_all ~= nil and __moy_foreach ~= nil)
 
@@ -515,6 +616,7 @@ function _init()
   mem_checks()
   num_checks()
   bit_checks()
+  map_checks()
 end
 
 function _draw() cls(1) print("p8 stdlib: ok", 4, 60, 11) quit() end

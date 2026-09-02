@@ -423,6 +423,92 @@ static int l_cstore(lua_State *L)
     return 0;
 }
 
+/* -- the map and flag verbs ----------------------------------------------
+ *
+ * Memory is the truth on a host with the machine: a cell poked at 0x2000 (or
+ * 0x1000, the rows the map shares with the sheet) is the cell mget reads and
+ * map() draws. The shim reached it through peek/poke and floored on the way;
+ * this is the same walk with the Lua taken out.
+ *
+ * The coordinates stay DOUBLE until the bound check, because math.floor of a
+ * float too big for an integer hands the float back, and such a value is out
+ * of every bound here -- narrowing first would wrap it into range.
+ */
+
+/* math.floor(v or 0), undecided between integer and float. */
+static double p8_flr_d(lua_State *L, int i)
+{
+    if (lua_isinteger(L, i)) return (double)lua_tointeger(L, i);
+    if (!lua_toboolean(L, i)) return 0;
+    return floor((double)luaL_checknumber(L, i));
+}
+
+/* fl(v), the coercing one, same treatment. */
+static double p8_fl_d(lua_State *L, int i)
+{
+    int isnum;
+    lua_Number f;
+    if (lua_isinteger(L, i)) return (double)lua_tointeger(L, i);
+    f = lua_tonumberx(L, i, &isnum);
+    if (!isnum) return 0;
+    return floor((double)f);
+}
+
+static uint32_t p8_maddr(double x, double y)
+{
+    double a = (y < 32) ? 0x2000 + y * 128 + x
+                        : 0x1000 + (y - 32) * 128 + x;
+    return (uint32_t)f2i((lua_Number)a) & 0xffffu;
+}
+
+static int l_mget(lua_State *L)
+{
+    moy_p8 *p = p8_of(L);
+    double x = p8_flr_d(L, 1), y = p8_flr_d(L, 2);
+    if (x < 0 || x > 127 || y < 0 || y > 63) { lua_pushinteger(L, 0); return 1; }
+    lua_pushinteger(L, rd(p, p8_maddr(x, y)));
+    return 1;
+}
+
+static int l_mset(lua_State *L)
+{
+    moy_p8 *p = p8_of(L);
+    double x = p8_flr_d(L, 1), y = p8_flr_d(L, 2);
+    if (x < 0 || x > 127 || y < 0 || y > 63) return 0;
+    poke_byte(p, p8_maddr(x, y), (uint8_t)iarg(L, 3));
+    return 0;
+}
+
+/* fget/fset read the console's own flag table (SPEC.md 3.5), which the
+ * machine keeps in step with 0x3000, so both names see one answer. */
+static int l_p8fget(lua_State *L)
+{
+    moy_console *con = p8_of(L)->con;
+    double n = p8_fl_d(L, 1);
+    int v = (con->flags && n >= 0 && n < MOY_FLAGS)
+            ? con->flags[(int)n] : 0;
+    if (lua_isnoneornil(L, 2)) lua_pushinteger(L, v);
+    else lua_pushboolean(L, (v >> (f2i((lua_Number)p8_fl_d(L, 2)) & 7)) & 1);
+    return 1;
+}
+
+static int l_p8fset(lua_State *L)
+{
+    moy_console *con = p8_of(L)->con;
+    double n = p8_fl_d(L, 1);
+    int i;
+    if (!con->flags || !(n >= 0 && n < MOY_FLAGS)) return 0;
+    i = (int)n;
+    if (lua_isnoneornil(L, 3)) {                       /* fset(n, byte) */
+        con->flags[i] = (uint8_t)(f2i((lua_Number)p8_fl_d(L, 2)) & 0xff);
+    } else {                                           /* fset(n, bit, on) */
+        int bit = 1 << (f2i((lua_Number)p8_fl_d(L, 2)) & 7);
+        if (lua_toboolean(L, 3)) con->flags[i] = (uint8_t)(con->flags[i] | bit);
+        else con->flags[i] = (uint8_t)(con->flags[i] & ~bit);
+    }
+    return 0;
+}
+
 /* -- the PICO-8 system font ----------------------------------------------
  *
  * 3x5 glyphs on a 4px advance, 6px line height; the P8SCII picture glyphs
@@ -1287,6 +1373,8 @@ int moy_p8_open(struct lua_State *Ls, moy_console *con, moy_p8 *p,
         {"__moy_peek4", l_peek4}, {"__moy_poke4", l_poke4},
         {"__moy_reload", l_reload}, {"__moy_cstore", l_cstore},
         {"__moy_p8print", l_p8print},
+        {"__moy_mget", l_mget}, {"__moy_mset", l_mset},
+        {"__moy_fget", l_p8fget}, {"__moy_fset", l_p8fset},
     };
     /* The stdlib half: no machine behind it, so no upvalue to carry. */
     static const struct { const char *name; lua_CFunction fn; } S[] = {

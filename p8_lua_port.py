@@ -2446,6 +2446,9 @@ do
       if x < 0 or x > 127 or y < 0 or y > 63 then return end
       cpoke(maddr(x, y), v or 0)
     end
+    -- The same walk in C, where the host has it: mget is on every collision
+    -- probe and every drawn tile.
+    if __moy_mget ~= nil then mget, mset = __moy_mget, __moy_mset end
   end
   function fget(n, f)
     local v = gff[mfloor(n or 0)] or 0
@@ -2471,6 +2474,7 @@ do
       if v == nil then m_fset(n, fl(f)) else m_fset(n, fl(f), v and true or false) end
     end
   end
+  if __moy_fget ~= nil then fget, fset = __moy_fget, __moy_fset end
   -- Flag-masked map: ONE native call when the host offers the C walk
   -- (moybyte's __moy_map_masked, #66 M0 -- the flags crossed once in the
   -- __gff__ block above; the quads ride the same batch the spr fast path
