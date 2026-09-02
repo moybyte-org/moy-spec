@@ -430,6 +430,99 @@ function bit_checks()
   check("rotl and rotr come back", __moy_rotr(__moy_rotl(0.5, 7), 7) == 0.5)
 end
 
+-- ---- the NATIVE bit operators -------------------------------------------
+-- A different set from the nine above, sharing only their spelling: these are
+-- p8's `a|b`, `a<<b`, `~a` as the PORTER reads them -- flr() on each operand
+-- and then Lua's own integer operator. The Lua here is the porter's shim
+-- verbatim (p8_lua_port.py, `function __p8_bor(a, b) return flr(a) | flr(b)
+-- end`), because a cart reaches whichever lane the host offers and the two
+-- must be one answer. The sweep is the same BITS/COUNTS the 16.16 verbs get,
+-- so an operand out of int32's range, a nil, a string and a NaN each land on
+-- the same side in both lanes -- defined, and defined the same way.
+local function LN_bor(a, b) return L_flr(a) | L_flr(b) end
+local function LN_band(a, b) return L_flr(a) & L_flr(b) end
+local function LN_bxor(a, b) return L_flr(a) ~ L_flr(b) end
+local function LN_bnot(a) return ~L_flr(a) end
+local function LN_shl(a, b) return L_flr(a) << L_flr(b) end
+local function LN_shr(a, b) return L_flr(a) >> L_flr(b) end
+local function LN_lshr(a, b) return L_flr(a) >> L_flr(b) end
+local function LN_rotl(a, b)
+  local v, n = L_flr(a), L_flr(b) % 32
+  return (v << n) | (v >> (32 - n))
+end
+local function LN_rotr(a, b)
+  local v, n = L_flr(a), L_flr(b) % 32
+  return (v >> n) | (v << (32 - n))
+end
+
+function native_bit_checks()
+  check("the native bit operators are the C ones",
+        __moy_p8_bor ~= nil and __moy_p8_rotr ~= nil)
+
+  local PAIRS = {
+    {"__p8_bor", __moy_p8_bor, LN_bor}, {"__p8_band", __moy_p8_band, LN_band},
+    {"__p8_bxor", __moy_p8_bxor, LN_bxor},
+    {"__p8_shl", __moy_p8_shl, LN_shl}, {"__p8_shr", __moy_p8_shr, LN_shr},
+    {"__p8_lshr", __moy_p8_lshr, LN_lshr},
+  }
+  for _, v in ipairs(PAIRS) do
+    for i = 1, NBITS do
+      for j = 1, NBITS do
+        same(v[1] .. "(" .. tostring(BITS[i]) .. ", " .. tostring(BITS[j]) .. ")",
+             call1(v[2], BITS[i], BITS[j]), call1(v[3], BITS[i], BITS[j]))
+      end
+      -- The shift counts a cart actually writes, which BITS does not carry:
+      -- past the width, negative, fractional, and none at all.
+      for j = 1, NCOUNTS do
+        same(v[1] .. "(" .. tostring(BITS[i]) .. ", " .. tostring(COUNTS[j]) .. ")",
+             call1(v[2], BITS[i], COUNTS[j]), call1(v[3], BITS[i], COUNTS[j]))
+      end
+      same(v[1] .. " of one argument", call1(v[2], BITS[i]), call1(v[3], BITS[i]))
+    end
+    same(v[1] .. " of nothing at all", call1(v[2]), call1(v[3]))
+  end
+
+  for i = 1, NBITS do
+    same("__p8_bnot(" .. tostring(BITS[i]) .. ")",
+         call1(__moy_p8_bnot, BITS[i]), call1(LN_bnot, BITS[i]))
+  end
+  same("__p8_bnot of nothing", call1(__moy_p8_bnot), call1(LN_bnot))
+
+  local ROTS = {
+    {"__p8_rotl", __moy_p8_rotl, LN_rotl}, {"__p8_rotr", __moy_p8_rotr, LN_rotr},
+  }
+  for _, v in ipairs(ROTS) do
+    for i = 1, NBITS do
+      for j = 1, NCOUNTS do
+        same(v[1] .. "(" .. tostring(BITS[i]) .. ", " .. tostring(COUNTS[j]) .. ")",
+             call1(v[2], BITS[i], COUNTS[j]), call1(v[3], BITS[i], COUNTS[j]))
+      end
+      same(v[1] .. " with no count", call1(v[2], BITS[i]), call1(v[3], BITS[i]))
+    end
+  end
+
+  -- What the porter's reading MEANS, spelled out so a break says which part.
+  -- These are the answers the emitted `flr(a) | flr(b)` gave, and the reason
+  -- they are not the 16.16 verbs' answers.
+  check("a fraction is floored away, not carried",
+        __moy_p8_band(12.75, 0.5) == 0 and __moy_band(12.75, 0.5) == 0.5)
+  check("the answer is always an integer",
+        math.type(__moy_p8_bor(1.5, 2.5)) == "integer")
+  check("a negative operand floors DOWN", __moy_p8_band(-12.75, -1) == -13)
+  check("nil is zero, as `flr(v or 0)` is",
+        __moy_p8_bor(nil, 5) == 5 and __moy_p8_band(7) == 0)
+  check("`>>` is p8's `>>>`: logical, so a negative goes positive",
+        __moy_p8_shr(-1, 1) == 0x7fffffff
+        and __moy_p8_lshr(-1, 1) == __moy_p8_shr(-1, 1))
+  check("a count past the width is zero, not undefined",
+        __moy_p8_shl(1, 32) == 0 and __moy_p8_shr(-1, 99) == 0)
+  check("a rotate comes back round",
+        __moy_p8_rotr(__moy_p8_rotl(0x1234, 9), 9) == 0x1234
+        and __moy_p8_rotl(1, 31) == -2147483648)
+  check("an operand past int32 raises rather than wrapping",
+        not pcall(__moy_p8_band, 1e30, 1) and not pcall(LN_band, 1e30, 1))
+end
+
 -- ---- the map and flag verbs ---------------------------------------------
 -- mget/mset walk the machine's map memory; fget/fset the console's flag
 -- table, which the machine keeps in step with 0x3000.
@@ -1216,6 +1309,7 @@ function _init()
   mem_checks()
   num_checks()
   bit_checks()
+  native_bit_checks()
   map_checks()
   span_checks()
   draw_checks()

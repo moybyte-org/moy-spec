@@ -129,6 +129,29 @@ IS that loop, so a host with no C behind the name runs exactly what it ran
 before; `libmoy/src/moy_p8.c` answers false for anything but three plain
 integers, which is when the loop takes over again.
 
+**The operators.** PICO-8 has nine native bit operators (`| & ^^ ~ << >> >>>
+<<> >><`); Lua 5.4 has six, refuses every one of them on a non-integral
+number, and has no rotate at all — so each operand is floored. The porter used
+to floor it WHERE IT STOOD, `flr(a) | flr(b)`, which kept the operator in
+place and precedence free but cost a binding call per operand: two crossings
+around one VM instruction, and on dank tomb four thousand of them a frame,
+more than the cart's whole raster. It emits ONE call now — `__p8_bor(a, b)`,
+`__p8_shl`, `__p8_rotl` and the rest, whose shim bodies ARE that expansion, so
+a host with nothing behind the name runs exactly what it ran before and one
+with `moy_p8.c` does the floor and the operator in a single crossing. A call
+has to know Lua's precedence, which wrapping a primary never did, and knowing
+it also fixed what wrapping got wrong: `a + 1 & b` floored neither side of the
+`+`, `#t & 3` became `#flr(t) & 3`, and `x &= y` was floored nowhere at all.
+Better still is the operator that needs NO call: an operand that is an integer
+already — a byte out of `peek`, a cell out of `mget`, a one-argument `fget`, a
+literal, another such operator — keeps the bare Lua instruction, which is what
+dank tomb's `peek(...) & 0xf0` comes out as. That last is a claim about the
+shim's own verbs, so a cart that defines, declares, assigns or takes as a
+parameter a name like `peek` turns the rule off for that name; the 16.16 verbs
+(`band`, `shl`, …) are deliberately not on the list, because their fractional
+lane answers a float. dank tomb: 7,639 → 5,747 binding calls a frame, of which
+`flr` fell from 4,014 to 111 — the 111 being the cart's own.
+
 **The API.** The shim implements PICO-8's verbs over the moy cart API —
 `sin`/`cos` with their turn-and-flip semantics, the table verbs
 (`add`/`del`/`foreach`/`all`/`count`), `btn`/`btnp` with PICO-8's auto-repeat,
@@ -161,7 +184,8 @@ the number verbs (`flr`, `abs`, `min`, `max`, `mid`, `sgn`, `sin`, `cos`,
 `atan2`), the 16.16 bit verbs, `mget`/`mset`/`fget`/`fset`, `btn`/`btnp` with
 their latch, and since 2026-09-02 **every draw verb** — `pset` `pget` `line`
 `rect` `rectfill` `circ` `circfill` `oval` `ovalfill` `spr` `sspr` `map`
-`print` `camera` `color` `cursor` `pal` `palt` `fillp` `sget` `sset`. A shim
+`print` `camera` `color` `cursor` `pal` `palt` `fillp` `sget` `sset`,
+and the nine native bit operators above. A shim
 draw verb was four to six binding calls (`fl()` on each coordinate, `fl()`
 again inside the colour, a fill-pattern check, then the console verb) where
 PICO-8 costs one, and a binding call has a fixed floor whatever sits on the
