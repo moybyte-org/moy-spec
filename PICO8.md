@@ -120,7 +120,14 @@ transparency state (so `palt(0, false)` draws black), `fillp()` with its
 two-nibble colours and its transparency bit, `oval`/`ovalfill`, `rnd()`
 including the table form, string indexing, coroutines (`cocreate`, `coresume`,
 `costatus`, `yield`), and the PICO-8 system font at its true 3×5, drawn by the
-console in C where the machine is open.
+console in C where the machine is open — with the P8SCII control codes carts
+print with: wide and tall text, foreground and background colours, cursor
+nudges (the outline-text trick), repeat, tab, invert.
+
+Two things a PICO-8 native should know about colour here: the draw palette is
+four bits, as it is there (VRAM holds a nibble), so `pal(c, 128 + i)` without
+the third argument draws colour `i`; the secret sixteen come only through the
+screen palette, `pal(c, 128 + i, 1)`.
 
 **The machine.** `peek`/`poke`/`peek2`/`poke2`/`peek4`/`poke4`/`memcpy`/`memset`
 address the real memory map; `sget`/`sset` and `mget`/`mset` read and write it;
