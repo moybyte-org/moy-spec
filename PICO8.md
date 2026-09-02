@@ -109,7 +109,11 @@ at 16–31, so `pal(c, 128 + i)` lands on the real colour.
 | `_init` / `_update` / `_update60` / `_draw` | `p8_*`, paced by the shim |
 
 A cart defining `_update60` is declared as a 60 fps cart in its manifest, so
-the host drives it at the rate it was written for.
+the host drives it at the rate it was written for. The shim paces the cart
+from inside, so a console frame shorter than one cart period ticks nothing —
+and `_draw` waits, because PICO-8 never draws before its first update and
+carts rely on it. A cart with no update function draws every frame, as
+PICO-8's does.
 
 **The API.** The shim implements PICO-8's verbs over the moy cart API —
 `sin`/`cos` with their turn-and-flip semantics, the table verbs

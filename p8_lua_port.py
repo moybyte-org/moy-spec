@@ -2527,7 +2527,16 @@ do
   end
 
   -- moybyte lifecycle -> the p8 one, paced at PICO-8's fixed 30fps
-  local ticked = true
+  --
+  -- FALSE to start, because PICO-8 never draws before its first update. On a
+  -- host whose first console frame arrives in under one cart period -- a
+  -- _update60 cart on a board running at 60, right after load -- a `true`
+  -- here ran _draw with no tick behind it, and a cart that creates state in
+  -- _init and POSITIONS it in the first update drew against the half-built
+  -- thing: dank tomb indexed a nil player position, on every board, four
+  -- runs in five. run_cart's fixed 1/30 always ticks first and never showed
+  -- it (test/p8_first_draw.py runs it at a shorter dt, which does).
+  local ticked = false
   function _init()
     if p8_init then p8_init() end
   end
@@ -2622,8 +2631,12 @@ do
     end
     if acc > P8_DT then acc = P8_DT end          -- what cannot be paid is written off
   end
+  -- A cart with NO update function draws every frame, as PICO-8 does: there
+  -- is no tick for it to wait for. The rate lock in _update decides which
+  -- name a cart uses, and _update always runs first, so both are resolvable
+  -- by the time this reads them.
   function _draw()
-    if ticked and p8_draw then
+    if p8_draw and (ticked or not (p8_update60 or p8_update)) then
       -- the console resets camera/clip/pal/palt after every cart frame;
       -- re-park the p8 camera and restore p8's default transparency (colour
       -- 0) so a cart that trusts persistent draw state gets PICO-8's.

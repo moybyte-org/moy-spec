@@ -1,7 +1,13 @@
 /* Run a real .moy cart through libmoy + Lua, and dump the frame.
  *
  *   run_cart <cart-dir> <out.bin> [--frames N] [--hold BTN@FROM-TO,...]
+ *                                 [--dt SECONDS]
  *   MOY_PROFILE=1 run_cart ...   -- also print a Lua line profile at exit
+ *
+ * --dt is the frame period handed to _update, 1/30 by default. A host's is
+ * whatever its display gives it, and a cart paced from inside (the PICO-8
+ * port shim is) behaves differently when a console frame is SHORTER than one
+ * cart period -- which the default here never is.
  *
  * Speaks the conformance player protocol, so
  *
@@ -377,9 +383,11 @@ int main(int argc, char **argv)
     char *source;
     const char *cart = NULL, *out = NULL;
     int i, frames = 2, cw, ch;
+    float dt = 1.0f / 30.0f;
 
     for (i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--frames") && i + 1 < argc) frames = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--dt") && i + 1 < argc) dt = (float)atof(argv[++i]);
         else if (!strcmp(argv[i], "--hold") && i + 1 < argc) {
             if (!parse_holds(argv[++i])) {
                 fprintf(stderr, "run_cart: bad --hold (want "
@@ -392,7 +400,7 @@ int main(int argc, char **argv)
     }
     if (!cart || !out) {
         fprintf(stderr, "usage: run_cart <cart-dir> <out.bin> [--frames N]"
-                        " [--hold a@30-34,right@90-150]\n");
+                        " [--hold a@30-34,right@90-150] [--dt 0.008]\n");
         return 2;
     }
 
@@ -459,7 +467,7 @@ int main(int argc, char **argv)
         cur_frame = i;                  /* what --hold is measured against */
         /* Draw state is per-frame and must not leak (SPEC.md 6). */
         moy_reset_state(&canvas);
-        if (moy_lua_update(L, 1.0f / 30.0f, err, sizeof err)) {
+        if (moy_lua_update(L, dt, err, sizeof err)) {
             fprintf(stderr, "run_cart: _update: %s\n", err);
             return 1;
         }
