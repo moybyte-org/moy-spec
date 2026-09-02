@@ -531,6 +531,93 @@ function map_checks()
   check("map rows 32-63 live under the sheet", cpeek(0x1000 + 8 * 128 + 3) == 0x5c)
 end
 
+-- ---- the lookup-table span ----------------------------------------------
+-- `__moy_lut_span(from, to, lut)` is the C for the ONE statement the porter
+-- folds (p8_lua_port.fold_lut_span): `for a=i,j do poke(a,peek(lut|peek(a)))
+-- end`, a run of memory pushed through a table. The shim's Lua body for that
+-- call is the cart's own loop, so it is the reference here too -- and the
+-- addresses that matter are the ones with a console object behind them: the
+-- SCREEN (which reads and writes the canvas, not the array), the sheet, and
+-- the wrap past 0xffff.
+local function L_lut_span(from, to, lut)
+  for a = from, to do cpoke(a, cpeek(mfloor(lut) | mfloor(cpeek(a)))) end
+end
+
+local SPAN_SEED = {
+  {0x0000, 0x00ff}, {0x2000, 0x20ff}, {0x4300, 0x44ff},
+  {0x5f00, 0x5fff}, {0x6000, 0x60ff}, {0x7f00, 0x7fff}, {0xff00, 0xffff},
+}
+
+local function span_seed()
+  for _, r in ipairs(SPAN_SEED) do
+    for a = r[1], r[2] do cpoke(a, (a * 37 + (a >> 8)) & 0xff) end
+  end
+end
+
+local function span_digest()
+  local h = 0
+  for _, r in ipairs(SPAN_SEED) do
+    for a = r[1], r[2] do h = (h * 31 + cpeek(a)) & 0x7fffffff end
+  end
+  return h
+end
+
+-- from, to, lut. The C takes three plain integers and declines everything
+-- else, so both kinds are here: the ones it runs and the ones it hands back.
+local SPANS = {
+  {0x4400, 0x441f, 0x4300},
+  {0x4400, 0x4400, 0x4300},
+  {0x4400, 0x43ff, 0x4300},           -- empty: from > to
+  {0x5ff0, 0x6041, 0x4300},           -- into the screen window
+  {0x6000, 0x60ff, 0x4300},           -- the canvas, and only the canvas
+  {0x7fc0, 0x8001, 0x4300},           -- out the far side of it
+  {0xfffe, 0x10001, 0x4300},          -- past the top: the address wrap
+  {-2, 1, 0x4300},                    -- a negative address, into the sheet
+  {0x4400, 0x441f, -1},               -- lut | v below 0
+  {0x4400, 0x441f, 0x1ff00},          -- lut | v past 0xffff
+  {0x4400, 0x441f, 0},
+  {0x2000, 0x20ff, 0x4300},           -- the map, mirrored to the console's
+}
+
+local DECLINED = {
+  {0x4400.5, 0x441f, 0x4300}, {0x4400, 0x441f.5, 0x4300},
+  {0x4400, 0x441f, 0x4300.5}, {0x4400, 0x441f}, {},
+  {"17408", 0x441f, 0x4300}, {0x4400, 0x441f, "17152"},
+  {0x4400, 0x441f, true}, {0/0, 0x441f, 0x4300},
+}
+
+function span_checks()
+  check("the lut span is the C one", __moy_lut_span ~= nil)
+
+  for k, c in ipairs(SPANS) do
+    span_seed()
+    check("lut span case " .. k .. " ran in C",
+          __moy_lut_span(c[1], c[2], c[3]) == true)
+    local c_side = span_digest()
+    span_seed()
+    L_lut_span(c[1], c[2], c[3])
+    same("lut span case " .. k, c_side, span_digest())
+  end
+
+  -- Anything but three plain integers is DECLINED: false, and not a byte
+  -- written, so the shim falls back to the loop with the state untouched.
+  for k, c in ipairs(DECLINED) do
+    span_seed()
+    local fresh = span_digest()
+    check("lut span declines case " .. k,
+          __moy_lut_span(c[1], c[2], c[3]) == false)
+    same("a declined lut span writes nothing (case " .. k .. ")",
+         span_digest(), fresh)
+  end
+
+  -- The canvas really is the screen: a span over 0x6000 is what pix() reads.
+  cls(0)
+  pix(0, 0, 12)
+  for a = 0x4300, 0x43ff do cpoke(a, 7) end        -- every lookup answers 7
+  __moy_lut_span(0x6000, 0x6000, 0x4300)
+  check("a lut span over the screen writes the canvas", cpeek(0x6000) == 7)
+end
+
 -- ---- the glyph rasteriser -----------------------------------------------
 -- A GOLDEN, like conformance's: nine renders through the PICO-8 font, hashed.
 -- The outline is computed a row at a time now (moy_p8.c), and row arithmetic
@@ -651,6 +738,7 @@ function _init()
   num_checks()
   bit_checks()
   map_checks()
+  span_checks()
 end
 
 function _draw() cls(1) print("p8 stdlib: ok", 4, 60, 11) quit() end

@@ -393,6 +393,51 @@ static int l_memset(lua_State *L)
     return 0;
 }
 
+/* __moy_lut_span(from, to, lut): the span a ported cart lights its screen
+ * with -- `for a = from, to do poke(a, peek(lut | peek(a))) end`, a run of
+ * memory pushed through a lookup table. The porter folds that statement into
+ * one call (p8_lua_port.fold_lut_span) because a PICO-8 screen is 8,192 bytes
+ * and the loop spends three to five binding calls on each of them.
+ *
+ * THREE PLAIN INTEGERS OR NOTHING. Lua's numeric `for` coerces its bounds and
+ * `|` refuses a non-integral float, and transcribing either of those here
+ * would be a second copy of rules the shim already owns -- so anything else
+ * returns false and the shim runs the loop this is the image of. Everything
+ * that is here goes through peek_byte/poke_byte, so the address wrap and the
+ * screen window (which reads and writes the canvas, not the array) are the
+ * ones every other verb sees.
+ *
+ * `lut | v` is an ORDINARY integer OR, no 16.16 conversion: the shim's `|` is
+ * the VM's, both operands are already integers by the time it runs, and an
+ * address it lands outside 0x0000-0xffff wraps exactly as peek's would. */
+static int l_lut_span(lua_State *L)
+{
+    moy_p8 *p = p8_of(L);
+    lua_Integer from, to, lut;
+    lua_Unsigned i, n;
+    uint32_t a;
+    if (!lua_isinteger(L, 1) || !lua_isinteger(L, 2) || !lua_isinteger(L, 3)) {
+        lua_pushboolean(L, 0);
+        return 1;
+    }
+    from = lua_tointeger(L, 1);
+    to = lua_tointeger(L, 2);
+    lut = lua_tointeger(L, 3);
+    lua_pushboolean(L, 1);
+    if (to < from) return 1;                          /* p8's empty range */
+    n = (lua_Unsigned)to - (lua_Unsigned)from;
+    /* The address is carried already truncated, and stepping the truncated
+     * one is what the loop does: peek narrows to int32 every iteration, and
+     * consecutive addresses narrow to consecutive int32s. */
+    a = (uint32_t)(int32_t)from;
+    for (i = 0; ; i++, a++) {
+        uint8_t v = peek_byte(p, a);
+        poke_byte(p, a, peek_byte(p, (uint32_t)(int32_t)(lut | (lua_Integer)v)));
+        if (i == n) break;
+    }
+    return 1;
+}
+
 /* reload(dst, src, len): PICO-8 copies from the cart ROM -- the sheet, map,
  * flags and sound data as the cart file holds them -- into RAM. The ROM here
  * is the seeded image, snapshotted before the cart's first write; cstore is
@@ -1411,6 +1456,7 @@ int moy_p8_open(struct lua_State *Ls, moy_console *con, moy_p8 *p,
         {"__moy_peek4", l_peek4}, {"__moy_poke4", l_poke4},
         {"__moy_reload", l_reload}, {"__moy_cstore", l_cstore},
         {"__moy_p8print", l_p8print},
+        {"__moy_lut_span", l_lut_span},
         {"__moy_mget", l_mget}, {"__moy_mset", l_mset},
         {"__moy_fget", l_p8fget}, {"__moy_fset", l_p8fset},
     };

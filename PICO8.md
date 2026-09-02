@@ -115,6 +115,20 @@ and `_draw` waits, because PICO-8 never draws before its first update and
 carts rely on it. A cart with no update function draws every frame, as
 PICO-8's does.
 
+One whole STATEMENT is rewritten rather than a token: `for a = i, j do
+poke(a, peek(lut | peek(a))) end`, the lookup-table span a cart lights or
+tints a run of screen memory with, becomes `__p8_lut_span(i, j, lut)` — one
+call for 8,192 bytes instead of three to five per byte, which on dank tomb was
+its entire render. The match is exact and nothing near it moves: the same
+variable in all three places, no third `,step`, nothing else in the body, and
+bounds and table that are names, numbers, fields, indexes or arithmetic and
+never a call — because the fold evaluates them once where the loop evaluated
+them every iteration. The porter's own `flr(…)` operand wrappers and redundant
+parentheses are seen through. `__p8_lut_span` is the shim's, and its Lua body
+IS that loop, so a host with no C behind the name runs exactly what it ran
+before; `libmoy/src/moy_p8.c` answers false for anything but three plain
+integers, which is when the loop takes over again.
+
 **The API.** The shim implements PICO-8's verbs over the moy cart API —
 `sin`/`cos` with their turn-and-flip semantics, the table verbs
 (`add`/`del`/`foreach`/`all`/`count`), `btn`/`btnp` with PICO-8's auto-repeat,

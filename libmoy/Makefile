@@ -183,11 +183,15 @@ spr-sweep: $(SPRSWEEP)
 # (test/p8lib.moy) -- a cart may reach either lane, so there is one answer --
 # and the port's first frame is checked at a period SHORTER than one cart tick,
 # which is the only place _draw can outrun _update (test/p8_first_draw.py).
+# p8_port_check.py is the PORTER's half: the statement shapes it folds, and the
+# near misses it must leave alone, which no corpus cart can be relied on to
+# contain.
 p8-test: $(RUNCART)
 	./$(RUNCART) test/p8mem.moy build/p8mem.bin --frames 2
 	./$(RUNCART) test/p8lib.moy build/p8lib.bin --frames 2
 	python3 test/p8_font_check.py
 	python3 test/p8_first_draw.py
+	python3 test/p8_port_check.py
 
 test: conform conform-lua ext-test audio-test lowres spr-sweep p8-test p8-carts
 
