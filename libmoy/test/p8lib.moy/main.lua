@@ -120,6 +120,7 @@ local function L_poke4(a, v) a = fl(a)
   cpoke(a, raw & 0xff) cpoke(a+1, (raw>>8) & 0xff)
   cpoke(a+2, (raw>>16) & 0xff) cpoke(a+3, (raw>>24) & 0xff) end
 
+local E6, E2 = string.char(6), string.char(2)
 local SCRATCH = 0x4400
 local function seed()
   for i = 0, 31 do cpoke(SCRATCH + i, (i * 37) & 0xff) end
@@ -530,7 +531,40 @@ function map_checks()
   check("map rows 32-63 live under the sheet", cpeek(0x1000 + 8 * 128 + 3) == 0x5c)
 end
 
+-- ---- the glyph rasteriser -----------------------------------------------
+-- A GOLDEN, like conformance's: nine renders through the PICO-8 font, hashed.
+-- The outline is computed a row at a time now (moy_p8.c), and row arithmetic
+-- is the kind of thing that stays plausible while being one pixel out, so the
+-- geometry is pinned rather than argued about. Every mode that changes it is
+-- here: plain, an outline in a colour, "$" and "!", wide and tall together,
+-- inverted over a background, the 7-wide P8SCII glyphs and the button codes,
+-- and two renders straddling a canvas edge. Regenerate only for a deliberate
+-- change to the font or the rasteriser, and say which in the commit.
+local FONT_PINS = {
+  {"Ag", 20, 30, 7, 1708227433},
+  {E6 .. "o701Ag", 20, 30, 7, 929240231},
+  {E6 .. "o$ffAg", 20, 30, 9, 1913957642},
+  {E6 .. "o!ffAg", 20, 30, 9, 638015363},
+  {E6 .. "w" .. E6 .. "t" .. E6 .. "o3a5Ag", 20, 30, 12, 113299532},
+  {E6 .. "i" .. E2 .. "5Ag", 20, 30, 12, 83277239},
+  {E6 .. "w" .. string.char(135) .. string.char(151) .. "z", 4, 4, 11, 238837998},
+  {E6 .. "o0ffWq", -3, -2, 8, 1109368336},
+  {E6 .. "t" .. E6 .. "o20fMj", 118, 118, 14, 1014451440},
+}
+
+function font_checks()
+  for i, c in ipairs(FONT_PINS) do
+    cls(0)
+    __moy_p8print(c[1], c[2], c[3], c[4])
+    local h = 0
+    for a = 0x6000, 0x7fff do h = (h * 33 + cpeek(a)) & 0x7fffffff end
+    same("glyph render " .. i, h, c[5])
+  end
+  cls(0)
+end
+
 function _init()
+  font_checks()
   check("the machine is open", __moy_all ~= nil and __moy_foreach ~= nil)
 
   for name, kill in pairs(KILLS) do

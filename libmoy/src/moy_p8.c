@@ -579,6 +579,7 @@ static int p8_digit(int ch)
 
 typedef struct {
     moy_canvas *c;
+    moy_ds ds;                   /* camera, clip and the raster, read once */
     int fg, bg, wide, tall, invert;
     int ocol, obits, oonly;      /* \^o outline: colour (-1 none), 8 neighbour bits, interior skipped */
     int ouse_fg;                 /* outline in the current colour ("$" / "!") */
@@ -586,30 +587,47 @@ typedef struct {
 
 static void p8_cell(const p8_pen *pen, int cx, int cy, int w, int h, int col)
 {
-    int xx, yy;
-    for (yy = 0; yy < h; yy++)
-        for (xx = 0; xx < w; xx++)
-            moy_put(pen->c, cx + xx, cy + yy, col);
+    const moy_ds *d = &pen->ds;
+    moy_pixel px = pen->c->store[col & 63];
+    int x0 = cx - d->cam_x, y0 = cy - d->cam_y, x1 = x0 + w, y1 = y0 + h, y;
+    if (x0 < d->cx0) x0 = d->cx0;
+    if (y0 < d->cy0) y0 = d->cy0;
+    if (x1 > d->cx1) x1 = d->cx1;
+    if (y1 > d->cy1) y1 = d->cy1;
+    for (y = y0; y < y1 && x1 > x0; y++)
+        moy_fill(d->pix + (size_t)y * (size_t)d->cw + (size_t)x0, px,
+                 (size_t)(x1 - x0));
 }
 
 
 /* One glyph at the pen: returns the advance.
  *
- * Rasterised into a small local bitmap first, so an outline (\^o) can be
- * painted only where the glyph itself is not: PICO-8 draws the neighbours
- * and then the interior, and "!" skips the interior, which is only empty if
- * the outline never covered it. Scaled dots and a 1px outline both fit in
- * 16x12 with a one-pixel margin all round. */
+ * Rasterised into a small local bitmap first -- ONE WORD A ROW, bit xx a
+ * column -- so an outline (\^o) can be painted only where the glyph itself
+ * is not: PICO-8 draws the neighbours and then the interior, and "!" skips
+ * the interior, which is only empty if the outline never covered it. Scaled
+ * dots and a 1px outline both fit in 16x12 with a one-pixel margin all round,
+ * which is what puts every shift below in range without a test.
+ *
+ * The rows are what make the outline affordable. Cell by cell it was 18x14
+ * cells each testing eight neighbours -- 94% of this function, and 28% of one
+ * cart's entire frame, for a title drawn wide, tall and outlined every frame.
+ * A row's outline is the union of its eight shifted neighbour rows with the
+ * glyph's own row taken out, which is eight shifts and an AND. Same pixels: a
+ * cell is painted exactly when it is unlit and an active direction finds a
+ * lit neighbour, and the colour is the same however many times it is written. */
 #define P8_BW 18
 #define P8_BH 14
+#define P8_BMASK ((uint32_t)((1u << P8_BW) - 1u))
 
-static void p8_lit(const p8_pen *pen, int b, uint8_t lit[P8_BH][P8_BW])
+static void p8_lit(const p8_pen *pen, int b, uint32_t lit[P8_BH])
 {
-    int sx = 1 + pen->wide, sy = 1 + pen->tall, q, r, kk, xx, yy;
-    memset(lit, 0, P8_BH * P8_BW);
+    int sx = 1 + pen->wide, sy = 1 + pen->tall, q, r, kk, yy;
+    uint32_t col = (uint32_t)((1u << sx) - 1u);
+    memset(lit, 0, sizeof(uint32_t) * P8_BH);
 #define LIT(gx, gy) \
-        for (yy = 0; yy < sy; yy++) for (xx = 0; xx < sx; xx++) \
-            lit[1 + (gy) * sy + yy][1 + (gx) * sx + xx] = 1
+        for (yy = 0; yy < sy; yy++) \
+            lit[1 + (gy) * sy + yy] |= col << (1 + (gx) * sx)
     if (b >= 128 && b < 128 + 26) {
         const uint8_t *rows = P8_WIDE + (b - 128) * 5;
         for (r = 0; r < 5; r++)
@@ -623,14 +641,33 @@ static void p8_lit(const p8_pen *pen, int b, uint8_t lit[P8_BH][P8_BW])
 #undef LIT
 }
 
+/* One bitmap row onto the canvas at screen row y. The clip test on y is the
+ * whole row's, so it is asked once; the colour is resolved once a glyph. */
+static void p8_row(const p8_pen *pen, uint32_t bits, int cx, int y, moy_pixel px)
+{
+    const moy_ds *d = &pen->ds;
+    moy_pixel *row;
+    int sy = y - d->cam_y, xx = 0, base = cx - 1 - d->cam_x;
+    if (!bits || sy < d->cy0 || sy >= d->cy1) return;
+    row = d->pix + (size_t)sy * (size_t)d->cw;
+    while (bits) {
+        if (bits & 1u) {
+            int sx = base + xx;
+            if (sx >= d->cx0 && sx < d->cx1) row[sx] = px;
+        }
+        bits >>= 1;
+        xx++;
+    }
+}
+
 static int p8_glyph(const p8_pen *pen, int b, int cx, int cy)
 {
     static const int dx[8] = { -1, 0, 1, -1, 1, -1, 0, 1 };
     static const int dy[8] = { -1, -1, -1, 0, 0, 1, 1, 1 };
     int sx = 1 + pen->wide, sy = 1 + pen->tall;
     int fg = pen->fg, bg = pen->bg;
-    int adv, xx, yy, i;
-    uint8_t lit[P8_BH][P8_BW];
+    int adv, yy, i, hmax = 1 + 5 * sy;   /* the last row an outline can touch */
+    uint32_t lit[P8_BH];
     b = btn_glyph(b);
     if (b >= 128 && b < 128 + 26) {
         const uint8_t *rows = P8_WIDE + (b - 128) * 5;
@@ -644,24 +681,22 @@ static int p8_glyph(const p8_pen *pen, int b, int cx, int cy)
     else if (bg >= 0) p8_cell(pen, cx, cy, adv, 6 * sy, bg);
     p8_lit(pen, b, lit);
     if (pen->ocol >= 0 || pen->ouse_fg) {
-        int oc = pen->ouse_fg ? fg : pen->ocol;
-        for (yy = 0; yy < P8_BH; yy++)
-            for (xx = 0; xx < P8_BW; xx++) {
-                if (lit[yy][xx]) continue;
-                for (i = 0; i < 8; i++) {
-                    int ny = yy + dy[i], nx = xx + dx[i];   /* the lit pixel this would neighbour */
-                    if (((pen->obits >> i) & 1) && ny >= 0 && ny < P8_BH && nx >= 0 && nx < P8_BW
-                        && lit[ny][nx]) {
-                        moy_put(pen->c, cx + xx - 1, cy + yy - 1, oc);
-                        break;
-                    }
-                }
+        moy_pixel opx = pen->c->store[(pen->ouse_fg ? fg : pen->ocol) & 63];
+        for (yy = 0; yy <= hmax; yy++) {
+            uint32_t o = 0;
+            for (i = 0; i < 8; i++) {
+                int ny = yy + dy[i];             /* the row a lit neighbour is in */
+                if (!((pen->obits >> i) & 1) || ny < 0 || ny >= P8_BH) continue;
+                o |= dx[i] > 0 ? lit[ny] >> 1 : (dx[i] < 0 ? lit[ny] << 1 : lit[ny]);
             }
+            p8_row(pen, o & ~lit[yy] & P8_BMASK, cx, cy + yy - 1, opx);
+        }
         if (pen->oonly) return adv;
     }
-    for (yy = 0; yy < P8_BH; yy++)
-        for (xx = 0; xx < P8_BW; xx++)
-            if (lit[yy][xx]) moy_put(pen->c, cx + xx - 1, cy + yy - 1, fg);
+    {
+        moy_pixel px = pen->c->store[fg & 63];
+        for (yy = 0; yy <= hmax; yy++) p8_row(pen, lit[yy], cx, cy + yy - 1, px);
+    }
     return adv;
 }
 
@@ -676,6 +711,9 @@ static int l_p8print(lua_State *L)
     s = lua_tolstring(L, -1, &len);
     x = iarg(L, 2); y = iarg(L, 3);
     pen.c = p->con->canvas;
+    pen.ds = moy_ds_of(pen.c);           /* cls is the only thing print calls
+                                            that touches the raster, and it
+                                            moves neither camera nor clip */
     pen.fg = iarg(L, 4); pen.bg = -1; pen.wide = pen.tall = pen.invert = 0;
     pen.ocol = -1; pen.obits = 0; pen.oonly = 0; pen.ouse_fg = 0;
     cx = x; cy = y;
