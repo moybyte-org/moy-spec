@@ -2153,6 +2153,13 @@ do
     local v = fx(a or 0) & 0xffffffff
     return unfx(((v >> n) | (v << (32 - n))) & 0xffffffff)
   end
+  -- The console's own where it has them (moy_p8.c): the same fx/unfx, in C,
+  -- so band's four Lua calls and three C ones become one.
+  if __moy_band ~= nil then
+    band, bor, bxor, bnot = __moy_band, __moy_bor, __moy_bxor, __moy_bnot
+    shl, shr, lshr = __moy_shl, __moy_shr, __moy_lshr
+    rotl, rotr = __moy_rotl, __moy_rotr
+  end
 
   -- NO COROUTINES, and the reason is worth stating where somebody will next
   -- reach for them: this IS real Lua 5.4, but the console opens only base,

@@ -853,6 +853,266 @@ static int l_tonum(lua_State *L)
     return 1;
 }
 
+/* -- the p8 bit verbs -----------------------------------------------------
+ *
+ * PICO-8's numbers are 16.16 fixed point and its bit verbs work on all 32
+ * bits, fraction included: band(x, 0xffff.fffe) drops the lowest fractional
+ * bit, and band(x, -1) is how a cart spells floor. Two integers take the
+ * plain path; anything with a fraction goes onto the 32-bit fixed image and
+ * comes back divided.
+ *
+ * fx/unfx here are the shim's, transcribed. Both are EXACT in float
+ * arithmetic -- multiplying and dividing by a power of two neither rounds nor
+ * loses a bit -- so nothing in this file is where a build's float width
+ * shows. What the width decides is the VALUE that arrives: on a 24-bit
+ * mantissa a cart's computed fraction has already lost its low bits, and
+ * band(x, -1) turns a sub-ulp difference into an integer one. See PICO8.md.
+ *
+ * The integer half is 32-bit by contract, not by accident: SPEC.md 4.2 pins
+ * LUA_32BITS, so `v << 16` wraps, `0xffffffff` is -1 and the masks the shim
+ * writes are the no-ops they read as. A 64-bit Lua would answer differently
+ * in BOTH lanes -- that is a property of the shim's Lua, reproduced, not one
+ * introduced here.
+ */
+
+/* Lua's own shift: a count at or past the width is 0, a negative count goes
+ * the other way, and the right shift is LOGICAL. */
+static int32_t p8_shiftl(int32_t x, lua_Integer y)
+{
+    if (y < 0) {
+        if (y <= -32) return 0;
+        return u2i((uint32_t)x >> (unsigned)(-y));
+    }
+    if (y >= 32) return 0;
+    return u2i((uint32_t)x << (unsigned)y);
+}
+
+static int32_t p8_shiftr(int32_t x, lua_Integer y)
+{
+    return p8_shiftl(x, (lua_Integer)((lua_Unsigned)0 - (lua_Unsigned)y));
+}
+
+/* `v or 0` is an integer? nil and false become the integer 0, so yes. */
+static int or0_isint(lua_State *L, int i)
+{
+    return !lua_toboolean(L, i) || lua_isinteger(L, i);
+}
+
+static lua_Integer or0_int(lua_State *L, int i)
+{
+    return lua_toboolean(L, i) ? lua_tointeger(L, i) : 0;
+}
+
+/* The number `v or 0` then reaches arithmetic as: a numeric string converts,
+ * because Lua's own `*` would have converted it, and anything else raises. */
+static void p8_bit_arg(lua_State *L, int i)
+{
+    if (!lua_toboolean(L, i)) { lua_pushinteger(L, 0); return; }
+    if (lua_type(L, i) == LUA_TNUMBER) { lua_pushvalue(L, i); return; }
+    if (lua_type(L, i) == LUA_TSTRING) {
+        size_t len;
+        const char *s = lua_tolstring(L, i, &len);
+        if (lua_stringtonumber(L, s) == len + 1) return;
+    }
+    luaL_error(L, "attempt to perform arithmetic on a %s value",
+               luaL_typename(L, i));
+}
+
+/* fx(v), on the number p8_bit_arg left on top, which it pops. */
+static int32_t p8_fx(lua_State *L)
+{
+    lua_Number r;
+    int32_t out;
+    if (lua_isinteger(L, -1)) {
+        out = u2i((uint32_t)(int32_t)lua_tointeger(L, -1) << 16);
+        lua_pop(L, 1);
+        return out;
+    }
+    r = (lua_Number)(lua_tonumber(L, -1) * (lua_Number)65536);
+    lua_pop(L, 1);
+    if (r >= (lua_Number)2147483648.0 || r < -(lua_Number)2147483648.0) {
+        /* past 16.16's range, which p8 cannot reach; wrap like it would */
+        r = (lua_Number)(r - (lua_Number)4294967296.0 * (lua_Number)l_mathop(floor)(
+                (lua_Number)(r / (lua_Number)4294967296.0)));
+        if (r >= (lua_Number)2147483648.0)
+            r = (lua_Number)(r - (lua_Number)4294967296.0);
+    }
+    r = (lua_Number)l_mathop(floor)(r);
+    if (!(r >= -(lua_Number)2147483648.0 && r < (lua_Number)2147483648.0)) {
+        /* an infinity or a NaN: math.floor hands the float back and the
+         * bitwise operator it feeds refuses it, exactly here */
+        luaL_error(L, "number has no integer representation");
+        return 0;
+    }
+    return (int32_t)r;
+}
+
+/* Back from the image: an INTEGER when the fraction is clear (p8 has one kind
+ * of number and prints 12, not 12.0 -- a cart that keys a table by the result
+ * must see the same), a float otherwise. */
+static void p8_unfx(lua_State *L, int32_t r)
+{
+    if ((r & 0xffff) == 0) lua_pushinteger(L, (lua_Integer)(r / 65536));
+    else lua_pushnumber(L, (lua_Number)((lua_Number)r / (lua_Number)65536));
+}
+
+/* flr(n or 0) as a shift count: math.floor hands back a float it cannot make
+ * an integer of, and the shift then refuses it. */
+static lua_Integer p8_shift_count(lua_State *L, int i)
+{
+    lua_Integer n;
+    lua_Number f;
+    if (lua_isinteger(L, i)) return lua_tointeger(L, i);
+    if (!lua_toboolean(L, i)) return 0;
+    f = (lua_Number)l_mathop(floor)(luaL_checknumber(L, i));
+    if (!lua_numbertointeger(f, &n)) {
+        luaL_error(L, "number has no integer representation");
+        return 0;
+    }
+    return n;
+}
+
+/* flr(n or 0) % 32, the rotate count. A float too big for an integer is
+ * already a multiple of 32 by then (float32's step is 256 or wider past
+ * 2^31), so it lands on 0; an infinity or a NaN raises. */
+static lua_Integer p8_rot_count(lua_State *L, int i)
+{
+    lua_Integer n;
+    lua_Number f;
+    if (lua_isinteger(L, i)) {
+        n = lua_tointeger(L, i);
+    } else if (!lua_toboolean(L, i)) {
+        n = 0;
+    } else {
+        f = (lua_Number)l_mathop(floor)(luaL_checknumber(L, i));
+        if (!lua_numbertointeger(f, &n)) {
+            f = (lua_Number)l_mathop(fmod)(f, (lua_Number)32);
+            if (f < 0) f = (lua_Number)(f + (lua_Number)32);
+            if (!lua_numbertointeger(f, &n)) {
+                luaL_error(L, "number has no integer representation");
+                return 0;
+            }
+            return n;
+        }
+    }
+    n = n % 32;
+    if (n < 0) n += 32;                       /* Lua's % is floored */
+    return n;
+}
+
+/* x // n, Lua's integer floor division, division by zero and all. */
+static lua_Integer p8_idiv(lua_State *L, lua_Integer m, lua_Integer n)
+{
+    lua_Integer q;
+    if (n == 0) { luaL_error(L, "attempt to perform 'n//0'"); return 0; }
+    if (n == -1) return (lua_Integer)((lua_Unsigned)0 - (lua_Unsigned)m);
+    q = m / n;
+    if ((m ^ n) < 0 && m % n != 0) q -= 1;
+    return q;
+}
+
+#define P8_BITOP(NAME, INTEXPR, FIXEXPR)                                   \
+    static int NAME(lua_State *L)                                          \
+    {                                                                      \
+        uint32_t a, b;                                                     \
+        lua_settop(L, 2);                                                  \
+        if (or0_isint(L, 1) && or0_isint(L, 2)) {                          \
+            a = (uint32_t)(int32_t)or0_int(L, 1);                          \
+            b = (uint32_t)(int32_t)or0_int(L, 2);                          \
+            lua_pushinteger(L, u2i(INTEXPR));                              \
+            return 1;                                                      \
+        }                                                                  \
+        p8_bit_arg(L, 1); a = (uint32_t)p8_fx(L);                          \
+        p8_bit_arg(L, 2); b = (uint32_t)p8_fx(L);                          \
+        p8_unfx(L, u2i(FIXEXPR));                                          \
+        return 1;                                                          \
+    }
+
+P8_BITOP(l_band, a & b, a & b)
+P8_BITOP(l_bor,  a | b, a | b)
+P8_BITOP(l_bxor, a ^ b, a ^ b)
+
+static int l_bnot(lua_State *L)
+{
+    lua_settop(L, 1);
+    if (or0_isint(L, 1)) {
+        lua_pushinteger(L, u2i(~(uint32_t)(int32_t)or0_int(L, 1)));
+        return 1;
+    }
+    p8_bit_arg(L, 1);
+    p8_unfx(L, u2i(~(uint32_t)p8_fx(L)));
+    return 1;
+}
+
+static int l_shl(lua_State *L)
+{
+    lua_Integer n;
+    lua_settop(L, 2);
+    n = p8_shift_count(L, 2);
+    if (or0_isint(L, 1)) {
+        lua_pushinteger(L, p8_shiftl((int32_t)or0_int(L, 1), n));
+        return 1;
+    }
+    p8_bit_arg(L, 1);
+    p8_unfx(L, p8_shiftl(p8_fx(L), n));
+    return 1;
+}
+
+/* ARITHMETIC, as PICO-8's is: a floor division by 1 << n, which is also where
+ * a count of 32 or more turns into a division by zero. */
+static int l_shr(lua_State *L)
+{
+    lua_Integer n, d;
+    lua_settop(L, 2);
+    n = p8_shift_count(L, 2);
+    d = p8_shiftl(1, n);
+    if (or0_isint(L, 1)) {
+        lua_pushinteger(L, p8_idiv(L, or0_int(L, 1), d));
+        return 1;
+    }
+    p8_bit_arg(L, 1);
+    p8_unfx(L, (int32_t)p8_idiv(L, p8_fx(L), d));
+    return 1;
+}
+
+static int l_lshr(lua_State *L)
+{
+    lua_Integer n;
+    lua_settop(L, 2);
+    n = p8_shift_count(L, 2);
+    if (or0_isint(L, 1)) {
+        lua_pushinteger(L, p8_shiftr((int32_t)or0_int(L, 1), n));
+        return 1;
+    }
+    p8_bit_arg(L, 1);
+    p8_unfx(L, p8_shiftr(p8_fx(L), n));
+    return 1;
+}
+
+static int l_rotl(lua_State *L)
+{
+    lua_Integer n;
+    int32_t v;
+    lua_settop(L, 2);
+    n = p8_rot_count(L, 2);
+    p8_bit_arg(L, 1);
+    v = p8_fx(L);
+    p8_unfx(L, u2i((uint32_t)p8_shiftl(v, n) | (uint32_t)p8_shiftr(v, 32 - n)));
+    return 1;
+}
+
+static int l_rotr(lua_State *L)
+{
+    lua_Integer n;
+    int32_t v;
+    lua_settop(L, 2);
+    n = p8_rot_count(L, 2);
+    p8_bit_arg(L, 1);
+    v = p8_fx(L);
+    p8_unfx(L, u2i((uint32_t)p8_shiftr(v, n) | (uint32_t)p8_shiftl(v, 32 - n)));
+    return 1;
+}
+
 /* -- the p8 table verbs ---------------------------------------------------
  *
  * No machine behind these -- they are the shim's own Lua, promoted because
@@ -1037,6 +1297,9 @@ int moy_p8_open(struct lua_State *Ls, moy_console *con, moy_p8 *p,
         {"__moy_min", l_min}, {"__moy_max", l_max}, {"__moy_mid", l_mid},
         {"__moy_sgn", l_sgn}, {"__moy_sin", l_sin}, {"__moy_cos", l_cos},
         {"__moy_atan2", l_atan2}, {"__moy_tonum", l_tonum},
+        {"__moy_band", l_band}, {"__moy_bor", l_bor}, {"__moy_bxor", l_bxor},
+        {"__moy_bnot", l_bnot}, {"__moy_shl", l_shl}, {"__moy_shr", l_shr},
+        {"__moy_lshr", l_lshr}, {"__moy_rotl", l_rotl}, {"__moy_rotr", l_rotr},
     };
     size_t i;
     if (!con || !p || !mem) return 1;

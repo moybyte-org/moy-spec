@@ -301,6 +301,134 @@ function num_checks()
   check("max keeps the argument's type", math.type(__moy_max(1.0, 1)) == "float")
 end
 
+-- ---- the bit verbs ------------------------------------------------------
+-- PICO-8's are 16.16, fraction included, and the shim's fx/unfx are what put
+-- a fractional operand onto the 32-bit image and take it back off. Both lanes
+-- run over the same sweep, values and TYPES compared.
+local mtype = math.type
+local function L_fx(v)
+  if mtype(v) == "integer" then return v << 16 end
+  local r = v * 65536
+  if r >= 2147483648 or r < -2147483648 then
+    r = r - 4294967296 * mfloor(r / 4294967296)
+    if r >= 2147483648 then r = r - 4294967296 end
+  end
+  return mfloor(r)
+end
+local function L_unfx(r)
+  if r & 0xffff == 0 then return r // 65536 end
+  return r / 65536
+end
+local function L_is_int(v) return mtype(v) == "integer" end
+local function L_band(a, b)
+  a, b = a or 0, b or 0
+  if L_is_int(a) and L_is_int(b) then return a & b end
+  return L_unfx(L_fx(a) & L_fx(b))
+end
+local function L_bor(a, b)
+  a, b = a or 0, b or 0
+  if L_is_int(a) and L_is_int(b) then return a | b end
+  return L_unfx(L_fx(a) | L_fx(b))
+end
+local function L_bxor(a, b)
+  a, b = a or 0, b or 0
+  if L_is_int(a) and L_is_int(b) then return a ~ b end
+  return L_unfx(L_fx(a) ~ L_fx(b))
+end
+local function L_bnot(a)
+  a = a or 0
+  if L_is_int(a) then return ~a end
+  return L_unfx(~L_fx(a))
+end
+local function L_shl(a, n)
+  a, n = a or 0, L_flr(n or 0)
+  if L_is_int(a) then return a << n end
+  return L_unfx(L_fx(a) << n)
+end
+local function L_shr(a, n)
+  a, n = a or 0, L_flr(n or 0)
+  if L_is_int(a) then return a // (1 << n) end
+  return L_unfx(L_fx(a) // (1 << n))
+end
+local function L_lshr(a, n)
+  a, n = a or 0, L_flr(n or 0)
+  if L_is_int(a) then return (a & 0xffffffff) >> n end
+  return L_unfx((L_fx(a) & 0xffffffff) >> n)
+end
+local function L_rotl(a, n)
+  n = L_flr(n or 0) % 32
+  local v = L_fx(a or 0) & 0xffffffff
+  return L_unfx(((v << n) | (v >> (32 - n))) & 0xffffffff)
+end
+local function L_rotr(a, n)
+  n = L_flr(n or 0) % 32
+  local v = L_fx(a or 0) & 0xffffffff
+  return L_unfx(((v >> n) | (v << (32 - n))) & 0xffffffff)
+end
+
+-- The operands a p8 cart actually reaches these with: whole numbers, packed
+-- flag words, parsed decimals, and the coercions on either side of them.
+local BITS = {
+  0, 1, -1, 2, 7, 255, 256, 65535, 65536, -65536, 0x7fffffff, -0x7fffffff - 1,
+  0.5, -0.5, 1.5, -1.5, 0.25, 0.0625, 1/3, 255.99, -255.99,
+  32767.5, -32768.0, 1e30, -1e30, 1/0, -1/0, 0/0,
+  nil, false, true, "3", "3.5", "abc", {},
+}
+local NBITS = 35
+-- Shift and rotate counts, including the ones that fall off either end.
+local COUNTS = {
+  0, 1, 4, 15, 16, 31, 32, 33, -1, -16, -32, -33,
+  0.5, 1.5, -0.5, 1e30, -1e30, 1/0, 0/0, nil, false, "2", {},
+}
+local NCOUNTS = 23
+
+function bit_checks()
+  check("the bit verbs are the C ones", __moy_band ~= nil and __moy_rotr ~= nil)
+
+  local PAIRS = {
+    {"band", __moy_band, L_band}, {"bor", __moy_bor, L_bor},
+    {"bxor", __moy_bxor, L_bxor},
+  }
+  for _, v in ipairs(PAIRS) do
+    for i = 1, NBITS do
+      for j = 1, NBITS do
+        same(v[1] .. "(" .. tostring(BITS[i]) .. ", " .. tostring(BITS[j]) .. ")",
+             call1(v[2], BITS[i], BITS[j]), call1(v[3], BITS[i], BITS[j]))
+      end
+      same(v[1] .. " of one argument", call1(v[2], BITS[i]), call1(v[3], BITS[i]))
+    end
+  end
+  for i = 1, NBITS do
+    same("bnot(" .. tostring(BITS[i]) .. ")",
+         call1(__moy_bnot, BITS[i]), call1(L_bnot, BITS[i]))
+  end
+  same("bnot of nothing", call1(__moy_bnot), call1(L_bnot))
+
+  local SHIFTS = {
+    {"shl", __moy_shl, L_shl}, {"shr", __moy_shr, L_shr},
+    {"lshr", __moy_lshr, L_lshr}, {"rotl", __moy_rotl, L_rotl},
+    {"rotr", __moy_rotr, L_rotr},
+  }
+  for _, v in ipairs(SHIFTS) do
+    for i = 1, NBITS do
+      for j = 1, NCOUNTS do
+        same(v[1] .. "(" .. tostring(BITS[i]) .. ", " .. tostring(COUNTS[j]) .. ")",
+             call1(v[2], BITS[i], COUNTS[j]), call1(v[3], BITS[i], COUNTS[j]))
+      end
+      same(v[1] .. " with no count", call1(v[2], BITS[i]), call1(v[3], BITS[i]))
+    end
+  end
+
+  -- The idioms the corpus leans on, spelled out so a break says which one.
+  check("band(x, -1) is p8's floor", __moy_band(12.75, -1) == 12
+        and __moy_band(-12.75, -1) == -13
+        and mtype(__moy_band(12.75, -1)) == "integer")
+  check("band keeps a fraction", __moy_band(12.75, 0.5) == 0.5)
+  check("shr halves", __moy_shr(12.5, 1) == 6.25)
+  check("rotl by 0 is identity", __moy_rotl(3.25, 0) == 3.25)
+  check("rotl and rotr come back", __moy_rotr(__moy_rotl(0.5, 7), 7) == 0.5)
+end
+
 function _init()
   check("the machine is open", __moy_all ~= nil and __moy_foreach ~= nil)
 
@@ -386,6 +514,7 @@ function _init()
 
   mem_checks()
   num_checks()
+  bit_checks()
 end
 
 function _draw() cls(1) print("p8 stdlib: ok", 4, 60, 11) quit() end
