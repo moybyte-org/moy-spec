@@ -42,7 +42,7 @@ check is what SPEC.md 6, 7.1 and 7.2 say each verb lights up.
 
 **`examples/verbs.moy` tests a HOST.** It is a real cart exercising the API
 through Lua, including the parts a trace cannot reach — the tick model, input
-edges, the host-dependent core verbs, the provisional verbs. It is played and looked
+edges, the host-dependent core verbs, the 3D verbs. It is played and looked
 at, not diffed: there is no golden for it.
 
 An implementation needs both, and the raster one is reachable *first*: a trace
@@ -56,8 +56,8 @@ either, so a player can pass everything here with its sandbox wide open. The one
 place that check exists is a CI step over libmoy
 (`.github/workflows/libmoy.yml`, "The SPEC.md 4.1 sandbox holds": seven reaches
 — `io`, `os`, `require`, `load`, `debug`, `collectgarbage`, `package` — each of
-which must make `run_cart` fail; `coroutine` is inside the sandbox since
-2026-09-02 and is asserted PRESENT by `libmoy/test/core_verbs.moy` instead). That covers this
+which must make `run_cart` fail; `coroutine` is inside the sandbox and is
+asserted PRESENT by `libmoy/test/core_verbs.moy` instead). That covers this
 repository's C core and nothing else. Putting it in the suite means teaching the
 runner to assert that a cart *fails*, which is a different protocol from "write
 me a frame" and has not been designed.
@@ -91,8 +91,8 @@ golden/hashes.json   sha256 per frame, plus the suite manifest
 | `flags` | `map(..., layers)` against tile flags from `flags.moyflags`, an `fset` that changes the next map, a mask nobody carries, under scale and camera |
 | `screen_pal` | `pal(c0, c1, 1)` moves pixels already drawn, chains after the draw palette, `pal()` resets both; a player that dumps its canvas instead of its shown frame fails here |
 | `sheet` | `sset` then `spr`/`sspr`/`map` of the edited tile, the 0–15 mask, writes off the sheet; the scene restores its own edits first, since a second frame sees the first frame's sheet |
-| `provisional` | SPEC.md 6.1's `tri` / `trib` / `sspr` — **not counted**, SPEC.md 11 excludes 6.1 until it settles |
-| `provisional_tline` | SPEC.md 6.1's `tline`: the map sampled through 16.16 texture steps — **not counted**, same reason. The scene that caught a real board failing by 2773 pixels (below) |
+| `provisional` | SPEC.md 6.1's `tri` / `trib` / `sspr`. Counted since core 0.3; the name is kept because implementers cite it |
+| `provisional_tline` | SPEC.md 6.1's `tline`: the map sampled through 16.16 texture steps. Counted since core 0.3 — and the scene that caught a real board failing by 2773 pixels (below) |
 
 ## Provenance
 
@@ -169,9 +169,9 @@ python3 conformance/run.py --player \
   "python3 /path/to/moybyte/tools/p4_conformance.py {cart} {out}"
 ```
 
-**Every scene of that day's suite matched there too.** That is the tier where the C `moy_gfx`
-kernel, the RGB565 framebuffer and §1.1's memory floor actually live, and it had
-never been checked against the spec before.
+**Every scene the suite then held matched there too.** That is the tier where
+the C `moy_gfx` kernel, the RGB565 framebuffer and §1.1's memory floor actually
+live, and it had never been checked against the spec before.
 
 Its first run — against firmware flashed a few days earlier — failed exactly two
 scenes: `text_bytes` and `provisional`. Those are the two bugs the web player had

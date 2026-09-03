@@ -1,14 +1,12 @@
 # Proposal: the PICO-8 / TIC-80 verb gaps — what a native of those consoles misses here
 
-**Status: largely landed, 2026-09-02.** This was the gap analysis of
-2026-08-12, grounded against SPEC.md's verb tables, the p8 port shim's stub
-list and the reference console's sandbox. What it recommended is now in
-SPEC.md: Tier 1 whole (`coroutine` in §4.1, `srand` in §9, the `pix` read form
-in §6), the Tier 2 flags bundle (§3.5 `flags.moyflags`, `fget`/`fset`,
-`map(..., layers)`), and from Tier 3 `fillp`, `sget`/`sset` and `oval`/`ovalb`
-— plus the screen palette §12.1 had deferred, and the memory map this file once
-filed under "never" (see `p8-memory-map.md`). The text below is kept as the
-record of the argument; the tables are what SPEC.md says now.
+**Status: largely landed.** What this gap analysis recommended is in SPEC.md:
+Tier 1 whole (`coroutine` in §4.1, `srand` in §9, the `pix` read form in §6),
+the Tier 2 flags bundle (§3.5 `flags.moyflags`, `fget`/`fset`, `map(...,
+layers)`), and from Tier 3 `fillp`, `sget`/`sset` and `oval`/`ovalb` — plus the
+screen palette §12.1 had deferred, and the memory map this file once filed
+under "never" (see `p8-memory-map.md`). The text below is kept as the record of
+the argument; **SPEC.md's tables are the authority, not these.**
 
 ## Who this serves, precisely
 
@@ -101,19 +99,17 @@ graduates with the tier's usual evidence.
 | `oval` / `ovalfill` | both | Ellipses. Easy kernel, mild demand. |
 | `music(n, fade_ms)` / `sfx(n, ch, offset, len)` | p8 | Fade-out is common polish; offset/length are instrument tricks. Upstream libmoy audio work; §8.3's conformance exemption means no golden pressure. |
 | `trace(msg)` | TIC-80 | Debug print to the host console — pure DX, lovely on the wasm runner. Host-extension shaped (the `view()` pattern); may never need to be core. |
-| `ttri` (textured triangle) | TIC-80 | The real-3D staple past `tline`. **Blocked on procedure:** §6.1 declares the provisional tier's membership settled, so this reopens that decision explicitly or waits for the tier to graduate. |
+| `ttri` (textured triangle) | TIC-80 | The real-3D staple past `tline`. **Blocked on procedure:** §6.1 declares its membership settled, so this reopens that decision explicitly, against the gates §6.1 records. |
 
 ## By design, never — written down so they stop being re-asked
 
-- **`peek`/`poke`/`memcpy`/`memset`** — this entry said "there is no
-  memory-mapped hardware model and there never will be" until 2026-09-01,
-  when it was measured instead of argued: a C byte behind PICO-8's addresses
-  costs 0.9 µs on the P4 and 1.5 µs on the S3 boards, the busiest cart in the
-  corpus spends a quarter of a frame there, and a flat 64 KB array with the
-  console's objects following it has no seam for conformance to miss. The
-  measurement, the design and what it still does not give are
-  `p8-memory-map.md`. It stays a *port-shim* extension, not a spec verb: new
-  carts get the verb table.
+- **`peek`/`poke`/`memcpy`/`memset`** — argued here as "never", then measured
+  instead: a C byte behind PICO-8's addresses costs 0.9 µs on the P4 and 1.5 µs
+  on the S3 boards, the busiest cart in the corpus spends a quarter of a frame
+  there, and a flat 64 KB array with the console's objects following it has no
+  seam for conformance to miss. The measurement, the design and what it still
+  does not give are `p8-memory-map.md`. It stays a *port-shim* extension, not a
+  spec verb: new carts get the verb table.
 - **`flip()`** — §5's tick model owns cadence; a busy-loop cart is a ported
   cart, and the shim's frame-quantized pacing is the answer.
 - **`menuitem`** — the console owns its menus (and its exit gesture).

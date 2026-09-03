@@ -14,7 +14,7 @@ no per-device binary.
 - **[PICO8.md](PICO8.md)** — importing a PICO-8 cart: what converts, what does not
 - **[RATIONALE.md](RATIONALE.md)** — why each number is what it is
 
-Status: **draft 0.2, unstable.** Names and values will still move.
+Status: **draft 0.3, unstable.** Names and values will still move.
 
 ## Get moy
 
@@ -76,13 +76,12 @@ conformance checklist.
 map, the sfx, and the cart's own code converted token by token, over a shim
 that implements PICO-8's verbs on the moy API. Most carts boot and play.
 
-It is a converter, not an emulator, but since 2026-09 there is a PICO-8
-machine behind it — the memory map, the screen palette, the fill pattern, the
-flags, coroutines, the system font — so the line now falls at 16.16 fixed
-point and at multi-cart games, and the importer says which side of it a cart is
-on before it writes. [PICO8.md](PICO8.md) lists what comes across, what is
-approximated, what cannot, and the corpus of twelve real carts with what each
-one actually does. Note the licensing section: BBS carts default to CC BY-NC-SA
+It is a converter, not an emulator, but there is a PICO-8 machine behind it —
+the memory map, the screen palette, the fill pattern, the flags, coroutines,
+the system font — so the line falls at 16.16 fixed point and at multi-cart
+games, and the importer says which side of it a cart is on before it writes.
+[PICO8.md](PICO8.md) lists what comes across, what is approximated, what cannot,
+and the corpus of twelve real carts with what each one actually does. Note the licensing section: BBS carts default to CC BY-NC-SA
 4.0.
 
 ## Why this exists
@@ -140,8 +139,8 @@ If you are building a console, [PORTING.md](PORTING.md) ends by naming the
 three numbers most likely not to fit your board. Telling us in an issue is
 worth more than any patch you could send.
 
-If you have shipped games: everything in §6.1, and anything that made you
-think "that would be annoying to write against."
+If you have shipped games: the §6.1 verbs against a real project, and anything
+that made you think "that would be annoying to write against."
 
 Governance is informal while there is one implementation. Once a second
 console passes conformance, this moves somewhere neutral with its

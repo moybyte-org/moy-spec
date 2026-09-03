@@ -442,10 +442,9 @@ sprite bigger than one tile is drawn as adjacent `spr` calls — there is no
 multi-tile sprite type, and a plain loop is the intended way to draw many
 (§7.1).
 
-`sspr` stretches an arbitrary pixel region to an arbitrary size, and is
-**provisional** (§6.1): implemented everywhere here, but not core 0.2 yet. A
-cart using it may not run on a console that shipped strictly to core, and
-`moy check` warns you.
+`sspr` stretches an arbitrary pixel region to an arbitrary size. It is one of
+the 3D verbs (§6.1) — provisional through 0.2, core since 0.3 — so a cart using
+it runs on any host that ships core 0.3, and may not on one built to 0.2.
 
 ### The tilemap
 
@@ -584,9 +583,9 @@ Three levels, and the distinction is the useful part:
   wrong, a reach past the §4.1 sandbox, an undeclared extension, a map bigger
   than the format allows, a cart that cannot be played with buttons alone, a
   `textmode` cart with no `quit()`.
-- **warn** — it will run, but not everywhere or not as you meant. A provisional
-  §6.1 verb, an input kind you read but did not declare, an icon pointing past
-  your sheet, a tile id the map cannot hold.
+- **warn** — it will run, but not everywhere or not as you meant. An input kind
+  you read but did not declare, an icon pointing past your sheet, a tile id the
+  map cannot hold.
 - **info** — sizes and fixed allocations, for orientation.
 
 Anything it cannot decide from your bytes — whether the heap fits at level 7,

@@ -171,9 +171,9 @@ less breaks some carts loudly, while a host that exposes more silently accumulat
 carts that run nowhere else. Only the second kind of divergence kills a format.
 
 `coroutine` was the one omission that failed that test — it is pure computation,
-and cutscene and animation code in both source consoles is written with it — so
-it was admitted on 2026-09-02. The excluded set is now exactly the libraries
-that reach outside the VM.
+and cutscene and animation code in both source consoles is written with it, so a
+state-machine rewrite was the tax every port paid. It is in. The excluded set is
+exactly the libraries that reach outside the VM.
 
 ## Numbers — 32-bit
 
@@ -286,7 +286,7 @@ meant to replace. So `spr_batch`, `rect_batch`, `col_batch` and `spans` are dele
 batching is the host's duty.
 
 The numbers that settled all of it — the corrected per-pixel costs, `col_batch`'s A/B,
-and the per-technique frame budgets on both reference boards — are tabulated in
+and the per-technique frame budgets on the reference boards — are tabulated in
 SPEC.md §6.1 and are not repeated here. That section is where an implementer looks
 before re-proposing one of them, and a measurement quoted in two places is a
 measurement that will be retracted in one.

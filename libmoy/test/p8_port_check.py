@@ -11,11 +11,11 @@ where a near miss is visible.
 
 Two of them: `fold_lut_span` (`for a=i,j do poke(a,peek(lut|peek(a))) end` ->
 `__p8_lut_span(i, j, lut)`, the span dank tomb lights its screen with), and
-the NATIVE BIT OPERATORS -- `a|b` -> `__p8_bor(a, b)`, one call where the
-porter used to floor each operand where it stood. That rewrite has to know
-Lua's precedence, which wrapping a primary did not, and it has to know which
-operands are integers ALREADY, which is a claim about the shim's verbs; both
-are asserted here, in each direction.
+the NATIVE BIT OPERATORS -- `a|b` -> `__p8_bor(a, b)`, one call rather than a
+floor around each operand. That rewrite has to know Lua's precedence, which a
+wrapper around a primary does not, and it has to know which operands are
+integers ALREADY, which is a claim about the shim's verbs; both are asserted
+here, in each direction.
 """
 import os
 import sys

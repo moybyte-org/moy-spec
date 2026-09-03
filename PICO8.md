@@ -68,25 +68,23 @@ run's job, and the corpus table below records where the two disagree.
 ## How faithful is it, really
 
 Faithful enough that most carts boot and play, and **not** an emulator. PICO-8
-is a machine with a memory map; moy is a verb table with, since 2026-09, a
-PICO-8 machine behind it for ported carts. Where a cart uses the API,
-conversion is close to exact. Where it uses the *machine*, the machine is now
-there: 64 KB of memory with the sheet, the map, the flags, both palettes, the
-pen, the print cursor, the fill pattern, camera, clip and the screen at their
-PICO-8 addresses, kept in step with the console both ways (`libmoy/src/moy_p8.c`, measured in
+is a machine with a memory map; moy is a verb table with a PICO-8 machine
+behind it for ported carts. Where a cart uses the API, conversion is close to
+exact. Where it uses the *machine*, the machine is there: 64 KB of memory with
+the sheet, the map, the flags, both palettes, the pen, the print cursor, the
+fill pattern, camera, clip and the screen at their PICO-8 addresses, kept in
+step with the console both ways (`libmoy/src/moy_p8.c`, measured in
 [`proposals/p8-memory-map.md`](proposals/p8-memory-map.md)).
 
-The machine is also where the shim's cost went. On the boards a Lua-to-C
-call floors at ~1.65 µs, so a shim verb that spent four calls (a nil check, a
-floor, a palette lookup, then the console's verb) was four times the price of
-the pixels it drew. Every p8 draw and input verb is now one crossing into the
-machine, which resolves p8's defaults, floors, the draw palette, the fill
-pattern and the clip from its own memory; `all`/`foreach`, the number verbs,
-the 16.16 bit verbs, `peek`/`poke`, `mget`/`fget` and the native `|`/`&`
-operators are C for the same reason, and one idiom — the lookup-table span
-`poke(a, peek(lut | peek(a)))` over a range — folds into a single call. The
-shim keeps its Lua as the fallback for a host without the machine, and
-`libmoy/test/p8lib.moy` holds both lanes to one answer.
+A Lua-to-C call floors at ~1.65 µs on the boards, which is where the shim's
+cost went: every p8 draw and input verb is ONE crossing into the machine, which
+resolves p8's defaults, floors, the draw palette, the fill pattern and the clip
+from its own memory. `all`/`foreach`, the number verbs, the 16.16 bit verbs,
+`peek`/`poke`, `mget`/`fget` and the native `|`/`&` operators are C for the same
+reason, and the lookup-table span `poke(a, peek(lut | peek(a)))` over a range
+folds into a single call. The shim keeps its Lua as the fallback for a host
+without the machine, and `libmoy/test/p8lib.moy` holds both lanes to one
+answer.
 
 One number still matters up front: PICO-8 uses 16.16 fixed point, and this
 runs on a Lua whose numbers are floats (`LUA_32BITS` — single precision — on
@@ -130,8 +128,7 @@ PICO-8's does.
 One whole STATEMENT is rewritten rather than a token: `for a = i, j do
 poke(a, peek(lut | peek(a))) end`, the lookup-table span a cart lights or
 tints a run of screen memory with, becomes `__p8_lut_span(i, j, lut)` — one
-call for 8,192 bytes instead of three to five per byte, which on dank tomb was
-its entire render. The match is exact and nothing near it moves: the same
+call for 8,192 bytes instead of three to five per byte. The match is exact and nothing near it moves: the same
 variable in all three places, no third `,step`, nothing else in the body, and
 bounds and table that are names, numbers, fields, indexes or arithmetic and
 never a call — because the fold evaluates them once where the loop evaluated
@@ -143,26 +140,21 @@ integers, which is when the loop takes over again.
 
 **The operators.** PICO-8 has nine native bit operators (`| & ^^ ~ << >> >>>
 <<> >><`); Lua 5.4 has six, refuses every one of them on a non-integral
-number, and has no rotate at all — so each operand is floored. The porter used
-to floor it WHERE IT STOOD, `flr(a) | flr(b)`, which kept the operator in
-place and precedence free but cost a binding call per operand: two crossings
-around one VM instruction, and on dank tomb four thousand of them a frame,
-more than the cart's whole raster. It emits ONE call now — `__p8_bor(a, b)`,
-`__p8_shl`, `__p8_rotl` and the rest, whose shim bodies ARE that expansion, so
-a host with nothing behind the name runs exactly what it ran before and one
-with `moy_p8.c` does the floor and the operator in a single crossing. A call
-has to know Lua's precedence, which wrapping a primary never did, and knowing
-it also fixed what wrapping got wrong: `a + 1 & b` floored neither side of the
-`+`, `#t & 3` became `#flr(t) & 3`, and `x &= y` was floored nowhere at all.
-Better still is the operator that needs NO call: an operand that is an integer
-already — a byte out of `peek`, a cell out of `mget`, a one-argument `fget`, a
-literal, another such operator — keeps the bare Lua instruction, which is what
-dank tomb's `peek(...) & 0xf0` comes out as. That last is a claim about the
-shim's own verbs, so a cart that defines, declares, assigns or takes as a
-parameter a name like `peek` turns the rule off for that name; the 16.16 verbs
-(`band`, `shl`, …) are deliberately not on the list, because their fractional
-lane answers a float. dank tomb: 7,639 → 5,747 binding calls a frame, of which
-`flr` fell from 4,014 to 111 — the 111 being the cart's own.
+number, and has no rotate at all — so each operand must be floored. The porter
+emits ONE call per operator — `__p8_bor(a, b)`, `__p8_shl`, `__p8_rotl` and the
+rest, whose shim bodies ARE that expansion, so a host with nothing behind the
+name runs plain Lua and one with `moy_p8.c` does the floor and the operator in
+a single crossing. A call knows Lua's precedence, which is what a wrapper
+around each operand cannot: `a + 1 & b` must floor both sides of the `+`,
+`#t & 3` must not floor `t`, and `x &= y` must be floored at all. Better still
+is the operator that needs NO call: an operand that is an integer already — a
+byte out of `peek`, a cell out of `mget`, a one-argument `fget`, a literal,
+another such operator — keeps the bare Lua instruction, which is what dank
+tomb's `peek(...) & 0xf0` comes out as. That last is a claim about the shim's
+own verbs, so a cart that defines, declares, assigns or takes as a parameter a
+name like `peek` turns the rule off for that name; the 16.16 verbs (`band`,
+`shl`, …) are deliberately not on the list, because their fractional lane
+answers a float.
 
 **The API.** The shim implements PICO-8's verbs over the moy cart API —
 `sin`/`cos` with their turn-and-flip semantics, the table verbs
@@ -194,28 +186,23 @@ Where the machine is open the shim's hot verbs are the console's C rather than
 Lua closures: the whole memory set above, `all`/`foreach` and the table verbs,
 the number verbs (`flr`, `abs`, `min`, `max`, `mid`, `sgn`, `sin`, `cos`,
 `atan2`), the 16.16 bit verbs, `mget`/`mset`/`fget`/`fset`, `btn`/`btnp` with
-their latch, and since 2026-09-02 **every draw verb** — `pset` `pget` `line`
-`rect` `rectfill` `circ` `circfill` `oval` `ovalfill` `spr` `sspr` `map`
-`print` `camera` `color` `cursor` `pal` `palt` `fillp` `sget` `sset`,
-and the nine native bit operators above. A shim
-draw verb was four to six binding calls (`fl()` on each coordinate, `fl()`
-again inside the colour, a fill-pattern check, then the console verb) where
-PICO-8 costs one, and a binding call has a fixed floor whatever sits on the
-other side of it; each is ONE now, with p8's coercions, the pen, the fill
-pattern and the palettes resolved in C from the machine's own bytes. That is
-also why the state those wrappers kept in Lua moved into the memory map — the
-pen at `0x5f25`, the print cursor at `0x5f26`, the fill pattern at `0x5f31`,
-the screen palette at `0x5f10` — so `peek` and `poke` of those addresses agree
-with the verbs, and a `memcpy` fade into the screen palette now survives the
-frame the console resets draw state on. The shim aliases per verb and keeps
-its Lua for a host that offers none of them; `cls` and `clip` were never
-wrapped, being the console's own already; and `libmoy/test/p8lib.moy` sweeps
-every verb through both lanes over seeded draw states — palette maps,
-transparency, fill patterns, a camera, a clip, fractional and negative
-coordinates, nil arguments — and holds them to one answer. `sqrt`, `ceil` and
-`rnd` stay Lua on purpose — the first two are already bare aliases to `math`,
-and moving `rnd` would move the random sequence a cart's world is built
-from.
+their latch, the nine native bit operators above, and **every draw verb** —
+`pset` `pget` `line` `rect` `rectfill` `circ` `circfill` `oval` `ovalfill`
+`spr` `sspr` `map` `print` `camera` `color` `cursor` `pal` `palt` `fillp`
+`sget` `sset`. Each is ONE binding call, with p8's coercions, the pen, the fill
+pattern and the palettes resolved in C from the machine's own bytes — which is
+why the draw state those verbs need lives in the memory map (the pen at
+`0x5f25`, the print cursor at `0x5f26`, the fill pattern at `0x5f31`, the
+screen palette at `0x5f10`), so `peek` and `poke` of those addresses agree with
+the verbs and a `memcpy` fade into the screen palette survives the frame the
+console resets draw state on. The shim aliases per verb and keeps its Lua for a
+host that offers none of them; `cls` and `clip` are the console's own already
+and were never wrapped; and `libmoy/test/p8lib.moy` sweeps every verb through
+both lanes over seeded draw states — palette maps, transparency, fill patterns,
+a camera, a clip, fractional and negative coordinates, nil arguments — and
+holds them to one answer. `sqrt`, `ceil` and `rnd` stay Lua on purpose — the
+first two are already bare aliases to `math`, and moving `rnd` would move the
+random sequence a cart's world is built from.
 
 ## What is approximated
 
@@ -269,12 +256,12 @@ gate.
 |---|---|---|---|---|---|
 | bunnysurvivor | runs | yes | yes | yes | **plays** — through, menus and all |
 | crimson_night | runs | yes | yes | no | **plays** — its audio drove the sfx-filter work |
-| picooffroad | runs | yes | yes | yes | **plays** — races, with its shadow and its fades, on the reference boards (2026-09) |
-| petal_quest | runs | yes | yes | yes | **plays** from the title into its coroutine cutscenes, with its map (2026-09-02: coroutines, a `btnp` edge visible in `_draw`, `map()`'s whole-map default) |
+| picooffroad | runs | yes | yes | yes | **plays** — races, with its shadow and its fades, on the reference boards |
+| petal_quest | runs | yes | yes | yes | **plays** from the title into its coroutine cutscenes, with its map |
 | dungeons_and_diagrams | gaps | yes | yes | yes | **plays**; its packed-flag bit trick reads right now (16.16 bit verbs) |
-| mossmoss | gaps | yes | yes | yes | **plays** (2026-09-02: integral floats print as integers, its wall keys are `x..","..y`); slows at its later levels on the S3 boards (~20 fps) |
-| lowmemsky | gaps | yes | yes | yes | **plays** (2026-09-03: it reads its buttons as `btn"1"`, the size-coder's string form, which both lanes now coerce the way PICO-8 does) |
-| dank_tomb | gaps | yes | yes | yes | **plays** (2026-09-02: 16.16 bit verbs on its data parser, integer printing, the raw map bytes, the P8SCII outline, the draw-palette bit 7; its lighting loop is one `__moy_lut_span`); 15–22 fps on the T-Deck |
+| mossmoss | gaps | yes | yes | yes | **plays**; slows at its later levels on the S3 boards |
+| lowmemsky | gaps | yes | yes | yes | **plays**; it reads its buttons as `btn"1"`, the size-coder's string form, which both lanes coerce as PICO-8 does |
+| dank_tomb | gaps | yes | yes | yes | **plays**; its lighting loop is one `__moy_lut_span` |
 | terra_1cart | gaps | no | no | no | *(not played — generates its world past the harness's 45 s)* |
 | celeste_classic_2 | refused | yes | yes | yes | starts; nothing moves, only the clouds draw — its levels are px9-packed 16.16 |
 | nimudazus | refused | no | no | no | *(not played — errors decoding its bytecode)* |
@@ -288,12 +275,11 @@ a line in this table.
 
 ## Performance on the reference boards — a dated snapshot
 
-The living ledger is moybyte's issue #66; this is the state on 2026-09-02,
-after the machine took the shim's cost (above), with the carts imported with
-`--zoom`, WiFi off, medians of a scripted run (title · play fps; the last four
-rows 2026-09-03, same images). The S3 boards hold 30 fps on four of the eight,
-sit just under on mossmoss and dank_tomb, and fall to 15–20 in play on the two
-draw-bound ones, picooffroad and crimson_night:
+The living ledger is moybyte's issue #66; this is the state on 2026-09-03, the
+carts imported with `--zoom`, WiFi off, medians of a scripted run (title · play
+fps). The S3 boards hold 30 fps on four of the eight, sit just under on mossmoss
+and dank_tomb, and fall to 15–20 in play on the two draw-bound ones,
+picooffroad and crimson_night:
 
 | cart (rate) | ESP32-P4 | T-Deck (S3) | Guition (S3) |
 |---|---|---|---|
@@ -307,15 +293,9 @@ draw-bound ones, picooffroad and crimson_night:
 | lowmemsky (60) | 62 · 62 | 41 · 43 | 56 · 53 |
 
 Where the S3 frame goes for a 30 fps cart like mossmoss: ~27 ms is the cart's
-own Lua (its entity loops; the shim is under a fifth of it now), ~6 ms the
-console's composite and chrome, ~4 ms its input and loop. The day's levers, in
-the order they paid: the console's scale fold (petal_quest 34 → 62 fps on the
-Guition alone), every draw verb one call into the machine, the shim's helpers in
-C, a small-object pool under the VM's allocator (an IDF malloc is ~9 µs there),
-the VM loop in instruction RAM. What did not pay: more internal SRAM for the
-VM's data (slower), `-O3` on the VM (null). What is left is structural — the
-tick overlapped with the console's frame on the second core — and a Xtensa JIT
-only if the perf counters say instructions, not memory, are the cost.
+own Lua (its entity loops; the shim is under a fifth of it), ~6 ms the console's
+composite and chrome, ~4 ms its input and loop. Which levers paid and which did
+not is #66's; what is left is structural.
 
 A cart that plays on the host and fails only on a board, only sometimes, is
 usually the frame cadence the replayer cannot reproduce (`run_cart --dt`), not

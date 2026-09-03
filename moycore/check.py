@@ -29,11 +29,6 @@ FORBIDDEN_GLOBALS = (
     "load", "loadstring", "dofile", "require", "collectgarbage",
 )
 
-# SPEC.md 6.1 -- provisional, explicitly not part of core 0.2. The batch verbs
-# that used to sit alongside these were deleted from the spec (6.1 records the
-# measurements); a cart using one now names an unknown verb, not a provisional one.
-PROVISIONAL_VERBS = ("tri", "trib", "sspr", "tline")
-
 # SPEC.md 10 defines NO standard extensions. The two that once lived there are
 # core now -- `layers` because 1.1's floor covers a full-screen layer, `view` and
 # `background` because a host that cannot honour them does something truthful
@@ -196,13 +191,11 @@ def check_source(source, manifest, findings):
                              "vendor.feature; if it named a verb that is core now "
                              "(layers, view, background), just drop it" % ext))
 
-    used_prov = [v for v in PROVISIONAL_VERBS if _calls(code, v)]
-    if used_prov:
-        findings.append(("warn", "provisional",
-                         "uses %s, which SPEC.md 6.1 marks provisional and excludes "
-                         "from core 0.2 until its promotion gates clear; semantics "
-                         "are frozen but a host may not implement it yet"
-                         % ", ".join(used_prov)))
+    # No finding for SPEC.md 6.1's tri/trib/sspr/tline: they were provisional
+    # through 0.2 and are core as of 0.3, so warning on them would warn on an
+    # ordinary verb. The batch verbs that once sat beside them were deleted
+    # outright (6.1 records the measurements), so a cart calling one of THOSE
+    # names an unknown verb, which the check above already reports.
 
     # Declared input vs what the script actually reads. Advisory in both
     # directions -- SPEC.md 7.3 makes the field a hint for drawing soft

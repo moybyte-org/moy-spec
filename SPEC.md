@@ -1,11 +1,9 @@
-# moy core 0.2 — the portable console spec
+# moy core 0.3 — the portable console spec
 
-> **Status: DRAFT 0.2.** Everything outside §6.1 is decided and implemented — it
+> **Status: DRAFT 0.3.** Every verb here is decided and implemented — this
 > describes a console that exists and runs games today, not a design sketch.
-> **§6.1 (the 3D verbs) is provisional**: its membership is settled and its
-> semantics are frozen, but nothing in it is core 0.2 until each verb clears the
-> promotion gates stated there. Decisions worth arguing about are collected in
-> §12 with their reasoning.
+> The 3D verbs (§6.1), provisional through 0.2, are core as of 0.3. Decisions
+> worth arguing about are collected in §12 with their reasoning.
 
 **moy** is a virtual console: a fixed raster, a fixed palette, a fixed set of
 drawing, input and audio verbs, and a cart format that packages a game against them.
@@ -380,12 +378,8 @@ The available Lua standard library is exactly:
 
 Absent entirely: `io`, `os`, `debug`, `package`.
 
-`coroutine` sat on the excluded list until 2026-09-02. It came in because it
-never reaches outside the interpreter — it schedules Lua functions and nothing
-else — while every library still excluded touches the host: files, the clock,
-the debugger, the loader. Cutscene and animation code written for the source
-consoles leans on it, and a state machine rewrite was the tax every port paid.
-A cart may rely on it unguarded on every conforming host.
+Every one of those reaches the host; `coroutine` does not, so a cart may rely
+on it unguarded on every conforming host (RATIONALE.md).
 
 This is a **maximum, not a suggestion.** A host that exposes more accumulates carts
 that run nowhere else, which breaks the format for everyone. Conformance tests it.
@@ -403,11 +397,11 @@ would drift from it in the last digits (§11).
 
 **An integral float prints without a fraction.** `tostring(3.0)`, `3.0 .. ""` and
 `print(6 / 2)` all give `3`, where stock Lua 5.4 gives `3.0`. A cart mixes the two
-kinds of number constantly — `flr` returns an integer, `/` a float — and the suffix
-was a wart in every score display and a silent mismatch in every table keyed by
-`x .. "," .. y`. It is one line in the VM's number formatter (`lobject.c`,
-`tostringbuff`), and a host that builds its own Lua carries it. `math.type` still
-tells the two apart; only their spelling agrees. (2026-09-02.)
+kinds constantly — `flr` returns an integer, `/` a float — so the suffix is a wart
+in a score display and a silent mismatch in a table keyed by `x .. "," .. y`. It is
+one line in the VM's number formatter (`lobject.c`, `tostringbuff`), and a host that
+builds its own Lua carries it. `math.type` still tells the two apart; only their
+spelling agrees.
 
 ### 4.3 Errors
 
@@ -454,9 +448,9 @@ the fill pattern `fillp`.
 | `circb(cx, cy, r, c)` | circle **outline** |
 | `oval(x, y, w, h, c)` | **filled** ellipse inscribed in the `w × h` box at `x, y` |
 | `ovalb(x, y, w, h, c)` | ellipse **outline** — the rim of the same fill, pixel for pixel |
-| `tri(x1, y1, x2, y2, x3, y3, c)` | **filled** triangle — provisional, see §6.1 |
-| `trib(x1, y1, x2, y2, x3, y3, c)` | triangle **outline** — provisional, see §6.1 |
-| `tline(x0, y0, x1, y1, u, v, du, dv, ck)` | textured line sampled from the map — provisional, see §6.1 |
+| `tri(x1, y1, x2, y2, x3, y3, c)` | **filled** triangle — see §6.1 |
+| `trib(x1, y1, x2, y2, x3, y3, c)` | triangle **outline** — see §6.1 |
+| `tline(x0, y0, x1, y1, u, v, du, dv, ck)` | textured line sampled from the map — see §6.1 |
 | `print(s, x, y, c)` | text, 8 × 8 fixed font |
 | `camera(x, y)` | offset subsequent draws by `-x, -y`. No args resets. **Returns the previous offset** as two values, so `local px, py = camera(x, y)` … `camera(px, py)` saves and restores |
 | `clip(x, y, w, h)` | clip subsequent draws to a rect. No args resets |
@@ -506,17 +500,20 @@ draws it from its own sheet.
 `font.bin` is MicroPython's `font_petme128_8x8`, MIT-licensed — shipping the
 glyph data means shipping that notice. See `THIRD_PARTY.md`.
 
-### 6.1 The 3D verbs — provisional, membership settled
+### 6.1 The 3D verbs
 
-> **The set is decided; the verbs are provisional.** `tri`, `trib` and `sspr` are
-> implemented in every reference implementation and checked by the suite's
-> provisional scene; `tline` is implemented in the reference library, the C
-> core, and the reference console's native kernels (2026-08), golden-checked,
-> and measured on the floor board. None
-> are core 0.2: each is promoted by the gates at the end of this section, on
+> **Core as of 0.3.** `tri`, `trib`, `sspr` and `tline` are implemented in every
+> reference implementation, have native kernels in the reference console, and
+> are golden-checked by counted scenes of their own. They were provisional through 0.2
+> and were promoted by the gates recorded at the end of this section, on
 > evidence rather than argument. The batch verbs that used to fill this section
 > are **deleted**, and the measurements that deleted them are recorded below so
 > they are not reinvented.
+
+> They are grouped here rather than scattered through §6 and §7.1 because they
+> share a membership rule and a cost profile a cart author should read together
+> before leaning on any of them. The tables in §6 and §7.1 are still where each
+> one's signature lives.
 
 **The membership rule.** A verb belongs here only if, without it, a cart would
 have to run a script loop that scales with **pixels**. Turning many calls into
@@ -589,17 +586,21 @@ interpreted loop. They belong to a vendor extension (§10) or to a compiled-cart
 binding (§15), and a cart author should know that *before* building — which is
 what this table is for.
 
-**Promotion gates.** A provisional verb becomes core when, and only when:
+**The gates they cleared**, kept because they are the bar the next candidate
+verb has to clear too:
 
-1. **It has a native kernel in the reference console.** The floor board runs the
+1. **A native kernel in the reference console.** The floor board runs the
    interpreted fallbacks at 7.5 ms per `tri` and 36 ms per small `sspr` — a verb
-   slower than the frame it draws into cannot honestly be specced. (All four
-   have C kernels in `libmoy/`; the reference console grew native `tri`,
-   `sspr` and `tline` kernels in its 2026-08 build.)
-2. **The suite has golden frames for it** beyond the provisional scene, promoted
-   into the counted set.
-3. **It has a measured row in the reference bench on both reference boards**, so
-   the first cart author to lean on it reads a cost, not a hope.
+   slower than the frame it draws into cannot honestly be specced. All four have
+   C kernels in `libmoy/`, and the reference console grew native `tri`, `sspr`
+   and `tline` kernels in its 2026-08 build.
+2. **Golden frames in the counted set.** The `provisional` and
+   `provisional_tline` scenes were reported but excluded through 0.2; 0.3 counts
+   them, so a host that skips these verbs now fails conformance rather than
+   passing with a gap. §6's `fillp` scene already drew with `tri` and `trib`,
+   which is what made the exclusion untenable.
+3. **A measured row in the reference bench on every reference board**, so the
+   first cart author to lean on one reads a cost, not a hope.
 
 **The deleted verbs, and the measurements that deleted them.** Recorded so the
 next reader does not re-derive them:
@@ -673,7 +674,7 @@ needs a `~= nil` guard.
 | verb | effect |
 |---|---|
 | `spr(n, x, y, colorkey, scale, flip)` | draw sheet tile `n` at `x, y` |
-| `sspr(sx, sy, sw, sh, dx, dy, dw, dh, colorkey, flip)` | stretch a sheet **pixel** region to `dw × dh` at `dx, dy` — provisional, see §6.1 |
+| `sspr(sx, sy, sw, sh, dx, dy, dw, dh, colorkey, flip)` | stretch a sheet **pixel** region to `dw × dh` at `dx, dy` — see §6.1 |
 | `sget(x, y)` | the index at sheet **pixel** `x, y`; `0` off the sheet |
 | `sset(x, y, c)` | write a sheet pixel; `c` is masked to 0–15 (§2.3), a write off the sheet is dropped |
 | `fget(n)` · `fget(n, b)` | tile `n`'s flag byte (§3.5) · whether bit `b` (0–7) of it is set; `0` / `false` off the sheet |
@@ -1035,15 +1036,15 @@ The §4.1 sandbox ceiling is a conformance requirement — a cart that reaches `
 fail on every conforming host — but **the suite does not currently test it**: it asks a
 player for frames, and refusing a cart produces none. Until the runner grows a
 must-fail check, that ceiling is verified per implementation (in this repository, by a
-CI job over the C core) and taken on trust elsewhere. Audio is excluded (§8.3), and so
-are the §6.1 verbs until each clears its promotion gates — the suite exercises them in
-provisional scenes that are reported but not counted.
+CI job over the C core) and taken on trust elsewhere. Audio is excluded (§8.3). The
+§6.1 verbs are counted like any other since 0.3, in the `provisional` and
+`provisional_tline` scenes that keep their names.
 
 ---
 
 ## 12. Decisions worth arguing with
 
-Everything outside §6.1 is decided. These are the ones where a reasonable person would
+Everything in this spec is decided. These are the ones where a reasonable person would
 decide differently. Each entry states the decision and what it costs; where the
 argument runs longer than that, it lives in `RATIONALE.md` under the heading named
 here — and **only** there. A decision argued in two documents is a decision that will
@@ -1052,15 +1053,15 @@ eventually be argued *differently* in two documents.
 ### 12.1 — The screen palette, reversed.
 
 PICO-8 has two palettes: a draw-time remap, and a screen palette applied at flush.
-Until 2026-09-02 this spec had only the first, on the argument that the second
-"doubles the palette state every primitive must consult". That argument was wrong
-on inspection: a screen palette is consulted by **no** primitive — it is one table
-applied once, when the frame is shown — so the per-pixel cost of every verb is
-unchanged and the pass costs a host nothing on the frames that do not set it.
-What it buys is every fade and flash in the PICO-8 catalogue, which the converter
-could not rewrite. **Cost:** a host whose canvas holds direct colour (§1.1's RGB565
-option) must resolve pixels back to indices on the frames that use it — a lookup a
-pixel, and only then. `libmoy` ships that pass as `moy_present`.
+This spec once had only the first, on the argument that the second "doubles the
+palette state every primitive must consult". That argument was wrong: a screen
+palette is consulted by **no** primitive — it is one table applied once, when the
+frame is shown — so the per-pixel cost of every verb is unchanged and the pass
+costs nothing on a frame that does not set it. What it buys is every fade and
+flash in the PICO-8 catalogue, which the converter could not rewrite. **Cost:** a
+host whose canvas holds direct colour (§1.1's RGB565 option) must resolve pixels
+back to indices on the frames that use it — a lookup a pixel, and only then.
+`libmoy` ships that pass as `moy_present`.
 
 ### 12.2 — `btnp` has no autorepeat.
 
@@ -1132,7 +1133,7 @@ already run a cart and cache a frame, so it needs no spec — and it is the wron
 artefact, because an automatic frame is arbitrary and the author should choose how
 their game is represented.
 
-**Cost:** a store built on 0.2 lays out 8 × 8 tile art and will look sparse beside a
+**Cost:** a store built on 0.3 lays out 8 × 8 tile art and will look sparse beside a
 storefront with key art. Right way round: a missing cover is a design problem later, a
 wrong image format is a compatibility problem forever.
 
@@ -1173,4 +1174,4 @@ boundary moves, and it never exposes the **host's**.
 `proposals/wasm-runtime.md` is the rest of it, and the only copy: the measured
 numbers and the doctrine they force, the module shape, the import table, the
 framebuffer contract, the determinism profile, distribution, and the open items.
-Not part of 0.2.
+Not part of 0.3.

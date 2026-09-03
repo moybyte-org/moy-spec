@@ -1,14 +1,13 @@
 # Proposal: PICO-8's memory map for ported carts — measured on glass
 
-**Status: landed 2026-09-02 as `libmoy/src/moy_p8.c`** — an opt-in machine a
-host opens with `moy_p8_open`, not a SPEC.md verb; every libmoy host (the web
-player, the desktop port, `run_cart`, and the reference console once it
-re-vendors) carries it, and `libmoy/test/p8mem.moy` asserts every mirrored
-region both ways. The measurements below are what decided it. It exists because
-`p8-tic80-verb-gaps.md` filed `peek`/`poke`/`memcpy`/`memset` under "by design,
-never", and SPEC.md §15 says reaching pixels through a per-pixel binding is
-"dead at any VM speed" — and both claims were arguments, not measurements. This
-is the measurement, and the design it forces.
+**Status: landed as `libmoy/src/moy_p8.c`** — an opt-in machine a host opens
+with `moy_p8_open`, not a SPEC.md verb; every libmoy host carries it, and
+`libmoy/test/p8mem.moy` asserts every mirrored region both ways. It exists
+because `p8-tic80-verb-gaps.md` filed `peek`/`poke`/`memcpy`/`memset` under "by
+design, never" and SPEC.md §15 calls reaching pixels through a per-pixel
+binding "dead at any VM speed", and both were arguments rather than
+measurements. This file is the measurement that decided otherwise, and the
+design it forces.
 
 ## The question
 
@@ -75,7 +74,7 @@ masher on the sticks. Per-frame means; `max` is the busiest frame.
 | low mem sky | 0 | 0 | screen→sheet copies on level change | 168 `pset`/frame |
 | dungeons & diagrams, petal quest, mossmoss | ≤ 3 total | | | registers: mouse `0x5f2d`, palette persist `0x5f2e`, btnp repeat `0x5f5c` |
 | bunny survivor, crimson night | 0 | 0 | | |
-| dank tomb, nimudazus, terra | — | — | — | not counted: the first two fail to load on the current shim (pre-existing), terra busy-loops in the harness |
+| dank tomb, nimudazus, terra | — | — | — | not counted: the first two failed to load on the shim as it then was, terra busy-loops in the harness |
 
 At the measured floor, the busiest carts' memory traffic per frame:
 
@@ -154,11 +153,9 @@ compiled-tier (§15) problem; a per-pixel effect on a PICO-8 screen is 7.5 ms.
 None of these are memory questions; each is a raster or shim feature, priced
 separately:
 
-- **Screen palette** `0x5f10–0x5f1f` (`pal(c, d, 1)`) is a display-time remap.
-  With an RGB565 canvas it needs a per-frame resolve pass or an indexed canvas
-  for p8 carts; the bytes are remembered, the picture is not remapped.
-- `fillp` patterns, bitplane masks `0x5f5e`, the sheet/screen remaps
-  `0x5f54`/`0x5f55`, the 64×64 mode `0x5f2c`, custom fonts `0x5600`.
+- Bitplane masks `0x5f5e`, the sheet/screen remaps `0x5f54`/`0x5f55`, the
+  64×64 mode `0x5f2c`, custom fonts `0x5600`. (The screen palette `0x5f10` and
+  `fillp` were on this list; both are SPEC.md verbs now.)
 - **sfx/music memory** `0x3100–0x42ff`: the audio model is the imported
   `sounds.json`; a cart that synthesises sound by poking sfx RAM plays the
   imported sound instead.
@@ -193,27 +190,12 @@ carry this tax -- but it is a second VM in the image and its own project.
 
 ## What landing it took
 
-Landed 2026-09-02: the map moved from the reference console's `modmoycore.c`
-prototype into `libmoy/src/moy_p8.c`, so every host that links libmoy has it
-and the "host twin" below is the same C. The list is kept as written:
+The map moved out of the reference console's `modmoycore.c` prototype into
+`libmoy/src/moy_p8.c`, so every host that links libmoy has it and the desktop
+simulator's twin is the same C rather than a second implementation to keep in
+step.
 
-1. **The host twin.** The desktop simulator runs Lua through
-   `runtime/lua_binding` (libmoy's binding compiled for the host), not
-   `moycore`; the same seven verbs belong there or the host and the boards
-   disagree on a poke.
-2. **The browser build** compiles `modmoycore.c` already and inherits it.
-3. **The S3 boards load them.** One measurement session saw all three fail
-   at load on the Guition with Lua's `not enough memory`; a reflash cleared
-   it and every later run loaded (direct through moycore and through the
-   console, both firmwares), so it was the board's state after six 100 KB
-   serial pushes without a reset, not the carts. Recorded so the next reader
-   does not repeat the wrong conclusion this file briefly carried. What the S3
-   does have is the tier's speed: with the sparse-table shim, `celeste2` runs
-   at 40 fps, `pico off road` at 12 and `poom`'s loading screen at 2 — about
-   0.6× the P4 on every row, which is the per-op ratio above.
-4. `PICO8.md`'s gap table (the `peek`/`poke`, `sget`, `sset` rows and the
-   "carts that render by poking video memory" paragraph) and
-   `p8-tic80-verb-gaps.md`'s "never" entry describe the sparse table and would
-   be rewritten.
-5. A conformance shape: the thirteen region checks, run against every host
-   that claims the extension.
+One gotcha from the measurement sessions, because it invites the wrong
+conclusion: three carts once failed at load on the Guition with Lua's `not
+enough memory`, and a reflash cleared it. That was the board's state after six
+100 KB serial pushes with no reset, not the carts.

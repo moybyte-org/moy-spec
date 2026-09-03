@@ -472,7 +472,7 @@ class Canvas:
         ellipse(x, y, x + w - 1, y + h - 1, emit, None)
 
     def tri(self, x1, y1, x2, y2, x3, y3, c):
-        """FILLED triangle. PROVISIONAL -- SPEC.md 6.1, not part of core 0.2."""
+        """FILLED triangle. PROVISIONAL -- SPEC.md 6.1, not part of core 0.3."""
         for sx, sy, sw in tri_spans(x1, y1, x2, y2, x3, y3):
             self.rect(sx, sy, sw, 1, c)
 

@@ -63,6 +63,9 @@ PAGES = {
     "PORTING.md": ("porting.html", "Porting",
                    "Running moy carts on your own hardware: what to build, in "
                    "what order, what to refuse, and how to prove it."),
+    "PICO8.md": ("pico8.html", "PICO-8",
+                 "Importing a PICO-8 cart into moy: what converts, what is "
+                 "approximated, and what cannot come across."),
     "RATIONALE.md": ("rationale.html", "Rationale",
                      "Why each fixed number in the moy console spec is what it is."),
     "THIRD_PARTY.md": ("third-party.html", "Third party",
@@ -74,8 +77,9 @@ PAGES = {
 }
 
 NAV = [("index.html", "Home"), ("guide.html", "Guide"),
-       ("porting.html", "Porting"), ("spec.html", "Spec"),
-       ("rationale.html", "Rationale"), ("index.html#play", "Play")]
+       ("porting.html", "Porting"), ("pico8.html", "PICO-8"),
+       ("spec.html", "Spec"), ("rationale.html", "Rationale"),
+       ("index.html#play", "Play")]
 
 
 # --- the spec's own files drive the site: version, palette, font -------------
@@ -322,7 +326,7 @@ def build(out, demo=True):
     # Pass 1: collect the spec's section numbers, so a reference to one links
     # from any page (including this repo's other documents).
     sections = md.render(src["SPEC.md"], Ctx("spec.html")).sections
-    core = core_version(src["SPEC.md"])          # e.g. "core 0.2"
+    core = core_version(src["SPEC.md"])          # e.g. "core 0.3"
     shell = tmpl("shell.html")
 
     for rel, (name, label, desc) in PAGES.items():

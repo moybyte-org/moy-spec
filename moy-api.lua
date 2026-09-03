@@ -7,7 +7,7 @@
 --
 -- Every verb below is CORE -- it runs on any conforming console -- unless marked:
 --   DRAFT 6.1         -- provisional (SPEC.md 6.1): names/signatures still
---                        moving, NOT core 0.2, may be dropped entirely
+--                        moving, NOT core 0.3, may be dropped entirely
 --
 -- SPEC.md 10 defines no standard extensions, so nothing here needs declaring in
 -- your manifest's "extensions" and no verb below needs an `if v ~= nil` guard.

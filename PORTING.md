@@ -263,16 +263,17 @@ There are **two** suites and you need both:
 
 - **The traces** check a raster, and you can reach them on day one.
 - **`examples/verbs.moy`** checks a *host* — the tick model, input edges, the
-  host-dependent verbs, the provisional ones. It is played and looked at; there
-  is no golden for it.
+  host-dependent verbs, the 3D verbs. It is played and looked at; there is no
+  golden for it.
 
 `conformance/run.py --diff out/` writes difference frames for whatever failed,
 which is how you find the one row you are wrapping.
 
-The §6.1 verbs (`tri`, `trib`, `sspr`, `tline`) get scenes of their own, printed
-with a verdict but left out of the count (§11). They are not part of core 0.2
-and nobody is asking you for them — but that is where a real board was caught
-disagreeing by thousands of pixels, so run them if you implement them.
+The §6.1 verbs (`tri`, `trib`, `sspr`, `tline`) get scenes of their own, and
+those scenes are counted (§11) as of core 0.3 — they were reported but excluded
+before that, so a port written against the older core has them left to do. That pair is
+where a real board was caught disagreeing by thousands of pixels; do not skip
+them because the names still say "provisional".
 
 ### What the suite does not cover
 

@@ -42,4 +42,4 @@ __all__ = [
     "CartError", "make_api", "Input", "palette", "font", "WIDTH", "HEIGHT",
 ]
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"

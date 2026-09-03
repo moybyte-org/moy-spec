@@ -34,7 +34,7 @@ local CORE = {
 -- and kills the first cart that reaches for a coroutine.
 local LIBS = { "math", "string", "table", "coroutine" }
 
--- SPEC.md 6.1 is PROVISIONAL and not part of core 0.2, so its verbs are not
+-- SPEC.md 6.1 is PROVISIONAL and not part of core 0.3, so its verbs are not
 -- required and their absence is not a failure: tri, trib, sspr, tline.
 local PROVISIONAL = { "tri", "trib", "sspr", "tline" }
 

@@ -4,7 +4,7 @@
 -- is a worked example of its verbs), a smoke test for any new implementation
 -- (if every screen looks right, you're close), and the seed of the conformance
 -- suite (pin golden frames of these screens and "conformance" becomes a diff).
--- Screens 1-8 are core 0.2 and this cart declares no extensions -- SPEC.md
+-- Screens 1-8 are core 0.3 and this cart declares no extensions -- SPEC.md
 -- section 10 defines none, so every conforming host must run screen 8's layers
 -- too. Screen 9 exercises SPEC.md section 6.1, which is DRAFT.
 
@@ -167,17 +167,55 @@ local function s_layer()
   print("draw_layer pans it every frame", 20, 42, 7)
 end
 
--- 9 --------------------------------------------- section 6.1 provisional ----
+-- 9 ---------------------------------------------- section 6.1: the 3D verbs --
 local function s_draft()
   cls(0)
-  print("SECTION 6.1 -- PROVISIONAL, not core 0.2", 20, 30, 9)
-  tri(60, 160, 120, 60 + flr(20 * math.sin(t)), 180, 160, 12)  -- filled tri
-  trib(60, 160, 120, 60 + flr(20 * math.sin(t)), 180, 160, 7)  -- outline
+  print("SECTION 6.1 -- THE 3D VERBS", 20, 16, 9)
+  local peak = 40 + flr(20 * math.sin(t))
+  tri(30, 120, 90, peak, 150, 120, 12)          -- filled triangle
+  trib(30, 120, 90, peak, 150, 120, 7)          -- the same three edges, outline
   local w = 24 + flr(20 * math.sin(t * 2))
-  sspr(8, 0, 8, 8, 220, 80, w * 2, w * 2)       -- arbitrary stretch of tile 1
-  print("tri/trib + sspr stretch", 60, 180, 6)
-  print("(tline: in moycore+libmoy; the", 20, 200, 5)
-  print("batch verbs are deleted -- 6.1)", 20, 212, 5)
+  sspr(8, 0, 8, 8, 210, 50, w * 2, w * 2)       -- arbitrary stretch of tile 1
+  print("tri / trib / sspr", 30, 128, 6)
+  -- tline: one textured line per scanline, sampling the MAP as a 128x48
+  -- texture. All four texture arguments are 16.16 fixed point, which is what
+  -- makes every host perform identical arithmetic (6.1).
+  for sy = 156, 228 do
+    local z = 900 / (sy - 154)                  -- perspective: near rows step less
+    local du = flr(z * 65536 / 140)             -- texels per screen pixel
+    tline(16, sy, 304, sy,
+          flr((t * 30 - z) * 65536), flr(z * 65536), du, 0, -1)
+  end
+  print("tline: the map as a texture", 20, 142, 6)
+end
+
+-- 10 ------------------------------------ the sheet, the tile flags, view ----
+-- No cls(): this screen declares a BACKGROUND instead (see enter() below).
+local function s_sheet()
+  print("SHEET + FLAGS + VIEW", 20, 16, 9)
+
+  -- sget reads a sheet pixel; sset writes one, and what you write is what the
+  -- next spr() draws. The scene puts its edit back, so a second pass through
+  -- this screen draws exactly the same picture.
+  local was = sget(18, 2)
+  sset(18, 2, 8)
+  spr(2, 30, 34, -1, 4)                         -- tile 2 with the edited pixel
+  sset(18, 2, was)
+  spr(2, 80, 34, -1, 4)                         -- the same tile, put back
+  print("sget/sset: edited | restored", 30, 70, 6)
+
+  -- fget reads a tile's flag byte (flags.moyflags, SPEC 3.5); map(..., layers)
+  -- draws only the cells whose TILE carries a bit of the mask, which is how one
+  -- map is drawn in strata.
+  print("fget(1)=" .. fget(1) .. "  fget(2,1)=" .. tostring(fget(2, 1)), 20, 88, 7)
+  map(0, 0, 16, 6, 20, 104, -1, 1, 1)           -- mask 1: the border tiles only
+  map(0, 0, 16, 6, 20, 160, -1, 1, 2)           -- mask 2: the interior dots only
+  print("map(..., 1)  then  map(..., 2)", 20, 152, 6)
+
+  -- fset writes a flag while the cart runs, and the next map() follows it.
+  fset(2, 2, flr(t) % 2 == 0)
+  map(0, 0, 16, 6, 190, 160, -1, 1, 4)          -- mask 4: blinks with the fset
+  print("fset -> map(..., 4)", 190, 152, 5)
 end
 
 local screens = {
@@ -189,17 +227,33 @@ local screens = {
   { "audio: beep sfx volume", s_audio },
   { "system: time rnd cfg pmem", s_system },
   { "layers: the scroller pattern", s_layer },
-  { "6.1 draft: tri sspr", s_draft },
+  { "6.1: tri trib sspr tline", s_draft },
+  { "sheet, flags, view", s_sheet },
 }
+
+-- `background` and `view` are DECLARATIONS, not per-frame calls (SPEC 6), so
+-- they are said once when the screen changes rather than inside _draw. `view()`
+-- with no arguments restores the whole canvas; `background(c)` is the `cls` you
+-- say once, and the screen that uses it does not clear.
+local function enter(n)
+  if screens[n][2] == s_sheet then
+    background(1)                               -- a backdrop, repainted for us
+    view(300, 220)                              -- and a slightly inset viewport
+  else
+    background(0)
+    view()
+  end
+end
 
 function _init()
   pmem(0, pmem(0) + 1)                          -- count runs, persistently
+  enter(screen)
 end
 
 function _update(dt)
   t = t + dt
-  if btnp("right") then screen = screen % #screens + 1 end
-  if btnp("left") then screen = (screen - 2) % #screens + 1 end
+  if btnp("right") then screen = screen % #screens + 1 enter(screen) end
+  if btnp("left") then screen = (screen - 2) % #screens + 1 enter(screen) end
 end
 
 function _draw()

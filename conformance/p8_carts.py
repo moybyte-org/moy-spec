@@ -12,18 +12,15 @@ for ten days. libmoy is in-tree for this reason (see .github/workflows/
 libmoy.yml) and the porter deserves the same treatment: red on the same push.
 
 It is also the VM the porter's output has to survive: libmoy builds Lua with
-LUA_32BITS, so lua_Number is a single-precision float and `0xffff.fffe` is
-already 65536.0 by the time a cart can see it. A faithful 16.16 fixed-point
-implementation of p8's bitwise operators was written on 2026-09-01 and returns
-0 here.
+LUA_32BITS, so lua_Number is a single-precision float. A 16.16 value needs 32
+bits of mantissa and has 24 here -- which is why the porter spells a fractional
+hex literal as its bit pattern instead of letting the VM read it, and why the
+bit verbs are exact only up to that width.
 
-That is NOT because hosts run a different Lua -- moybyte's host runs this
-binding over this vendored Lua, LUA_32BITS and all, and deleted its lupa lane
-in 2026-08-14 precisely so it would. What actually happened is worse and worth
-recording: the fixed-point work was validated in a throwaway `lupa` script,
-which is 64-bit, and lupa is the second embedding this project already threw
-out for exactly that reason. The lesson is not "test upstream", it is "do not
-check numeric semantics on a Lua nobody ships".
+Recorded because it cost a round: that arithmetic was validated in a throwaway
+`lupa` script, which is 64-bit, and lupa is the second embedding this project
+threw out for exactly that reason. Do not check numeric semantics on a Lua
+nobody ships.
 
 A RATCHET, like the goldens: `p8_carts_expected.json` records which carts run
 today, so a known failure does not break the build and a REGRESSION does. A
