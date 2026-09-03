@@ -923,12 +923,11 @@ local function L_spal_set(c0, c1) L_spal[c0] = c1 m_pal(c0, c1, 1) end
 local function L_pal(a, b, p)
   if a == nil then m_pal() L_spal = {} L_palt_default() return end
   if type(a) == "table" then
-    local shift = (a[0] ~= nil) and 0 or 1
     local screen = (b == 1)
     for k, v in pairs(a) do
       if type(k) == "number" and type(v) == "number" then
-        if screen then L_spal_set(L_fl(k) - shift, L_scol(v))
-        else m_pal(L_fl(k) - shift, L_pcol(v)) end
+        if screen then L_spal_set(L_fl(k) & 15, L_scol(v))
+        else m_pal(L_fl(k) & 15, L_pcol(v)) end
       end
     end
     return
