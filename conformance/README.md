@@ -21,9 +21,10 @@ once per scene:
 - `{cart}` — the cart folder to run
 - `{out}` — where to write the frame
 
-Write **either** a 76800-byte raw dump of the frame **as shown** -- the canvas
-through the screen palette (SPEC.md 6), one byte per pixel, palette indices,
-row-major from the top-left -- **or** an 8-bit indexed PNG of the same. The
+Write **either** a 76800-byte raw dump of the canvas -- one byte per pixel,
+palette indices, row-major from the top-left; since both palettes compose as
+pixels are drawn (SPEC.md 6) this is also the frame as shown -- **or** an 8-bit
+indexed PNG of the same. The
 raw form exists so a C or firmware implementation needs no image library at all
 — `fwrite(framebuffer, 1, 320*240, f)` is a conforming adapter.
 
@@ -89,7 +90,7 @@ golden/hashes.json   sha256 per frame, plus the suite manifest
 | `oval` | `oval` / `ovalb` at every box shape the walk branches on, the tiny sizes, zero and negative sizes, edges, camera, clip, pal — and the outline over its own fill, which must ring it exactly |
 | `fillp` | holes untouched vs. holes in a second colour, the cell's phase under a moved camera and a clip, all nine shape verbs — and `pix`, `print`, a sprite and a `map` drawn with a pattern live, which must come out solid |
 | `flags` | `map(..., layers)` against tile flags from `flags.moyflags`, an `fset` that changes the next map, a mask nobody carries, under scale and camera |
-| `screen_pal` | `pal(c0, c1, 1)` moves pixels already drawn, chains after the draw palette, `pal()` resets both; a player that dumps its canvas instead of its shown frame fails here |
+| `screen_pal` | `pal(c0, c1, 1)` composes after the draw palette for pixels drawn from then on, a pixel already drawn does NOT move, `pal()` resets both; a player that applies it as a pass over the finished frame fails here |
 | `sheet` | `sset` then `spr`/`sspr`/`map` of the edited tile, the 0–15 mask, writes off the sheet; the scene restores its own edits first, since a second frame sees the first frame's sheet |
 | `provisional` | SPEC.md 6.1's `tri` / `trib` / `sspr`. Counted since core 0.3; the name is kept because implementers cite it |
 | `provisional_tline` | SPEC.md 6.1's `tline`: the map sampled through 16.16 texture steps. Counted since core 0.3 — and the scene that caught a real board failing by 2773 pixels (below) |

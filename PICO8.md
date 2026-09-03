@@ -160,7 +160,9 @@ answers a float.
 `sin`/`cos` with their turn-and-flip semantics, the table verbs
 (`add`/`del`/`foreach`/`all`/`count`), `btn`/`btnp` with PICO-8's auto-repeat,
 `pal()` in every form including the table form and the **screen palette**
-(`pal(c, d, 1)`, kept across frames as PICO-8 keeps it), `palt()` as real
+(`pal(c, d, 1)`, kept across frames as PICO-8 keeps it -- and applied as pixels
+are drawn, not to the finished frame, so a fade over a frame the cart does not
+redraw stays put; SPEC.md 12.1), `palt()` as real
 transparency state (so `palt(0, false)` draws black), `fillp()` with its
 two-nibble colours and its transparency bit, `oval`/`ovalfill`, `rnd()`
 including the table form, string indexing, coroutines (`cocreate`, `coresume`,

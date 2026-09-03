@@ -454,18 +454,21 @@ the fill pattern `fillp`.
 | `print(s, x, y, c)` | text, 8 × 8 fixed font |
 | `camera(x, y)` | offset subsequent draws by `-x, -y`. No args resets. **Returns the previous offset** as two values, so `local px, py = camera(x, y)` … `camera(px, py)` saves and restores |
 | `clip(x, y, w, h)` | clip subsequent draws to a rect. No args resets |
-| `pal(c0, c1)` · `pal(c0, c1, 1)` | draw color `c0` as `c1` · with a third argument of `1`, **show** `c0` as `c1`: the screen palette. No args resets both |
+| `pal(c0, c1)` · `pal(c0, c1, 1)` | draw color `c0` as `c1` · with a third argument of `1`, **show** `c0` as `c1`: the screen palette, composed after the first. No args resets both |
 | `palt(c, on)` | mark index `c` transparent. No args resets |
 | `fillp(p, c)` | a 4 × 4 fill pattern for the shape verbs: a set bit is a hole, a hole takes colour `c` or is left alone when `c` is absent or negative. No args resets to solid |
 
-`pal(c0, c1)` is **draw-time** — it remaps colors as they are written to the canvas,
-and a pixel already there does not move. `pal(c0, c1, 1)` is the **screen palette**:
-applied to every pixel when the frame is shown, after all drawing, so it moves what is
-already drawn — a fade, a flash, a whole-scene recolour, in sixteen calls and no
-redraw. The two chain: a pixel written as `c0` lands as `pal[c0]` and is shown as
-`spal[pal[c0]]`. Both reset with `pal()`, and both reset at the start of every frame
+`pal(c0, c1)` is the **draw palette** — it remaps colors as they are written to the
+canvas, and a pixel already there does not move. `pal(c0, c1, 1)` is the **screen
+palette**: a second remap **composed after** the first, so a pixel written as `c0`
+lands as `spal[pal[c0]]`. It applies as pixels are drawn, like the first — **not** to
+pixels already on the canvas — so a whole-frame recolour is set *before* the frame's
+`cls`, and a fade redraws each frame under that frame's table. The two exist separately
+because they compose: `pal(2, 8)` with `pal(8, 11, 1)` draws a 2 as 11 *and* a real 8
+as 11, which one table cannot say — and it is the shape every PICO-8 fade and secret
+colour already has. Both reset with `pal()`, and both reset at the start of every frame
 like all draw state. A layer's pixels are copied as they are; the third argument does
-nothing on a layer. (§12.1 records why this was once absent.)
+nothing on a layer. (§12.1 records why it composes rather than applying at flush.)
 
 **`fillp(p, c)`** is the dither. `p` is sixteen bits read as a 4 × 4 cell, row by
 row from the top-left, bit 15 first; a **set bit is a hole**. The cell is anchored to
@@ -1011,8 +1014,9 @@ networked carts and there is something real to generalise from.
 ## 11. Conformance
 
 An implementation conforms when it runs the conformance suite and produces
-**pixel-identical** output. The output is the frame **as shown**: the canvas passed
-through the screen palette (§6), which is what a host flushes and what a golden is.
+**pixel-identical** output. The output is the canvas — one palette index per pixel —
+which, because both palettes compose as pixels are drawn (§6), is also the frame as
+shown: what a host flushes and what a golden is.
 
 The suite is a set of carts, each exercising one area — primitives, sprite flips and
 scales, clip and camera interaction, palette remaps, text, map blits, input edges —
@@ -1050,18 +1054,26 @@ argument runs longer than that, it lives in `RATIONALE.md` under the heading nam
 here — and **only** there. A decision argued in two documents is a decision that will
 eventually be argued *differently* in two documents.
 
-### 12.1 — The screen palette, reversed.
+### 12.1 — The screen palette, reversed — then composed.
 
 PICO-8 has two palettes: a draw-time remap, and a screen palette applied at flush.
 This spec once had only the first, on the argument that the second "doubles the
-palette state every primitive must consult". That argument was wrong: a screen
-palette is consulted by **no** primitive — it is one table applied once, when the
-frame is shown — so the per-pixel cost of every verb is unchanged and the pass
-costs nothing on a frame that does not set it. What it buys is every fade and
-flash in the PICO-8 catalogue, which the converter could not rewrite. **Cost:** a
-host whose canvas holds direct colour (§1.1's RGB565 option) must resolve pixels
-back to indices on the frames that use it — a lookup a pixel, and only then.
-`libmoy` ships that pass as `moy_present`.
+palette state every primitive must consult". That argument was wrong — a second
+table is consulted by no primitive — and the verb was added, as PICO-8 has it: a
+pass over the finished frame. That was wrong too, for the reason the first argument
+missed. On an indexed canvas the pass is a byte lookup. On a direct-colour canvas
+(§1.1's RGB565 option) it is a **reverse** lookup — which index was this word? — and
+measured on the reference console's three boards it cost roughly **half a frame**
+(moybyte #218: 8.3–10.9 ms, on hosts running 42–62 fps), with locality and the
+hash both ruled out as the cause. A verb the reference console cannot afford is not
+in the spec, so the screen palette now **composes**: `store[i] = wire[spal[pal[i]]]`,
+rebuilt per call, and a pixel costs one lookup whether a cart set neither palette
+or both. **Cost:** a pixel already on the canvas does not move. A fade over a frame
+that is not redrawn, and a remap issued after drawing within a frame, behave as the
+draw palette would. Of the twelve carts in the PICO-8 conformance corpus, five hold
+a screen palette, and every one sets it before it draws — the machine restores it
+from `0x5f10` at the top of each frame, ahead of any cart code — so the idiom the
+verb exists for is unchanged.
 
 ### 12.2 — `btnp` has no autorepeat.
 

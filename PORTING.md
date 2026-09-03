@@ -86,9 +86,11 @@ Two that catch nearly everyone:
 - **`clip` is screen space and applies after `camera`.** An implementation that
   clips in world space passes both features tested separately and fails
   `camera_clip`.
-- **`pal` is draw time; `pal(c0, c1, 1)` is show time.** The draw remap must
-  not disturb pixels already on the canvas; the screen palette must move them
-  all, and the frame you dump for conformance is the shown one (§6, §11).
+- **Both palettes are draw time, and they compose.** `pal(c0, c1, 1)` is a
+  second remap applied after the first as pixels are written; neither moves a
+  pixel already on the canvas (§6, §12.1). A port that applies the screen
+  palette as a pass over the finished frame fails `screen_pal` -- and, on a
+  direct-colour canvas, would have paid half a frame for it.
 
 ### 2. The palette and the font are data — generate, never transcribe
 

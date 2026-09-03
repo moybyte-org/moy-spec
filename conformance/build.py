@@ -77,9 +77,9 @@ NOTES = {
              "the cells whose tile shares a flag bit with the mask; fset\n"
              "changes that on the next map(); a mask against no flags draws\n"
              "nothing. The scene restores what it edits first.",
-    "screen_pal": "The screen palette (SPEC.md 6, 12.1): pal(c0, c1, 1) moves\n"
-                  "pixels ALREADY drawn, chains after the draw palette, and\n"
-                  "pal() resets both. The golden is the frame as shown.",
+    "screen_pal": "The screen palette (SPEC.md 6, 12.1): pal(c0, c1, 1) composes\n"
+                  "after the draw palette for pixels drawn from then on, and a\n"
+                  "pixel already on the canvas does not move; pal() resets both.",
     "provisional": "SPEC.md 6.1 verbs. NOT part of conformance -- SPEC.md 11\n"
                    "excludes 6.1 until its promotion gates clear. Kept so the\n"
                    "golden already exists when they do.",

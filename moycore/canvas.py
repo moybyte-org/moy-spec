@@ -167,6 +167,7 @@ class Canvas:
         self._pal_map = bytearray(_PAL_IDENTITY)
         self._palt = bytearray(_PALT_OPAQUE)
         self._spal = bytearray(_PAL_IDENTITY)
+        self._store = bytearray(_PAL_IDENTITY)   # spal[pal[i]]: what i lands as
         self.reset_state()
 
     # -- draw state (SPEC.md 6) ---------------------------------------------
@@ -187,6 +188,7 @@ class Canvas:
         self._clip_y1 = self.h
         self._pal_map[:] = _PAL_IDENTITY
         self._spal[:] = _PAL_IDENTITY
+        self._store[:] = _PAL_IDENTITY
         self._palt[:] = _PALT_OPAQUE
         self._fillp = 0
         self._fillp_col = -1
@@ -226,26 +228,29 @@ class Canvas:
     def pal(self, c0=None, c1=None, p=0):
         """SPEC.md 6: draw colour c0 as c1. No args resets BOTH palettes.
 
-        p == 0 (the default) is the DRAW palette: it remaps indices as they are
-        written to the canvas, so pixels already on it do not change, and it
-        applies to primitives and sprite pixels alike. p == 1 is the SCREEN
-        palette (SPEC.md 12.1): applied by present() to every pixel when the
-        frame is shown, so it moves what is already drawn."""
+        p == 0 (the default) is the DRAW palette; p == 1 is the SCREEN
+        palette, a second remap composed AFTER it. Both apply as pixels are
+        written -- a pixel already on the canvas does not move under either
+        (SPEC.md 12.1) -- so what the raster reads is their composition,
+        `_store`, rebuilt here per call and never per pixel."""
         if c0 is None:
             self._pal_map[:] = _PAL_IDENTITY
             self._spal[:] = _PAL_IDENTITY
-            return
-        if int(p) == 1:
+        elif int(p) == 1:
             self._spal[int(c0) & 63] = int(c1) & 63
-            return
-        self._pal_map[int(c0) & 63] = int(c1) & 63
+        else:
+            self._pal_map[int(c0) & 63] = int(c1) & 63
+        self._store_rebuild()
+
+    def _store_rebuild(self):
+        sp = self._spal
+        self._store[:] = bytes(sp[v] for v in self._pal_map)
 
     def present(self):
-        """The frame as SHOWN: the canvas through the screen palette (SPEC.md
-        6, 12.1). What a host flushes and what a golden frame is."""
-        if self._spal == _PAL_IDENTITY:
-            return bytes(self.buf)
-        return bytes(self.buf).translate(bytes(self._spal) + bytes(range(64, 256)))
+        """The canvas IS the frame as shown (SPEC.md 6, 11): kept as a name
+        so a host or harness that asked for "the shown frame" reads the same
+        bytes, not a second buffer."""
+        return bytes(self.buf)
 
     def palt(self, c=None, on=None):
         """SPEC.md 6: mark index c transparent for sprite blits. No args resets
@@ -286,7 +291,7 @@ class Canvas:
         if not (self._clip_x0 <= x < self._clip_x1
                 and self._clip_y0 <= y < self._clip_y1):
             return
-        self.buf[y * self.w + x] = self._pal_map[ci & 63]
+        self.buf[y * self.w + x] = self._store[ci & 63]
 
     def _put_shape(self, x, y, ci):
         """_put for the shape verbs: the fill pattern applies here."""
@@ -299,7 +304,7 @@ class Canvas:
             if self._fillp_col < 0:
                 return
             ci = self._fillp_col
-        self.buf[y * self.w + x] = self._pal_map[ci & 63]
+        self.buf[y * self.w + x] = self._store[ci & 63]
 
     def cls(self, c=0):
         """Clear to colour c.
@@ -308,7 +313,7 @@ class Canvas:
         does honour pal, so a cart running a global recolour clears to the
         remapped colour rather than punching an unremapped hole in its own
         effect."""
-        self.buf[:] = bytes((self._pal_map[int(c) & 63],)) * (self.w * self.h)
+        self.buf[:] = bytes((self._store[int(c) & 63],)) * (self.w * self.h)
 
     def pix(self, x, y, c=None):
         """Read the index at (x, y) with two args, write it with three.
@@ -325,7 +330,7 @@ class Canvas:
         if not (self._clip_x0 <= x < self._clip_x1
                 and self._clip_y0 <= y < self._clip_y1):
             return None
-        self.buf[y * self.w + x] = self._pal_map[int(c) & 63]
+        self.buf[y * self.w + x] = self._store[int(c) & 63]
         return None
 
     def line(self, x0, y0, x1, y1, c):
@@ -364,7 +369,7 @@ class Canvas:
         y1 = min(self._clip_y1, y + int(h))
         if x1 <= x0 or y1 <= y0:
             return
-        row = bytes((self._pal_map[int(c) & 63],)) * (x1 - x0)
+        row = bytes((self._store[int(c) & 63],)) * (x1 - x0)
         buf = self.buf
         width = self.w
         n = x1 - x0
@@ -388,9 +393,9 @@ class Canvas:
         y1 = min(self._clip_y1, y + int(h))
         if x1 <= x0 or y1 <= y0:
             return
-        on = self._pal_map[int(c) & 63]
+        on = self._store[int(c) & 63]
         hole = self._fillp_col
-        off = self._pal_map[hole] if hole >= 0 else None
+        off = self._store[hole] if hole >= 0 else None
         pat = self._fillp
         buf = self.buf
         width = self.w

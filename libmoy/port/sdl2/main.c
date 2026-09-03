@@ -47,7 +47,6 @@
 #include "moy_audio.h"
 
 static uint8_t  frame[MOY_W * MOY_H];
-static uint8_t  shown[MOY_W * MOY_H];
 static uint8_t  sheet_pix[MOY_SHEET_W * MOY_SHEET_H];
 static uint8_t  map_cells[MOY_MAP_MAX * MOY_MAP_MAX];
 static uint32_t pixels[MOY_W * MOY_H];          /* ARGB8888 for the texture */
@@ -715,13 +714,12 @@ int main(int argc, char **argv)
                 fprintf(stderr, "moy-play: cart stopped -- fix it and save\n");
         }
 
-        {   /* pixels out: the one place the console's colours become anyone's
-             * -- through the screen palette first (SPEC.md 6 / 12.1). */
+        {   /* pixels out: the one place the console's colours become anyone's.
+             * The canvas already holds the frame as shown (SPEC.md 6). */
             const uint8_t *pal = moy_palette_default;
-            const uint8_t *px = moy_present(&canvas, shown) ? shown : frame;
             int p;
             for (p = 0; p < cw * ch; p++) {
-                const uint8_t *e = pal + (size_t)px[p] * 3;
+                const uint8_t *e = pal + (size_t)frame[p] * 3;
                 pixels[p] = 0xFF000000u | ((uint32_t)e[0] << 16) | ((uint32_t)e[1] << 8) | e[2];
             }
         }

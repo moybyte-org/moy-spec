@@ -244,7 +244,6 @@ done:
 /* ----------------------------------------------------------- replay ----- */
 
 static moy_pixel frame[MOY_W * MOY_H];
-static moy_pixel shown[MOY_W * MOY_H];
 
 int main(int argc, char **argv)
 {
@@ -340,10 +339,6 @@ int main(int argc, char **argv)
         } while (eat(','));
         expect(']');
     }
-
-    /* A golden is the frame as SHOWN (SPEC.md 11): through the screen
-     * palette, when the trace set one. */
-    if (moy_present(&c, shown)) memcpy(frame, shown, sizeof frame);
 
     f = fopen(out_path, "wb");
     if (!f) { perror(out_path); return 2; }
