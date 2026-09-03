@@ -5,6 +5,11 @@ celeste.moy/
 *.p8
 *.p8.png
 
+# ...but this repository's OWN p8 fixtures are source, not somebody's cart, and
+# `make p8-test` cannot run without them. They passed locally and failed on CI
+# for two weeks because the rule above is silent about what it swallows.
+!libmoy/test/*.p8
+
 __pycache__/
 .idea/
 .vscode/
