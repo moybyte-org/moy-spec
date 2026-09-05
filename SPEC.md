@@ -413,18 +413,26 @@ crashed cart running or silently swallow the error.
 
 ## 5. Tick
 
-The console ticks at **30 Hz**. A cart may declare `"fps": 60`; hosts that cannot
-sustain 60 for that cart fall back to 30 rather than running at an unstable rate in
-between.
+A cart's logic runs at its **declared rate**: **30 Hz**, or 60 Hz when its manifest
+says `"fps": 60`. The host calls `_update(dt)` once per tick at that rate and never
+reduces it — a cart that counts frames plays at the wrong speed the moment the rate
+moves, so a slower tick is a slower game, not a degraded one. `dt` is the tick
+period (1/30 or 1/60), so movement written as `speed * dt` is correct at either
+rate.
 
-`_update(dt)` and `_draw()` are each called once per tick, in that order.
+A host that falls behind catches up by running extra ticks in one frame, but only
+while a tick costs under half the period — PICO-8's own line for running two ticks
+per draw. Past that line a late frame slows time rather than snowballing, and debt
+beyond one period is written off. A host reports that; it does not hide it by
+lowering the rate.
 
-A host under load MAY skip `_draw()` on alternating ticks while continuing to call
-`_update(dt)` at the full rate — logic stays real-time, motion halves. This is the
-only sanctioned form of degradation.
-
-`dt` always reflects real elapsed time, so movement written as `speed * dt` is correct
-at any rate.
+`_draw()` is called after `_update(dt)`, and never before the first `_update` has
+run. A host under load MAY draw on an integer divisor of the tick — every second
+tick, every third — while continuing to call `_update(dt)` at the full rate: logic
+stays real-time and motion coarsens evenly. This is the only sanctioned form of
+degradation; drawing three ticks in four is uneven delivery and is not it. A 60 fps
+cart on a host that can draw 30 therefore runs two ticks per draw, which is
+PICO-8's own degraded mode.
 
 ---
 
@@ -731,11 +739,14 @@ the same physical controls.
 | verb | returns |
 |---|---|
 | `btn(name, player)` | true while held; `player` defaults to 0 |
-| `btnp(name, player)` | true on the frame it was pressed (released → held edge) |
+| `btnp(name, player)` | true on the tick it was pressed (released → held edge) |
 | `players()` | how many controllers are connected. **Always ≥ 1** |
 
 `btnp` fires **once per physical press, with no autorepeat** (§12.2). A cart wanting
-repeat implements its own timer.
+repeat implements its own timer. The edge is per **tick** (§5): a press that lands
+between two ticks is held until the next tick takes it, and a second tick run in
+the same host frame does not see it again — one press is one edge at any pair of
+host and cart rates, and the edge stays visible through that tick's `_draw()`.
 
 **Player 0 is always this console's own controls**, so a single-player cart never
 passes the argument and never notices this exists. Higher indices read additional

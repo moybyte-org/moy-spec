@@ -1,21 +1,19 @@
-"""_draw does not run before the first _update tick -- and does run without one.
+"""_draw runs after _update on every tick, and runs without one.
 
     python3 libmoy/test/p8_first_draw.py        (`make -C libmoy p8-test`)
 
-The shim paces the cart itself (SPEC.md 5's sanctioned degradation), so a
-console frame SHORTER than one cart period leaves it with nothing to draw yet.
-It used to draw anyway: `ticked` started true, so the very first _draw ran with
-no update behind it. PICO-8 never does that, and a cart may rely on it --
-dank_tomb creates its player light in _init and only positions it in the first
-update, so its _draw indexed a nil position on a board whose first frame
-arrived inside 1/60s. Four runs in five on the P4, eight in nine on a T-Deck;
-never here, because run_cart's frame was a fixed 1/30 and always ticked first.
+The host paces the cart (SPEC.md 5): one _update call is one tick, and _draw
+never runs before the first one. The shim keeps a guard for that, and a cart
+may rely on it -- dank_tomb creates its player light in _init and only
+positions it in the first update, so a draw with no tick behind it indexed a
+nil position. run_cart calls update then draw on every frame whatever --dt it
+is handed, so at a frame period far shorter than the cart's the tick still
+comes first and the frame carries what the update placed.
 
-Two carts and two frame periods, which is what makes it a measurement:
+Two carts:
 
-  p8_first_draw.p8   an _update60 cart whose _draw needs the update's state.
-                     At dt = 1/125 nothing has ticked, so nothing may be
-                     drawn; at dt = 1/30 two ticks have run and it draws.
+  p8_first_draw.p8   an _update60 cart whose _draw needs the update's state:
+                     it draws at dt = 1/125 and at dt = 1/30 alike.
   p8_draw_only.p8    no update function at all -- there is no tick to wait
                      for, so it draws on the first frame like PICO-8's does.
 
@@ -60,21 +58,19 @@ def frame(cart, dt, frames=1):
 
 def main():
     cart = port("p8_first_draw")
-    early = frame(cart, 1.0 / 125.0)
-    if set(early) != {0}:
-        raise SystemExit("p8 first draw: a frame shorter than one cart period "
-                         "ticked nothing, and _draw ran anyway (%d colours)"
-                         % len(set(early)))
-    late = frame(cart, 1.0 / 30.0)
-    if 7 not in set(late):
-        raise SystemExit("p8 first draw: a frame long enough to tick drew "
-                         "nothing (colours %s)" % sorted(set(late)))
+    for dt in (1.0 / 125.0, 1.0 / 30.0):
+        got = frame(cart, dt)
+        if 7 not in set(got):
+            raise SystemExit("p8 first draw: at dt=%s the first frame drew "
+                             "nothing the update placed (colours %s)"
+                             % (dt, sorted(set(got))))
 
     only = frame(port("p8_draw_only"), 1.0 / 125.0)
     if set(only) != {7}:
         raise SystemExit("p8 first draw: a cart with no update must draw every "
                          "frame, and drew %s" % sorted(set(only)))
-    print("p8 first draw: _draw waits for the first tick, and draws without one")
+    print("p8 first draw: the tick comes first at every frame period, and a "
+          "cart with no update draws without one")
     return 0
 
 

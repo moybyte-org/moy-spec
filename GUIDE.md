@@ -74,9 +74,9 @@ All three are optional and the console calls them in that order. The console
 runs at 30 ticks a second unless the manifest asks for 60 (§5).
 
 **Write motion as `speed * dt`, never as `speed`.** A host that falls behind
-is allowed to skip draws while still updating at the full rate, and a host may
-be running you at either tick rate. Multiplying by `dt` is what makes both of
-those invisible in your game instead of a speed change.
+is allowed to draw less often while still updating at the full rate, and a
+host may be running you at either tick rate. Multiplying by `dt` is what makes
+both of those invisible in your game instead of a speed change.
 
 ### 3. Draw
 
@@ -364,9 +364,9 @@ animation phase and cooldowns that must not drift. `dt` is what you want for
 movement. Mixing them up produces a game that is subtly wrong at one of the two
 tick rates.
 
-Declaring `"fps": 60` is a request, not a guarantee — a host that cannot hold
-60 for your cart runs it at 30 rather than somewhere unstable in between (§5).
-Anything that only feels right at 60 will feel wrong somewhere.
+Declaring `"fps": 60` sets your tick, and a host holds it — one that cannot
+also draw 60 times a second draws every second tick instead (§5). Anything
+that only feels right drawn at 60 will feel wrong somewhere.
 
 A Lua error ends the cart and the host reports it with your line number (§4.3).
 There is no `pcall`-and-limp-on culture here; the console would rather stop.

@@ -119,11 +119,11 @@ at 16–31, so `pal(c, 128 + i)` lands on the real colour.
 | `_init` / `_update` / `_update60` / `_draw` | `p8_*`, paced by the shim |
 
 A cart defining `_update60` is declared as a 60 fps cart in its manifest, so
-the host drives it at the rate it was written for. The shim paces the cart
-from inside, so a console frame shorter than one cart period ticks nothing —
-and `_draw` waits, because PICO-8 never draws before its first update and
-carts rely on it. A cart with no update function draws every frame, as
-PICO-8's does.
+the host drives it at the rate it was written for: one `_update` call from the
+host is one PICO-8 tick, and the host's own scheduler places those ticks (§5).
+The shim keeps `_draw` from running before the first tick, because PICO-8 never
+draws before its first update and carts rely on it. A cart with no update
+function draws every frame, as PICO-8's does.
 
 One whole STATEMENT is rewritten rather than a token: `for a = i, j do
 poke(a, peek(lut | peek(a))) end`, the lookup-table span a cart lights or
@@ -216,7 +216,7 @@ verdict names them per cart.
 | `menuitem` | the pause menu is the console's; entries are not shown |
 | `stat` | clock, CPU and audio counters read 0; the mouse reads nothing |
 | `flip` | does nothing; the console calls `_draw()` for you. A cart whose whole loop is `flip()` with no `_update`/`_draw` is refused |
-| the frame cadence | one tick per PICO-8 period on the host's clock. A late frame runs extra ticks only while a tick costs under half the period (PICO-8's own line for two ticks per draw); past it a late frame slows time, as on PICO-8. `_draw` never runs before the first `_update`. A 60 fps cart on a 30 fps host runs two ticks per draw, PICO-8's degraded mode, not something to improve on |
+| the frame cadence | the host's, not the shim's (§5): one tick per PICO-8 period on the host's clock, with the host's catch-up rule (extra ticks only while a tick costs under half the period, PICO-8's own line for two ticks per draw; past it a late frame slows time, as on PICO-8). `_draw` never runs before the first `_update`. A 60 fps cart on a host drawing 30 runs two ticks per draw, PICO-8's degraded mode, not something to improve on |
 | sfx/music memory (`0x3100`–`0x42ff`) | remembered, not played; the imported sounds play |
 | `sfx(n, ch, offset, len)` | the whole sound plays |
 | `cstore` | writes the ROM snapshot in memory; nothing reaches the cart file |
@@ -301,8 +301,8 @@ not is #66's; what is left is structural.
 
 A cart that plays on the host and fails only on a board, only sometimes, is
 usually the frame cadence the replayer cannot reproduce (`run_cart --dt`), not
-the architecture: dank_tomb's "nil position at init" was the shim drawing
-before the first update.
+the architecture: dank_tomb's "nil position at init" was a draw before the
+first update, back when the shim kept the clock.
 
 ## Licensing
 

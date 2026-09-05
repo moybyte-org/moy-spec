@@ -72,9 +72,11 @@ property of the *cart*, not the machine. Measured on reference hardware at this
 raster, real games land between roughly 37 and 61 fps, which is precisely why 60
 can't be the default and can't be forbidden either.
 
-Frameskip (logic at full rate, draw every second tick) is the only sanctioned
-degradation because it keeps game *time* real — physics and input stay correct, only
-motion smoothness drops.
+Drawing on an integer divisor of the tick (logic at full rate, draw every second
+or third tick) is the only sanctioned degradation because it keeps game *time* real
+— physics and input stay correct, only motion smoothness drops — and because an
+integer divisor is the only even one: drawing three ticks in four delivers frames at
+alternating intervals, which reads as judder rather than as a lower rate.
 
 ## Palette — 64 entries, cart-replaceable
 

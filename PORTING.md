@@ -156,13 +156,16 @@ this is a test you own.
 
 ### 5. The tick and the buttons
 
-30 Hz, or 60 if the cart asks and you can hold it; if you cannot hold 60 for
-that cart, run it at 30 rather than at something unstable in between (§5).
+30 Hz, or 60 if the cart asks — and the tick rate is the cart's, never yours
+to lower (§5). Place the ticks on your own clock: catch a late frame up with
+extra ticks only while a tick is cheap (under half the period), and write off
+what you cannot pay rather than bursting.
 
-`_update(dt)` then `_draw()`, once per tick. **The one sanctioned degradation**
-is skipping `_draw` on alternating ticks while continuing to update at the full
-rate: logic stays real-time and motion halves. Do that rather than letting the
-tick rate sag, and make sure `dt` always reflects real elapsed time.
+`_update(dt)` then `_draw()`, once per tick, and never `_draw` before the first
+`_update`. **The one sanctioned degradation** is drawing on an integer divisor
+of the tick — every second tick, every third — while continuing to update at
+the full rate: logic stays real-time and motion coarsens evenly. Do that rather
+than letting the tick rate sag, and hand `dt` the tick period.
 
 Map your hardware onto the logical buttons of §7.3. Four directions plus `a`
 and `b` are mandatory; `run` is not. Buttons your device has that the console
@@ -366,8 +369,8 @@ Before you claim conformance:
 - [ ] An unknown `runtime` refuses it too, rather than reaching for the Lua VM
 - [ ] A `canvas` outside the set refuses; an out-of-range `icon` is ignored
 - [ ] Unknown manifest fields are ignored, not fatal
-- [ ] 30 Hz holds; a `"fps": 60` cart either holds 60 or runs at 30
-- [ ] `dt` is real elapsed time, and dropped frames drop `_draw` only
+- [ ] 30 Hz holds; a `"fps": 60` cart ticks at 60, drawing on a divisor if it must
+- [ ] `dt` is the tick period, and dropped frames drop `_draw` only
 - [ ] The first `make_layer` succeeds
 - [ ] `pmem` survives a power cycle
 - [ ] A Lua error ends the cart and reports its line number
