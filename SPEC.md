@@ -217,7 +217,7 @@ wants to accept an archive unpacks it and hands the console a folder.
 | `author` | no | |
 | `version` | no | integer, author's own versioning |
 | `main` | no | entry script, default `main.lua` |
-| `fps` | no | `30` (default) or `60` — see §5 |
+| `fps` | no | `30` (default), `60`, or `"free"` — see §5 |
 | `canvas` | no | raster size: `"320x240"` (default), `"160x120"` or `"128x128"` — see §1 |
 | `input` | no | input groups the cart reads — see §7.3 |
 | `palette` | no | 64 RGB hex strings replacing the default table — see §2.2 |
@@ -425,6 +425,13 @@ while a tick costs under half the period — PICO-8's own line for running two t
 per draw. Past that line a late frame slows time rather than snowballing, and debt
 beyond one period is written off. A host reports that; it does not hide it by
 lowering the rate.
+
+A cart whose logic is entirely `dt`-scaled MAY declare `"fps": "free"`: the host
+then does not pace it at all — `_update(dt)` and `_draw()` run once per host
+frame, `dt` is the real elapsed time (a host MUST clamp it, so a stall slows the
+cart's time rather than jumping it), and the draw rate is whatever the host can
+sustain. A cart that counts frames MUST NOT declare it; the tick guarantees above
+are exactly what such a cart needs, and `"free"` gives them up.
 
 `_draw()` is called after `_update(dt)`, and never before the first `_update` has
 run. A host under load MAY draw on an integer divisor of the tick — every second
