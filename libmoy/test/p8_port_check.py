@@ -121,6 +121,7 @@ def main():
         FAIL.append("the shim does not define __p8_lut_span")
 
     bitops()
+    shifts_by_16()
 
     # Same rule for the nine: every name the operator rewrite can emit is a
     # function the shim defines, and one the machine can carry.
@@ -228,6 +229,48 @@ def bitops():
     # ...and a name that merely LOOKS like one still counts as the shim's.
     if "__p8_" in convert("peeker=1\nx=peek(a)|1"):
         FAIL.append("a longer name shadowed the verb it starts with")
+
+
+def shifts_by_16():
+    """The 16.16 refusal, read off the text the rewrite now emits.
+
+    A cart that unpacks its data with fixed-point shifts cannot run here: the
+    port's numbers are Lua's, and `12345 >>> 16` answers 0 where PICO-8 answers
+    0.18836. `classify` refuses such a cart BEFORE anything is written, and the
+    rule reads the CONVERTED body -- so when the operator rewrite replaced every
+    `>>` with a `__p8_lshr(...)` call the refusal stopped firing on celeste 2,
+    the cart it was written for, whose count is `16-cache_bits` and never the
+    literal 16. It classified as "runs" and drew empty rooms.
+    """
+    px9 = ("function getval(bits)\n"
+           " if cache_bits<16 then\n"
+           "  cache+=%src>>>16-cache_bits\n"
+           "  cache_bits+=16\n"
+           "  src+=2\n"
+           " end\n"
+           " local val=cache<<32-bits>>>16-bits\n"
+           " cache=cache>>>bits\n"
+           " return val\n"
+           "end")
+    v = p8_lua_port.classify_body(convert(px9))
+    if v["verdict"] != "refused":
+        FAIL.append("px9's bit cache classified %r, not refused -- %r"
+                    % (v["verdict"], convert(px9).strip()))
+
+    # ...and a count that merely CONTAINS a sixteen is not a shift by one:
+    # dank tomb's `shl(1, lw(0x70,x,y)/16)` shifts by a sixteenth of a word.
+    for name, src, want in (
+            ("a literal count", "x=shl(a,16)", True),
+            ("the count minus an offset", "x=lshr(peek2(s),16-n)", True),
+            ("the count plus an offset", "x=shr(a,n+16)", True),
+            ("a sixteenth of something", "x=shl(1,lw(0x70,i,j)/16)", False),
+            ("a bigger literal", "x=shl(a,160)", False),
+            ("sixteen times something", "x=shl(a,16*n)", False)):
+        got = p8_lua_port._shifts_by_16(
+            p8_lua_port._strip_lua(convert(src)))
+        if got != want:
+            FAIL.append("%s: shifts-by-16 said %s -- %r"
+                        % (name, got, convert(src).strip()))
 
 
 if __name__ == "__main__":
