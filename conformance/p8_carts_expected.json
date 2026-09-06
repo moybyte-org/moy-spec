@@ -1,9 +1,10 @@
 {
-  "_": "What each corpus cart does under libmoy -- the real C console and its LUA_32BITS VM. A RATCHET: a cart that stops running, animating or taking input fails the build; runs/animates also fail if a cart starts, asking for this file to be raised. Recorded as the AND of THREE runs, so a borderline cart is pinned at its weakest observed behaviour -- these are real carts with clocks and randomness, and a gate that flaps gets deleted rather than fixed. The carts are not in this repository (see conformance/p8_carts.py). `verdict` is what the IMPORTER says before writing (PICO8.md, the static verdict) -- a golden too, since the classifier is deterministic.",
+  "_": "What each corpus cart does under libmoy -- the real C console and its LUA_32BITS VM. A RATCHET: a cart that stops running, animating or taking input fails the build; runs/animates also fail if a cart starts, asking for this file to be raised. Recorded as the AND of THREE runs, so a borderline cart is pinned at its weakest observed behaviour -- these are real carts with clocks and randomness, and a gate that flaps gets deleted rather than fixed. The carts are not in this repository (see conformance/p8_carts.py). `verdict` and `reasons` are what the IMPORTER says before writing (PICO8.md, the static verdict) -- goldens too, since the classifier is deterministic. The REASONS are pinned and not just the word: celeste 2 is refused for two things at once, and when one of them stopped firing the word did not move and this gate stayed green.",
   "carts": {
     "bunnysurvivor-9": {
       "animates": true,
       "note": "runs and animates; takes input",
+      "reasons": [],
       "responds": true,
       "runs": true,
       "verdict": "runs"
@@ -11,6 +12,11 @@
     "celeste_classic_2-5": {
       "animates": true,
       "note": "runs and animates; takes input",
+      "reasons": [
+        "it loads other carts (load) -- a multi-cart game; this console runs one cart at a time",
+        "it unpacks its data with 16.16 fixed-point shifts that this console's float numbers cannot reproduce",
+        "sfx() with an offset or length plays the whole sound"
+      ],
       "responds": true,
       "runs": true,
       "verdict": "refused"
@@ -18,6 +24,7 @@
     "crimson_night-5": {
       "animates": true,
       "note": "runs and animates",
+      "reasons": [],
       "responds": false,
       "runs": true,
       "verdict": "runs"
@@ -25,6 +32,10 @@
     "dank_tomb-0": {
       "animates": true,
       "note": "runs and animates; takes input (its level parser needs 16.16 bit verbs on fractional constants, integral floats printing as integers, and the raw map bytes -- all since 2026-09-02)",
+      "reasons": [
+        "its pause-menu entries (menuitem) are not shown; the console owns the menu",
+        "stat() reads zero: clock, CPU and audio counters are not measured"
+      ],
       "responds": true,
       "runs": true,
       "verdict": "gaps"
@@ -32,6 +43,11 @@
     "dungeons_and_diagrams-5": {
       "animates": true,
       "note": "runs and animates; takes input",
+      "reasons": [
+        "its pause-menu entries (menuitem) are not shown; the console owns the menu",
+        "stat() reads zero: clock, CPU and audio counters are not measured",
+        "it reads the mouse; there is no pointer in a PICO-8 port's input"
+      ],
       "responds": true,
       "runs": true,
       "verdict": "gaps"
@@ -39,6 +55,10 @@
     "lowmemsky-1": {
       "animates": true,
       "note": "runs and animates; takes input",
+      "reasons": [
+        "it shifts numbers by 16 bits, which loses the fixed-point precision PICO-8 has; a hash or a mask may come out wrong",
+        "its pause-menu entries (menuitem) are not shown; the console owns the menu"
+      ],
       "responds": true,
       "runs": true,
       "verdict": "gaps"
@@ -46,6 +66,9 @@
     "mossmoss-17": {
       "animates": true,
       "note": "runs and animates; takes input",
+      "reasons": [
+        "its pause-menu entries (menuitem) are not shown; the console owns the menu"
+      ],
       "responds": true,
       "runs": true,
       "verdict": "gaps"
@@ -53,6 +76,12 @@
     "nimudazus-27": {
       "animates": false,
       "note": "run_cart: [string \"main.lua\"]:869: attempt to call a nil value (for iterator 'for iterator')",
+      "reasons": [
+        "it unpacks its data with 16.16 fixed-point shifts that this console's float numbers cannot reproduce",
+        "stat() reads zero: clock, CPU and audio counters are not measured",
+        "it reads the mouse; there is no pointer in a PICO-8 port's input",
+        "it uses bitplane masks (0x5f5e); the mask is remembered, not applied"
+      ],
       "responds": false,
       "runs": false,
       "verdict": "refused"
@@ -60,6 +89,7 @@
     "petal_quest-12": {
       "animates": true,
       "note": "runs and animates; takes input (coroutines, a btnp() edge visible in _draw, and map()'s whole-map default -- 2026-09-02)",
+      "reasons": [],
       "responds": true,
       "runs": true,
       "verdict": "runs"
@@ -67,6 +97,7 @@
     "picooffroad-5": {
       "animates": true,
       "note": "runs and animates; takes input (the track streams out of map ROM through reload(), and its fades are fillp holes -- both since 2026-09)",
+      "reasons": [],
       "responds": true,
       "runs": true,
       "verdict": "runs"
@@ -74,6 +105,11 @@
     "poom_0-9": {
       "animates": true,
       "note": "runs and animates",
+      "reasons": [
+        "it loads other carts (load) -- a multi-cart game; this console runs one cart at a time",
+        "stat() reads zero: clock, CPU and audio counters are not measured",
+        "it reads the mouse; there is no pointer in a PICO-8 port's input"
+      ],
       "responds": false,
       "runs": true,
       "verdict": "refused"
@@ -81,6 +117,14 @@
     "terra_1cart-44": {
       "animates": false,
       "note": "HUNG (no frame in 45s)",
+      "reasons": [
+        "flip() does nothing here; the console draws each frame itself",
+        "its pause-menu entries (menuitem) are not shown; the console owns the menu",
+        "stat() reads zero: clock, CPU and audio counters are not measured",
+        "it reads the mouse; there is no pointer in a PICO-8 port's input",
+        "sfx() with an offset or length plays the whole sound",
+        "serial() has nothing on the other end"
+      ],
       "responds": false,
       "runs": false,
       "verdict": "gaps"

@@ -66,7 +66,7 @@ def _frame_hash(path):
 
 
 def check(cart_path, work):
-    """-> (runs, animates, responds, note, verdict).
+    """-> (runs, animates, responds, note, verdict, reasons).
 
     Both matter and they fail differently. A cart that never ticks still LOADS
     and still writes a frame, so `runs` alone cannot see a driver that stopped
@@ -74,15 +74,17 @@ def check(cart_path, work):
     """
     name = os.path.basename(cart_path).split(".p8")[0]
     out_dir = os.path.join(work, name + ".moy")
-    verdict = "?"
+    verdict, reasons = "?", []
     try:
         sections = p8_import.read_p8(cart_path)
         # The import VERDICT (PICO8.md): what the porter says about the cart
         # before it writes. Recorded beside what the cart then does, so the
         # table shows where the static call and the run disagree.
-        verdict = p8_lua_port.port_sections(sections, out_dir, name)["verdict"]["verdict"]
+        v = p8_lua_port.port_sections(sections, out_dir, name)["verdict"]
+        verdict, reasons = v["verdict"], list(v["reasons"])
     except Exception as exc:                       # noqa: BLE001 - reported
-        return False, False, False, "import %s: %s" % (type(exc).__name__, exc), verdict
+        return (False, False, False,
+                "import %s: %s" % (type(exc).__name__, exc), verdict, reasons)
 
     # Two runs at different frame counts: if the cart is ANIMATING the frames
     # differ, and if it is frozen (or never ticked) they do not. A cart that
@@ -106,13 +108,13 @@ def check(cart_path, work):
 
     early, err = frame_at(2, None, "early")
     if err:
-        return False, False, False, err, verdict
+        return False, False, False, err, verdict, reasons
     late, err = frame_at(FRAMES, MOVE, "move")
     if err:
-        return False, False, False, err, verdict   # a hang stops here
+        return False, False, False, err, verdict, reasons  # a hang stops here
     idle, err = frame_at(FRAMES, START, "idle")
     if err:
-        return False, False, False, err, verdict
+        return False, False, False, err, verdict, reasons
 
     moves = early != late
     # RESPONDS: the same cart, same frame count, differing only in whether a
@@ -122,7 +124,7 @@ def check(cart_path, work):
     note = ("runs and animates" if moves else "runs, but the frame never changed")
     if responds:
         note += "; takes input"
-    return True, moves, responds, note, verdict
+    return True, moves, responds, note, verdict, reasons
 
 
 def main(argv):
@@ -170,7 +172,8 @@ def main(argv):
     regressed, improved, running = [], [], 0
     for f in carts:
         stem = f.split(".p8")[0]
-        ok, moves, responds, note, verdict = check(os.path.join(args.corpus, f), args.work)
+        ok, moves, responds, note, verdict, reasons = check(
+            os.path.join(args.corpus, f), args.work)
         running += 1 if ok else 0
         want = expected.get(stem, {})
         shaky = bool(want.get("unstable"))
@@ -180,6 +183,19 @@ def main(argv):
         if want.get("verdict") is not None and want.get("verdict") != verdict:
             regressed.append("%s: the importer's verdict moved from %s to %s"
                              % (stem, want["verdict"], verdict))
+        # ...and so is every REASON, because the word alone hid a real one.
+        # celeste 2 is refused for two things at once; the 16.16 one stopped
+        # firing on 2026-09-02 and this gate stayed green, because the cart was
+        # still refused for loading other carts. A cart's reasons are what the
+        # console shows a kid, and a vanished one is a rule that stopped
+        # working.
+        if want.get("reasons") is not None:
+            gone = [r for r in want["reasons"] if r not in reasons]
+            fresh = [r for r in reasons if r not in want["reasons"]]
+            for r in gone:
+                regressed.append("%s no longer says: %s" % (stem, r))
+            for r in fresh:
+                regressed.append("%s now also says: %s" % (stem, r))
         if want.get("runs") is True and not ok:
             regressed.append("%s stopped running: %s" % (stem, note))
         elif want.get("animates") is True and not moves and not shaky:
