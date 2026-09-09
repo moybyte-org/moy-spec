@@ -2566,7 +2566,13 @@ do
       out[#out + 1] = num and (tonumber(part) or part) or part
     end
     if type(sep) == "number" then
-      local step = sep < 1 and 1 or sep
+      -- FLOORED, and bounded by the subject: a fractional or infinite width
+      -- used to reach string.sub as a float and error on the first chunk,
+      -- which is neither PICO-8's answer nor an answer at all. NaN is no
+      -- chunks -- what the `for` already does for all but a 1-char subject.
+      local step = sep < 1 and 1 or mfloor(sep)
+      if step ~= step then return out end
+      if #s > 0 and step > #s then step = #s end
       for i = 1, #s, step do keep(string.sub(s, i, i + step - 1)) end
       return out
     end
@@ -2580,6 +2586,10 @@ do
     end
     return out
   end
+  -- A cart's data tables are written in split(), and the carts that rebuild
+  -- one inside the frame spend real time here: on the interpreter-bound
+  -- boards the C verb is worth 15% of `moss moss`'s frame (#66, #67).
+  if __moy_split ~= nil then split = __moy_split end
 
   -- OVAL / OVALFILL. PICO-8 draws an ellipse in a BOUNDING BOX (x0,y0 to
   -- x1,y1); the console has circles and no ellipse. Midpoint ellipse, four-way
@@ -3187,6 +3197,15 @@ do
   pal, palt, fillp = p8c("pal") or pal, p8c("palt") or palt, p8c("fillp") or fillp
   color, cursor = p8c("color") or color, p8c("cursor") or cursor
   sget, sset = p8c("sget") or sget, p8c("sset") or sset
+  -- rnd and srand move TOGETHER or not at all: they are ONE generator, and a
+  -- C rnd drawing from the machine's state while srand reseeded lmathlib's
+  -- would leave a cart seeding something nothing reads -- the same level
+  -- laid out differently every run, with nothing to point at. A cart that
+  -- rebuilds its world from a seed each frame spends real time here: ~600
+  -- calls a frame on low mem sky, 13% of its Lua (#66, #67).
+  if p8c("rnd") ~= nil and p8c("srand") ~= nil then
+    rnd, srand = p8c("rnd"), p8c("srand")
+  end
   -- btn/btnp and the two latch hooks are one thing: the hold counters and the
   -- pending edges live in the machine or in the tables above, never half in
   -- each. The pacing rule is unchanged -- an edge latched once a console

@@ -187,7 +187,8 @@ screen into the sheet, fades by `memcpy` into the palette, or draws a shadow by
 Where the machine is open the shim's hot verbs are the console's C rather than
 Lua closures: the whole memory set above, `all`/`foreach` and the table verbs,
 the number verbs (`flr`, `abs`, `min`, `max`, `mid`, `sgn`, `sin`, `cos`,
-`atan2`), the 16.16 bit verbs, `mget`/`mset`/`fget`/`fset`, `btn`/`btnp` with
+`atan2`), `split`, `rnd`/`srand`, the 16.16 bit verbs,
+`mget`/`mset`/`fget`/`fset`, `btn`/`btnp` with
 their latch, the nine native bit operators above, and **every draw verb** —
 `pset` `pget` `line` `rect` `rectfill` `circ` `circfill` `oval` `ovalfill`
 `spr` `sspr` `map` `print` `camera` `color` `cursor` `pal` `palt` `fillp`
@@ -202,9 +203,25 @@ host that offers none of them; `cls` and `clip` are the console's own already
 and were never wrapped; and `libmoy/test/p8lib.moy` sweeps every verb through
 both lanes over seeded draw states — palette maps, transparency, fill patterns,
 a camera, a clip, fractional and negative coordinates, nil arguments — and
-holds them to one answer. `sqrt`, `ceil` and `rnd` stay Lua on purpose — the
-first two are already bare aliases to `math`, and moving `rnd` would move the
-random sequence a cart's world is built from.
+holds them to one answer. `sqrt` and `ceil` stay Lua on purpose: both are
+already bare aliases to `math`, so there is nothing to promote.
+
+**`split` and the generator** are the two promotions that needed more than a
+transcription of the verb. `split` is PICO-8's own — Lua's string library has
+no twin — and it is what a ported cart's data tables are written in, one
+`split"1,2,3,..."` per row; its ARITY is part of its input, because a data row
+is a one-argument call and a parser call is a three-argument one, so the C
+pins the stack before it pushes anything (a version that did not read the
+subject as its own separator and answered empty strings, through every
+three-argument test it had).
+
+`rnd` and `srand` move TOGETHER or not at all, because they are one generator,
+and moving a generator moves the random sequence a cart's world is built from
+— so the C is not an equivalent generator but Lua's own xoshiro256**,
+transcribed from `lmathlib.c` so a seeded cart lays out the level it always
+laid out. `p8lib.moy` seeds both lanes alike and compares 20,000 draws from
+each of eight seeds; a cart that never seeds still differs run to run, because
+the machine draws its own starting words from lmathlib's state at open.
 
 ## What is approximated
 

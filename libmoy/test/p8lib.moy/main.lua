@@ -308,6 +308,264 @@ function num_checks()
   check("max keeps the argument's type", math.type(__moy_max(1.0, 1)) == "float")
 end
 
+-- ---- split --------------------------------------------------------------
+-- PICO-8's own, and the one verb here a cart calls with a DIFFERENT NUMBER OF
+-- ARGUMENTS from line to line: `split"1,2,3"` in a data table, `split(s, "|")`
+-- parsing a save, `split(s, ",", false)` keeping text as text. The arity is
+-- therefore part of the input and every sweep below varies it -- a C version
+-- that reads its second argument after pushing anything sees the pushed value
+-- there, and `split"91,51"` becomes a string cutting itself on its own text.
+
+-- the shim's Lua, verbatim
+local function L_split(s, sep, num)
+  local out = {}
+  if s == nil then return out end
+  s = tostring(s)
+  if num == nil then num = true end
+  local function keep(part)
+    out[#out + 1] = num and (tonumber(part) or part) or part
+  end
+  if type(sep) == "number" then
+    local step = sep < 1 and 1 or mfloor(sep)
+    if step ~= step then return out end
+    if #s > 0 and step > #s then step = #s end
+    for i = 1, #s, step do keep(string.sub(s, i, i + step - 1)) end
+    return out
+  end
+  sep = sep or ","
+  if sep == "" then sep = "," end
+  local i = 1
+  while true do
+    local j = string.find(s, sep, i, true)
+    if j then keep(string.sub(s, i, j - 1)) else keep(string.sub(s, i)) break end
+    i = j + #sep
+  end
+  return out
+end
+
+-- The dump carries the TYPE of every part, because the whole point of the
+-- conversion is that "1" comes back an integer and "1.0" a float.
+local function dump_split(t)
+  local s = "#" .. #t
+  for i = 1, #t do
+    s = s .. "|" .. tostring(t[i]) .. ":" .. tostring(math.type(t[i]))
+  end
+  return s
+end
+
+local function split_lane(f, ...)
+  local ok, v = pcall(f, ...)
+  if not ok then return "ERR" end
+  if type(v) ~= "table" then return "NOT A TABLE: " .. tostring(v) end
+  return dump_split(v)
+end
+
+local SUBJ = {
+  "", "1", "1,2", "1,2,3", ",", ",,", ",1", "1,", "a,b,,c,",
+  "  1 , 2  ", "0x10,1e3,12.,.5,-0,nan,inf,0x.8", "1,2\n3", "abc",
+  "aXbXXc", "XX", "//a//b//", "a\0b,c", "91,51,1,3,2,5", "-1,-2.5,+3",
+  "1;2;3", "true,false,nil", "0,00,0.0,1e0",
+  0, 7, -3, 3.5, -0.5, 1/0, true, false,
+  setmetatable({}, {__tostring = function() return "m,e,t,a" end}),
+}
+local NSUBJ = 32                   -- #SUBJ stops at a nil; there is none
+
+local SEPS = {
+  ",", "", "X", "XX", "//", ";", "\0", "2", "1,",
+  1, 2, 3, 4, 0, -1, 0.5, 2.5, 7.9, 1e9, 0/0, 1/0,
+  true, false, {},
+}
+local NSEPS = 24
+
+function split_checks()
+  check("split is the C one", __moy_split ~= nil)
+
+  -- THE ONE-ARGUMENT CALL, named because it is the bug this verb shipped
+  -- with: the subject read as its own separator answers {"",""} where the
+  -- cart wanted {91,51}. Every data row in a ported cart is this shape.
+  same("split\"91,51\" one argument", split_lane(__moy_split, "91,51"),
+       split_lane(L_split, "91,51"))
+  check("split\"91,51\" is the two numbers",
+        dump_split(__moy_split("91,51")) == "#2|91:integer|51:integer")
+  check("split\"abc\" is one part", dump_split(__moy_split("abc")) == "#1|abc:nil")
+  check("split() with nothing at all is empty", #__moy_split() == 0)
+
+  -- The cross product, at all three arities. `nil` passed explicitly and an
+  -- argument left off are the same thing to this verb, and both are swept:
+  -- an implementation that tells them apart is wrong in one of the two.
+  for i = 1, NSUBJ do
+    local s, name = SUBJ[i], "split(" .. tostring(SUBJ[i])
+    same(name .. ")", split_lane(__moy_split, s), split_lane(L_split, s))
+    same(name .. ", nil)", split_lane(__moy_split, s, nil),
+         split_lane(L_split, s, nil))
+    same(name .. ", nil, nil)", split_lane(__moy_split, s, nil, nil),
+         split_lane(L_split, s, nil, nil))
+    for j = 1, NSEPS do
+      local sep, n2 = SEPS[j], name .. ", " .. tostring(SEPS[j])
+      same(n2 .. ")", split_lane(__moy_split, s, sep), split_lane(L_split, s, sep))
+      same(n2 .. ", true)", split_lane(__moy_split, s, sep, true),
+           split_lane(L_split, s, sep, true))
+      same(n2 .. ", false)", split_lane(__moy_split, s, sep, false),
+           split_lane(L_split, s, sep, false))
+      same(n2 .. ", 0)", split_lane(__moy_split, s, sep, 0),
+           split_lane(L_split, s, sep, 0))
+      same(n2 .. ", nil)", split_lane(__moy_split, s, sep, nil),
+           split_lane(L_split, s, sep, nil))
+    end
+  end
+
+  -- FUZZ. Subjects built from the bytes a separator is made of, so the
+  -- interesting cases -- a separator that is the whole subject, a run of
+  -- separators, a partial match that must not cut -- come up by themselves.
+  -- The argument COUNT is drawn like everything else.
+  local fz = 20260909
+  local function frnd(n)
+    fz = (fz * 1103515245 + 12345) & 0x7fffffff
+    return (fz >> 7) % n + 1
+  end
+  local ALPHA = {"a", "b", ",", ",", "X", "XX", "1", "23", "-4.5", ";", "\0", " ", "0x8"}
+  for _ = 1, 6000 do
+    local s = ""
+    for _ = 1, frnd(9) - 1 do s = s .. ALPHA[frnd(#ALPHA)] end
+    local nargs, sep, num = frnd(3), SEPS[frnd(NSEPS)], nil
+    if frnd(4) == 1 then sep = nil end
+    local m = frnd(5)
+    if m == 1 then num = true elseif m == 2 then num = false
+    elseif m == 3 then num = 0 end
+    local name = "fuzz " .. nargs .. " " .. string.format("%q", s) ..
+                 " " .. tostring(sep) .. " " .. tostring(num)
+    if nargs == 1 then
+      same(name, split_lane(__moy_split, s), split_lane(L_split, s))
+    elseif nargs == 2 then
+      same(name, split_lane(__moy_split, s, sep), split_lane(L_split, s, sep))
+    else
+      same(name, split_lane(__moy_split, s, sep, num),
+           split_lane(L_split, s, sep, num))
+    end
+  end
+
+  -- A long subject: the C walks it with memchr, the Lua with string.find, and
+  -- 4,000 parts is more than any cart's data row but exercises the table
+  -- growth both lanes do differently.
+  local big = "0"
+  for i = 1, 4000 do big = big .. "," .. i end
+  same("a 4,000-part subject", split_lane(__moy_split, big), split_lane(L_split, big))
+  same("a 4,000-part subject, unconverted", split_lane(__moy_split, big, ",", false),
+       split_lane(L_split, big, ",", false))
+end
+
+-- ---- rnd / srand --------------------------------------------------------
+-- The one pair where equality of the ANSWER is not enough: the generator is
+-- gameplay, so the C has to walk the same sequence the shim's math.random
+-- walked, draw for draw, from the same seed. Nothing else here would notice a
+-- transcription that is uniform, well distributed and simply different.
+local mrandom, mrandomseed = math.random, math.randomseed
+
+-- the shim's Lua, verbatim (flr is the shim's global, math.floor(v or 0))
+local function L_rnd(n)
+  if type(n) == "table" then
+    local c = #n
+    if c == 0 then return nil end
+    return n[mrandom(c)]
+  end
+  return mrandom() * (n or 1)
+end
+local function L_srand(x) return mrandomseed(L_flr(x)) end
+
+-- Both lanes seeded alike, then drawn in lockstep. `~=` on the floats is bit
+-- equality: a generator in [0,1) produces no NaN, so there is no value that
+-- compares unequal to itself and hides a difference.
+local function same_stream(name, s, n, arg)
+  __moy_p8_srand(s)
+  L_srand(s)
+  for i = 1, n do
+    local a, b = __moy_p8_rnd(arg), L_rnd(arg)
+    if a ~= b or math.type(a) ~= math.type(b) then
+      error("p8 stdlib: " .. name .. " seed " .. tostring(s) .. " draw " .. i ..
+            ": C " .. tostring(a) .. "/" .. tostring(math.type(a)) ..
+            ", Lua " .. tostring(b) .. "/" .. tostring(math.type(b)), 0)
+    end
+  end
+end
+
+function rand_checks()
+  check("rnd/srand are the C ones",
+        __moy_p8_rnd ~= nil and __moy_p8_srand ~= nil)
+
+  -- THE PROOF. Eight seeds, 20,000 draws each: the plain float form, which is
+  -- lmathlib's I2d over the top FIGS bits, so a wrong shift or a wrong scale
+  -- shows on draw one and a wrong state update shows within a few.
+  for _, s in ipairs({0, 1, -1, 42, 2147483647, -2147483648, 1234567, 65536}) do
+    same_stream("rnd()", s, 20000, nil)
+  end
+  -- ...and the same seeds again through the SCALED form, which multiplies,
+  -- and through the table form, which projects into [1, #t] and retries when
+  -- the interval is not a power of two (3, 5, 7, 10 and 100 all retry).
+  for _, s in ipairs({0, 7, -13, 99991}) do
+    same_stream("rnd(n)", s, 4000, 128)
+    same_stream("rnd(-n)", s, 2000, -3.5)
+    same_stream("rnd(str)", s, 2000, "3")
+    for _, c in ipairs({1, 2, 3, 5, 7, 10, 100}) do
+      local t = {}
+      for i = 1, c do t[i] = "e" .. i end
+      same_stream("rnd(#" .. c .. ")", s, 2000, t)
+    end
+  end
+  -- Reseeding MID-STREAM: the state has to come back to the same place, not
+  -- merely start there.
+  __moy_p8_srand(5) L_srand(5)
+  for _ = 1, 100 do __moy_p8_rnd() L_rnd() end
+  same_stream("reseeded mid-stream", 5, 2000, nil)
+
+  -- srand's own answer: `return mrandomseed(...)` hands back both seed words.
+  -- Errors compare as "ERR", the file's own convention: a C verb's message
+  -- carries no source location and the shim's does, and neither is the thing
+  -- under test -- that both REFUSE the same arguments is.
+  local function call2(f, ...)
+    local ok, u, v = pcall(f, ...)
+    if not ok then return "ERR" end
+    return tostring(u) .. "/" .. tostring(math.type(u)) .. "/" ..
+           tostring(v) .. "/" .. tostring(math.type(v))
+  end
+  for i = 1, NARGS do
+    local c = call2(__moy_p8_srand, ARGS[i])
+    same("srand(" .. tostring(ARGS[i]) .. ") returns", c,
+         call2(L_srand, ARGS[i]))
+    if c ~= "ERR" then                 -- it seeded: the streams must agree
+      for _ = 1, 50 do
+        local x, y = __moy_p8_rnd(), L_rnd()
+        check("srand(" .. tostring(ARGS[i]) .. ") left the same state", x == y)
+      end
+    end
+  end
+  same("srand() with no argument at all", call1(__moy_p8_srand), call1(L_srand))
+
+  -- rnd's coercions and refusals, the argument sweep both lanes share. Each
+  -- case reseeds so the comparison is of the ANSWER, not of where the two
+  -- streams happen to stand.
+  for i = 1, NARGS do
+    __moy_p8_srand(i) L_srand(i)
+    same("rnd(" .. tostring(ARGS[i]) .. ")",
+         call1(__moy_p8_rnd, ARGS[i]), call1(L_rnd, ARGS[i]))
+  end
+  same("rnd() with no argument at all",
+       (function() __moy_p8_srand(1) L_srand(1)
+          local a, b = __moy_p8_rnd(), L_rnd()
+          return a == b end)(), true)
+
+  -- A table is a DIFFERENT VERB wearing the name, and its metamethods answer:
+  -- #t through __len, t[i] through __index, both in both lanes.
+  local back = {"a", "b", "c", "d", "e"}
+  local mt = {__len = function() return 5 end,
+              __index = function(_, k) return back[k] end}
+  same_stream("rnd(t) through __len and __index", 11, 2000,
+              setmetatable({}, mt))
+  local empty_len = setmetatable({}, {__len = function() return 0 end})
+  same("rnd(t) with __len 0", call1(__moy_p8_rnd, empty_len),
+       call1(L_rnd, empty_len))
+  same("rnd({})", call1(__moy_p8_rnd, {}), call1(L_rnd, {}))
+end
+
 -- ---- the bit verbs ------------------------------------------------------
 -- PICO-8's are 16.16, fraction included, and the shim's fx/unfx are what put
 -- a fractional operand onto the 32-bit image and take it back off. Both lanes
@@ -1313,6 +1571,8 @@ function _init()
 
   mem_checks()
   num_checks()
+  split_checks()
+  rand_checks()
   bit_checks()
   native_bit_checks()
   map_checks()
