@@ -123,6 +123,7 @@ def main():
 
     bitops()
     shifts_by_16()
+    bit_twins()
 
     # Same rule for the nine: every name the operator rewrite can emit is a
     # name the shim BINDS. It binds them to the nine verbs -- one lane, so
@@ -295,6 +296,64 @@ def shifts_by_16():
         if got != want:
             FAIL.append("%s: shifts-by-16 said %s -- %r"
                         % (name, got, convert(src).strip()))
+
+
+
+# The nine bit verbs exist THREE times: in moy_p8.c, in the shim the porter
+# emits, and transcribed into p8lib.moy as L_band/L_shr/... so run_cart can
+# compare the machine against the Lua a host without one runs. p8lib pins the
+# first two to each other; nothing pinned the third to the shim it claims to
+# be, and while it was not, a wrong reading of `shr` sat green in both copies
+# for weeks. This is that missing edge.
+_TWINS = ("fx", "unfx", "is_int", "band", "bor", "bxor", "bnot",
+          "shl", "shr", "lshr", "rotl", "rotr")
+_OPENS = ("function", "if", "do", "repeat")
+_BLOCK = re.compile(r"\b(function|if|do|repeat|end|until)\b")
+
+
+def _lua_clean(text):
+    """Lua with its comments and string bodies out of the way."""
+    text = re.sub(r"--\[\[.*?\]\]", " ", text, flags=re.S)
+    text = re.sub(r"--[^\n]*", "", text)
+    text = re.sub(r'"[^"\n]*"', '""', text)
+    return re.sub(r"'[^'\n]*'", "''", text)
+
+
+def _lua_body(text, name):
+    """The body of `function NAME(` in `text`, comments and spacing gone."""
+    clean = _lua_clean(text)
+    m = re.search(r"\bfunction\s+%s\s*\(" % re.escape(name), clean)
+    if not m:
+        return None
+    depth = 0
+    for t in _BLOCK.finditer(clean, m.start()):
+        if t.group(1) in _OPENS:
+            depth += 1
+        else:
+            depth -= 1
+            if depth == 0:
+                return re.sub(r"\s+", "", clean[m.start():t.end()])
+    return None
+
+
+def bit_twins():
+    """p8lib.moy's L_* really is the shim, modulo the prefix."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    with open(os.path.join(here, "p8lib.moy", "main.lua"), encoding="utf-8") as f:
+        cart = f.read()
+    for name in _TWINS:
+        want = _lua_body(p8_lua_port.SHIM, name)
+        got = _lua_body(cart, "L_" + name)
+        if want is None:
+            FAIL.append("the shim no longer defines %s" % name)
+            continue
+        if got is None:
+            FAIL.append("p8lib.moy no longer transcribes %s as L_%s" % (name, name))
+            continue
+        if got.replace("L_", "") != want:
+            FAIL.append("p8lib.moy's L_%s has drifted from the shim's %s:\n"
+                        "  shim   %s\n  p8lib  %s"
+                        % (name, name, want, got.replace("L_", "")))
 
 
 if __name__ == "__main__":

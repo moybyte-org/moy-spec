@@ -908,15 +908,14 @@ def _expand_sigils_once(toks):
 # `a + 1 & b` flooring both sides of the `+` and `#t & 3` from becoming
 # `#flr(t) & 3`.
 _BITOPS = ("<<", ">>", ">>>", "<<>", ">><", "&", "~", "|")
-# p8's rotates have no Lua operator to leave behind, so they are always a call.
-_ROTATES = ("<<>", ">><")
 # The operators whose answer for two INTEGERS is Lua's own, so a provably
 # integral pair keeps the bare VM instruction. It is a short list because p8's
 # operators run on the 16.16 IMAGE: `&`, `|` and `^^` never touch the
 # fractional half when both halves start clear, so they are exact. The other
 # five move bits across the point or off the end of the image -- `3 >> 1` is
 # 1.5, `~3` is -3.0000153, `1 << 15` is -32768 -- and Lua's integer operator
-# cannot say any of that, so they are always a call, integers or not.
+# cannot say any of that, so they are always a call, integers or not. (The two
+# rotates were already always a call, having no Lua operator at all.)
 _BARE_OPS = ("&", "|", "~")
 _BIT_VERB = {"|": "__p8_bor", "&": "__p8_band", "~": "__p8_bxor",
              "<<": "__p8_shl", ">>": "__p8_shr", ">>>": "__p8_lshr",
