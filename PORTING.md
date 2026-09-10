@@ -162,18 +162,20 @@ extra ticks only while a tick is cheap (under half the period), and write off
 what you cannot pay rather than bursting.
 
 `_update(dt)` then `_draw()`, once per tick, and never `_draw` before the first
-`_update`. **The one sanctioned degradation** is drawing on an integer divisor
-of the tick — every second tick, every third — while continuing to update at
-the full rate: logic stays real-time and motion coarsens evenly. Do that rather
-than letting the tick rate sag, and hand `dt` the tick period.
+`_update`. Under load, degrade **only** the way §5 sanctions — the draw divisor,
+whose rule and its one forbidden alternative are stated there. What §5 cannot
+tell you is which way to lean when you write the loop: take the divisor rather
+than let the tick rate sag, and hand `dt` the tick period rather than the wall
+time you actually spent.
 
 Map your hardware onto the logical buttons of §7.3. Four directions plus `a`
 and `b` are mandatory; `run` is not. Buttons your device has that the console
 does not name are yours to keep — a cart polling for a button you do not
 implement must simply read not-pressed.
 
-`btnp` fires once per physical press with no autorepeat. If your input layer
-already autorepeats for a menu system, turn it off for the cart.
+`btnp`'s edge rule is §7.3's, and the trap is on your side of it: an input
+layer that already autorepeats for a menu system has to stop doing it for the
+cart.
 
 Two rules about exit that are easy to get backwards: **you own the exit
 gesture** — a cart is never required to provide one — and `quit()` is the cart
