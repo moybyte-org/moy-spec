@@ -18,6 +18,7 @@ integers ALREADY, which is a claim about the shim's verbs; both are asserted
 here, in each direction.
 """
 import os
+import re
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -124,10 +125,18 @@ def main():
     shifts_by_16()
 
     # Same rule for the nine: every name the operator rewrite can emit is a
-    # function the shim defines, and one the machine can carry.
-    for verb in sorted(p8_lua_port._P8_BIT_VERBS):
-        if "function %s(" % verb not in p8_lua_port.SHIM:
-            FAIL.append("the shim does not define %s" % verb)
+    # name the shim BINDS. It binds them to the nine verbs -- one lane, so
+    # `x >> 1` and `shr(x, 1)` cannot answer differently -- and the second
+    # implementation that used to sit here (`function __p8_shr(a, b) return
+    # flr(a) >> flr(b) end`) is gone; a returning `function __p8_` is that
+    # divergence coming back.
+    ops = sorted(set(p8_lua_port._BIT_VERB.values()) | {p8_lua_port._BNOT_VERB})
+    for verb in ops:
+        if not re.search(r"(?m)(^|[\s,])%s\s*[,=][^=]" % re.escape(verb),
+                         p8_lua_port.SHIM):
+            FAIL.append("the shim does not bind %s" % verb)
+    if "function __p8_b" in p8_lua_port.SHIM or "function __p8_s" in p8_lua_port.SHIM:
+        FAIL.append("the shim defines a second bit-operator lane again")
 
     for line in FAIL:
         print("p8 port: " + line)
@@ -185,13 +194,16 @@ def bitops():
     emits("a compound assignment", "x&=y", "x = __p8_band(x, (y))")
 
     # NO WRAPPER AT ALL where both operands are already integers: the bare Lua
-    # instruction, no call of any kind. This is the shim's promise about what
-    # each of these verbs returns.
+    # instruction, no call of any kind. Only `&`, `|` and `^^` are on this
+    # list, and the reason is p8's 16.16 image: those three cannot move a bit
+    # across the point or off the end of it, so two integers meeting in one of
+    # them answer the same in either arithmetic. Every other operator can --
+    # see the list below.
     for src in ("x=peek(a)&0xf0", "x=peek(a)|peek(b)", "x=peek2(a)&0xff",
                 "x=mget(i,j)&7", "x=fget(n)&2", "x=flr(a)&flr(b)",
                 "x=ceil(a)|1", "x=#t&3", "x=1|2", "x=peek(a)&0xffff",
                 "x=peek(a)&-1", "x=(peek(a)&0xf)|(peek(b)&0xf0)",
-                "x=~peek(a)", "x=peek(a)>>4"):
+                "x=peek(a)^^peek(b)"):
         got = convert(src).strip()
         if "__p8_" in got or got.count("flr(") != src.count("flr("):
             FAIL.append("an integer operand still got a wrapper: %r -> %r"
@@ -209,7 +221,19 @@ def bitops():
             ("arithmetic on an integer is not one", "x=peek(a)+1&3"),
             ("a field is not the verb", "x=t.peek(a)|1"),
             ("a method is not the verb", "x=t:peek(a)|1"),
-            ("a bare name", "x=v&1")):
+            ("a bare name", "x=v&1"),
+            # Two integers are not enough for these five: p8 runs them on the
+            # 16.16 image, where `peek(a)>>4` keeps the four bits it shifted
+            # past the point (`3>>1` is 1.5), `~peek(a)` sets all sixteen of
+            # them, and `1<<15` lands on -32768 rather than 32768. Lua's
+            # integer operator cannot say any of that, so there is nothing to
+            # leave behind and the call stands.
+            ("a right shift keeps its fraction", "x=peek(a)>>4"),
+            ("a logical shift keeps its fraction", "x=peek(a)>>>4"),
+            ("a complement sets the fraction", "x=~peek(a)"),
+            ("a left shift can run off the top", "x=1<<peek(a)"),
+            ("and a shift inside a chain takes the chain with it",
+             "x=peek(a)|peek(b)>>2")):
         if "__p8_" not in convert(src):
             FAIL.append("%s: took an operand on trust -- %r"
                         % (name, convert(src).strip()))

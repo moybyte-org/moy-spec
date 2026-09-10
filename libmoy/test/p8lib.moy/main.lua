@@ -601,24 +601,16 @@ local function L_bxor(a, b)
   return L_unfx(L_fx(a) ~ L_fx(b))
 end
 local function L_bnot(a)
-  a = a or 0
-  if L_is_int(a) then return ~a end
-  return L_unfx(~L_fx(a))
+  return L_unfx(~L_fx(a or 0))
 end
 local function L_shl(a, n)
-  a, n = a or 0, L_flr(n or 0)
-  if L_is_int(a) then return a << n end
-  return L_unfx(L_fx(a) << n)
+  return L_unfx(L_fx(a or 0) << L_flr(n or 0))
 end
 local function L_shr(a, n)
-  a, n = a or 0, L_flr(n or 0)
-  if L_is_int(a) then return a // (1 << n) end
-  return L_unfx(L_fx(a) // (1 << n))
+  return L_unfx(L_fx(a or 0) // (1 << L_flr(n or 0)))
 end
 local function L_lshr(a, n)
-  a, n = a or 0, L_flr(n or 0)
-  if L_is_int(a) then return (a & 0xffffffff) >> n end
-  return L_unfx((L_fx(a) & 0xffffffff) >> n)
+  return L_unfx((L_fx(a or 0) & 0xffffffff) >> L_flr(n or 0))
 end
 local function L_rotl(a, n)
   n = L_flr(n or 0) % 32
@@ -692,99 +684,48 @@ function bit_checks()
   check("shr halves", __moy_shr(12.5, 1) == 6.25)
   check("rotl by 0 is identity", __moy_rotl(3.25, 0) == 3.25)
   check("rotl and rotr come back", __moy_rotr(__moy_rotl(0.5, 7), 7) == 0.5)
+
+  -- p8 has ONE kind of number and the bit verbs run on its whole 32-bit
+  -- image, so an INTEGER argument is not a shortcut to an integer answer.
+  -- Each of these read the other way while bnot/shl/shr/lshr carried an
+  -- integer fast path, and each is reachable from a cart: `x >> 1` as a half,
+  -- `~0` as a mask, `1 << 15` at the top of the integer half.
+  check("shr of an integer keeps the halves it makes",
+        __moy_shr(3, 1) == 1.5 and __moy_shr(1, 1) == 0.5)
+  check("the integer and the float spell the same number",
+        __moy_shr(3, 1) == __moy_shr(3.0, 1)
+        and __moy_lshr(3, 1) == __moy_lshr(3.0, 1)
+        and __moy_bnot(3) == __moy_bnot(3.0)
+        and __moy_shl(3, 1) == __moy_shl(3.0, 1))
+  check("bnot sets the fraction too",
+        __moy_bnot(3) == -3 - 1 / 65536 and __moy_bnot(0) == -1 / 65536)
+  check("shr is ARITHMETIC and lshr is LOGICAL",
+        __moy_shr(-2, 1) == -1 and __moy_lshr(-2, 1) == 32767)
+  check("shl runs off the top of the image", __moy_shl(1, 15) == -32768)
+  check("a whole answer is still an integer",
+        mtype(__moy_shr(4, 1)) == "integer" and mtype(__moy_shl(2, 3)) == "integer")
 end
 
--- ---- the NATIVE bit operators -------------------------------------------
--- A different set from the nine above, sharing only their spelling: these are
--- p8's `a|b`, `a<<b`, `~a` as the PORTER reads them -- flr() on each operand
--- and then Lua's own integer operator. The Lua here is the porter's shim
--- verbatim (p8_lua_port.py, `function __p8_bor(a, b) return flr(a) | flr(b)
--- end`), because a cart reaches whichever lane the host offers and the two
--- must be one answer. The sweep is the same BITS/COUNTS the 16.16 verbs get,
--- so an operand out of int32's range, a nil, a string and a NaN each land on
--- the same side in both lanes -- defined, and defined the same way.
-local function LN_bor(a, b) return L_flr(a) | L_flr(b) end
-local function LN_band(a, b) return L_flr(a) & L_flr(b) end
-local function LN_bxor(a, b) return L_flr(a) ~ L_flr(b) end
-local function LN_bnot(a) return ~L_flr(a) end
-local function LN_shl(a, b) return L_flr(a) << L_flr(b) end
-local function LN_shr(a, b) return L_flr(a) >> L_flr(b) end
-local function LN_lshr(a, b) return L_flr(a) >> L_flr(b) end
-local function LN_rotl(a, b)
-  local v, n = L_flr(a), L_flr(b) % 32
-  return (v << n) | (v >> (32 - n))
-end
-local function LN_rotr(a, b)
-  local v, n = L_flr(a), L_flr(b) % 32
-  return (v >> n) | (v << (32 - n))
-end
-
+-- ---- ONE bit lane -------------------------------------------------------
+-- There was a second set of these once: __moy_p8_bor and friends, p8's `a|b`
+-- read as `flr(a) | flr(b)`, registered beside the nine verbs and bound by the
+-- porter to the operators. It floored away every fraction p8 carries, made
+-- `>>` logical where p8's is arithmetic, and disagreed with the verb of its
+-- own name about `shr(3, 1)` -- while a test pinned the two COPIES of that
+-- reading to each other, so nothing went red. The shim binds `__p8_shr` to
+-- `shr` now, and the machine registers one implementation; what this asserts
+-- is that the twin has not come back, because a second answer only ever waits
+-- to drift from the first.
 function native_bit_checks()
-  check("the native bit operators are the C ones",
-        __moy_p8_bor ~= nil and __moy_p8_rotr ~= nil)
-
-  local PAIRS = {
-    {"__p8_bor", __moy_p8_bor, LN_bor}, {"__p8_band", __moy_p8_band, LN_band},
-    {"__p8_bxor", __moy_p8_bxor, LN_bxor},
-    {"__p8_shl", __moy_p8_shl, LN_shl}, {"__p8_shr", __moy_p8_shr, LN_shr},
-    {"__p8_lshr", __moy_p8_lshr, LN_lshr},
-  }
-  for _, v in ipairs(PAIRS) do
-    for i = 1, NBITS do
-      for j = 1, NBITS do
-        same(v[1] .. "(" .. tostring(BITS[i]) .. ", " .. tostring(BITS[j]) .. ")",
-             call1(v[2], BITS[i], BITS[j]), call1(v[3], BITS[i], BITS[j]))
-      end
-      -- The shift counts a cart actually writes, which BITS does not carry:
-      -- past the width, negative, fractional, and none at all.
-      for j = 1, NCOUNTS do
-        same(v[1] .. "(" .. tostring(BITS[i]) .. ", " .. tostring(COUNTS[j]) .. ")",
-             call1(v[2], BITS[i], COUNTS[j]), call1(v[3], BITS[i], COUNTS[j]))
-      end
-      same(v[1] .. " of one argument", call1(v[2], BITS[i]), call1(v[3], BITS[i]))
-    end
-    same(v[1] .. " of nothing at all", call1(v[2]), call1(v[3]))
-  end
-
-  for i = 1, NBITS do
-    same("__p8_bnot(" .. tostring(BITS[i]) .. ")",
-         call1(__moy_p8_bnot, BITS[i]), call1(LN_bnot, BITS[i]))
-  end
-  same("__p8_bnot of nothing", call1(__moy_p8_bnot), call1(LN_bnot))
-
-  local ROTS = {
-    {"__p8_rotl", __moy_p8_rotl, LN_rotl}, {"__p8_rotr", __moy_p8_rotr, LN_rotr},
-  }
-  for _, v in ipairs(ROTS) do
-    for i = 1, NBITS do
-      for j = 1, NCOUNTS do
-        same(v[1] .. "(" .. tostring(BITS[i]) .. ", " .. tostring(COUNTS[j]) .. ")",
-             call1(v[2], BITS[i], COUNTS[j]), call1(v[3], BITS[i], COUNTS[j]))
-      end
-      same(v[1] .. " with no count", call1(v[2], BITS[i]), call1(v[3], BITS[i]))
-    end
-  end
-
-  -- What the porter's reading MEANS, spelled out so a break says which part.
-  -- These are the answers the emitted `flr(a) | flr(b)` gave, and the reason
-  -- they are not the 16.16 verbs' answers.
-  check("a fraction is floored away, not carried",
-        __moy_p8_band(12.75, 0.5) == 0 and __moy_band(12.75, 0.5) == 0.5)
-  check("the answer is always an integer",
-        math.type(__moy_p8_bor(1.5, 2.5)) == "integer")
-  check("a negative operand floors DOWN", __moy_p8_band(-12.75, -1) == -13)
-  check("nil is zero, as `flr(v or 0)` is",
-        __moy_p8_bor(nil, 5) == 5 and __moy_p8_band(7) == 0)
-  check("`>>` is p8's `>>>`: logical, so a negative goes positive",
-        __moy_p8_shr(-1, 1) == 0x7fffffff
-        and __moy_p8_lshr(-1, 1) == __moy_p8_shr(-1, 1))
-  check("a count past the width is zero, not undefined",
-        __moy_p8_shl(1, 32) == 0 and __moy_p8_shr(-1, 99) == 0)
-  check("a rotate comes back round",
-        __moy_p8_rotr(__moy_p8_rotl(0x1234, 9), 9) == 0x1234
-        and __moy_p8_rotl(1, 31) == -2147483648)
-  check("an operand past int32 raises rather than wrapping",
-        not pcall(__moy_p8_band, 1e30, 1) and not pcall(LN_band, 1e30, 1))
+  check("no second bor/band/bxor/bnot lane",
+        __moy_p8_bor == nil and __moy_p8_band == nil
+        and __moy_p8_bxor == nil and __moy_p8_bnot == nil)
+  check("no second shl/shr/lshr lane",
+        __moy_p8_shl == nil and __moy_p8_shr == nil and __moy_p8_lshr == nil)
+  check("no second rotl/rotr lane",
+        __moy_p8_rotl == nil and __moy_p8_rotr == nil)
+  check("and the verbs the operators bind to are the C ones",
+        __moy_band ~= nil and __moy_shr ~= nil and __moy_rotr ~= nil)
 end
 
 -- ---- the map and flag verbs ---------------------------------------------

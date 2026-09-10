@@ -140,21 +140,34 @@ integers, which is when the loop takes over again.
 
 **The operators.** PICO-8 has nine native bit operators (`| & ^^ ~ << >> >>>
 <<> >><`); Lua 5.4 has six, refuses every one of them on a non-integral
-number, and has no rotate at all — so each operand must be floored. The porter
-emits ONE call per operator — `__p8_bor(a, b)`, `__p8_shl`, `__p8_rotl` and the
-rest, whose shim bodies ARE that expansion, so a host with nothing behind the
-name runs plain Lua and one with `moy_p8.c` does the floor and the operator in
-a single crossing. A call knows Lua's precedence, which is what a wrapper
-around each operand cannot: `a + 1 & b` must floor both sides of the `+`,
-`#t & 3` must not floor `t`, and `x &= y` must be floored at all. Better still
-is the operator that needs NO call: an operand that is an integer already — a
-byte out of `peek`, a cell out of `mget`, a one-argument `fget`, a literal,
-another such operator — keeps the bare Lua instruction, which is what dank
-tomb's `peek(...) & 0xf0` comes out as. That last is a claim about the shim's
-own verbs, so a cart that defines, declares, assigns or takes as a parameter a
-name like `peek` turns the rule off for that name; the 16.16 verbs (`band`,
-`shl`, …) are deliberately not on the list, because their fractional lane
-answers a float.
+number, and has no rotate at all. **They are the nine VERBS under another
+spelling** — the manual's "operator versions are also available" — and the
+porter emits ONE call each (`__p8_bor(a, b)`, `__p8_shl`, `__p8_rotl`) bound to
+`band`, `shl`, `rotl`. One lane: `x >> 1` and `shr(x, 1)` cannot answer
+differently, and a cart that takes `shr` for itself still gets p8's operator. A
+call knows Lua's precedence, which is what a wrapper around each operand
+cannot: `a + 1 & b` takes both sides of the `+`, `#t & 3` must not take `t`,
+and `x &= y` must be rewritten at all.
+
+An operand that is an integer already — a byte out of `peek`, a cell out of
+`mget`, a one-argument `fget`, a literal, another such operator — keeps the
+bare Lua instruction, but **only under `&`, `|` and `^^`**, which is what dank
+tomb's `peek(...) & 0xf0` comes out as. Those three cannot move a bit across
+the point or off the end of the image, so two integers meeting in one of them
+answer the same in either arithmetic. The other six can, and no pair of
+integers is enough for them: `3 >> 1` is 1.5, `~3` is −3.0000153, `1 << 15` is
+−32768. The integer claim is a claim about the shim's own verbs, so a cart
+that defines, declares, assigns or takes as a parameter a name like `peek`
+turns the rule off for that name.
+
+That reading is newer than the port (2026-09-10). Before it the operators were
+a SECOND implementation — `flr()` on each operand and then Lua's own integer
+operator — which floored away every fraction p8 carries, made `>>` logical
+where p8's is arithmetic, and answered `shr(3, 1)` as 1 where the verb of the
+same name said 1.5. Nothing caught it because the test pinned the two COPIES of
+that reading to each other rather than to PICO-8. It is why celeste 2's
+`px9_decomp` drew empty rooms, and why the newer px9 — whose bit cache stays
+under 16 bits and so fits float32 exactly — could not run either.
 
 **The API.** The shim implements PICO-8's verbs over the moy cart API —
 `sin`/`cos` with their turn-and-flip semantics, the table verbs
@@ -268,7 +281,7 @@ verdict names them per cart.
 | `cstore` | writes the ROM snapshot in memory; nothing reaches the cart file |
 | `0x5f2c` screen modes | the 64×64 and rotated modes are refused; the normal mode is a no-op |
 | custom fonts (`0x5600`), bitplane masks (`0x5f5e`), sheet/screen remaps (`0x5f54`/`0x5f55`) | remembered, not applied |
-| 16.16 arithmetic | the bit verbs (`band`, `shr`, `rotl`, …) work on the 32-bit fixed image, and a hex literal spells PICO-8's bit pattern (`0xffff` is −1, `0x0.0001` is 1/65536) — exact whenever the pattern fits float32's 24 bits, which fraction-packed flags and masks do. A data decoder built from shifts by 16 over full 32-bit words does not run |
+| 16.16 arithmetic | the bit verbs (`band`, `shr`, `rotl`, …) work on the 32-bit fixed image, and a hex literal spells PICO-8's bit pattern (`0xffff` is −1, `0x0.0001` is 1/65536) — exact whenever the pattern fits float32's 24 bits, which fraction-packed flags and masks do. A data decoder that packs its cache into a full 32-bit word does not run — 31 significant bits do not fit 24; one that reads a byte at a time (the newer px9) does |
 | `cartdata` `dget` `dset` | **real** — they persist through the console's own save memory |
 | `printh` `extcmd` `holdframe` | dropped |
 
