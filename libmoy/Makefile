@@ -35,7 +35,7 @@ LUA_OBJ  := $(LUA_SRC:.c=.o)
 LUA_CFLAGS := -std=c99 -O2 -w -I$(LUA_DIR)
 RUNCART  := build/run_cart
 
-.PHONY: all clean data conform conform-lua test lua play audio-test p8-carts
+.PHONY: all clean data conform conform-lua test lua play audio-test p8-carts float-fold
 
 all: $(LIB) $(REPLAY)
 
@@ -177,6 +177,20 @@ $(SPRSWEEP): test/spr_scale_sweep.c $(LIB)
 spr-sweep: $(SPRSWEEP)
 	./$(SPRSWEEP)
 
+# The machine's number coercion, held equal to the double-precision form it
+# replaced over the float bit patterns -- the change that moved it into
+# lua_Number, because neither board has a double FPU and every promote was a
+# libgcc call. Standalone (both sides are static in moy_p8.c and one no longer
+# exists), so it needs no libmoy. The default stride sweeps ~116M patterns in a
+# few seconds; `./build/p8_float_fold 1` is the exhaustive 2^32 form, ~2 min.
+FLOATFOLD := build/p8_float_fold
+$(FLOATFOLD): test/p8_float_fold.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) $< $(LDLIBS) -o $@
+
+float-fold: $(FLOATFOLD)
+	./$(FLOATFOLD)
+
 # The PICO-8 machine: a cart asserts every mirrored region of the memory map
 # both ways (test/p8mem.moy), the C font is held equal to the shim's, the
 # stdlib verbs promoted out of the shim are held equal to the Lua they replace
@@ -186,7 +200,8 @@ spr-sweep: $(SPRSWEEP)
 # p8_port_check.py is the PORTER's half: the statement shapes it folds, and the
 # near misses it must leave alone, which no corpus cart can be relied on to
 # contain.
-p8-test: $(RUNCART)
+p8-test: $(RUNCART) $(FLOATFOLD)
+	./$(FLOATFOLD)
 	./$(RUNCART) test/p8mem.moy build/p8mem.bin --frames 2
 	./$(RUNCART) test/p8lib.moy build/p8lib.bin --frames 2
 	python3 test/p8_font_check.py
