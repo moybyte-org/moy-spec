@@ -299,7 +299,12 @@ jobs:
         working-directory: libmoy
         run: |
           if [ "$RUNNER_OS" = Linux ]; then
-            apt-get update -qq
+            # Debian 11 is EOL and its security Release file has EXPIRED, so a
+            # plain update exits 100. Do NOT fix that by moving to bookworm:
+            # the bullseye pin above is deliberate (glibc 2.31, "old builder,
+            # wide audience") and a newer base silently narrows who can run the
+            # published tar. Accept the stale Release instead.
+            apt-get -o Acquire::Check-Valid-Until=false update -qq
             apt-get install -y -qq libx11-dev libxext-dev libxrandr-dev libxi-dev \
               libxcursor-dev libxfixes-dev libxss-dev libgl1-mesa-dev \
               libasound2-dev libpulse-dev libwayland-dev wayland-protocols libxkbcommon-dev
