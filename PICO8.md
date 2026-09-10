@@ -223,6 +223,35 @@ laid out. `p8lib.moy` seeds both lanes alike and compares 20,000 draws from
 each of eight seeds; a cart that never seeds still differs run to run, because
 the machine draws its own starting words from lmathlib's state at open.
 
+**The lookup-table span** is the one promotion where the C had to be able to
+say *"not this one"* and still be the whole verb. `__p8_lut_span` is the fold
+target for `for a=i,j do poke(a,peek(lut|peek(a))) end` (a lit room, a fade),
+and the machine only takes three plain integers — Lua's numeric `for` coerces
+its bounds and `|` refuses a non-integral float, and transcribing either rule
+into C would be a second copy of something the shim already owns. So the verb
+is bound through a FACTORY: `__moy_p8_lut_span(fallback)` returns the verb
+carrying the shim's own loop as an upvalue, runs the span itself when it
+recognises the arguments, and calls the loop when it does not. One definition
+of the coercions, still in Lua, still the reference — and no Lua frame on the
+three hundred calls a frame a lighting cart makes.
+
+**`map` binds alone, and the camera stays the shim's.** The two used to move
+together, which read as a rule about the pair but is really one-directional: a
+C `camera()` with the shim's Lua `map()` in play leaves that loop clipping
+against a copy nothing updates, while a C `map()` with the shim's `camera()`
+needs nothing from the shim — it clips against the *console's* camera, which
+is what `camera()` writes and is the more current of the two (a cart that pokes
+`0x5f28` moves it; the Lua copy it would not). A host with its own native
+masked walk takes it too: both walks are `moy_spr` per cell, so what the C
+removes is the wrapper around them, not the walk.
+
+**Tile 0 is empty**, whichever way the cell was written. A console cell holds
+`tile+1` with `0` for empty and the importer maps p8's "sprite 0, empty by
+convention" onto `0`; the runtime write path stored a `0` as cell `1`, so
+`mset(x, y, 0)` — p8's only way to clear a cell — left one that drew sprite 0
+where the seeded map drew nothing. `mget` and `peek` are unaffected either way,
+which is why it stayed hidden.
+
 ## What is approximated
 
 These convert, run, and do *something* — but not the thing PICO-8 did. The

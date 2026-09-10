@@ -975,6 +975,59 @@ function span_checks()
   check("a lut span over the screen writes the canvas", cpeek(0x6000) == 7)
 end
 
+-- ---- the span as the WHOLE verb -----------------------------------------
+-- __moy_p8_lut_span(fallback) hands back __p8_lut_span itself, keeping the
+-- shim's loop for the cases it declines. That makes the pin STRICTLY stronger
+-- than the one above: the boolean verb only had to be right about the cases
+-- it accepted, and this one owns the declines too. So every case -- accepted
+-- and declined alike -- has to leave the same memory as the loop AND raise
+-- the same way, and the declined ones have to actually reach the fallback
+-- rather than being quietly dropped.
+function span_verb_checks()
+  check("the whole-verb lut span is bindable", __moy_p8_lut_span ~= nil)
+  local calls = 0
+  local verb = __moy_p8_lut_span(function(from, to, lut)
+    calls = calls + 1
+    L_lut_span(from, to, lut)
+  end)
+  check("the factory answers a function", type(verb) == "function")
+
+  local function lane(fn, c)
+    span_seed()
+    local ok = pcall(fn, c[1], c[2], c[3])
+    return ok, span_digest()
+  end
+
+  for k, c in ipairs(SPANS) do
+    calls = 0
+    local c_ok, c_hash = lane(verb, c)
+    local reached = calls
+    local l_ok, l_hash = lane(L_lut_span, c)
+    same("verb span case " .. k .. " raised alike", c_ok, l_ok)
+    same("verb span case " .. k, c_hash, l_hash)
+    check("verb span case " .. k .. " stayed in C", reached == 0)
+  end
+
+  for k, c in ipairs(DECLINED) do
+    calls = 0
+    local c_ok, c_hash = lane(verb, c)
+    local reached = calls
+    local l_ok, l_hash = lane(L_lut_span, c)
+    same("declined verb case " .. k .. " raised alike", c_ok, l_ok)
+    same("declined verb case " .. k, c_hash, l_hash)
+    check("declined verb case " .. k .. " reached the fallback", reached == 1)
+  end
+
+  -- THE ARITY IS PART OF THE INPUT (split's lesson, and the same defence):
+  -- the fallback reads three, so it is handed three whatever the cart passed.
+  local seen
+  local counting = __moy_p8_lut_span(function(...) seen = select("#", ...) end)
+  counting(0x4400.5, 0x441f, 0x4300, 99)
+  same("a fourth argument does not ride along", seen, 3)
+  counting(0x4400.5)
+  same("a one-argument call still arrives as three", seen, 3)
+end
+
 -- ---- the glyph rasteriser -----------------------------------------------
 -- A GOLDEN, like conformance's: nine renders through the PICO-8 font, hashed.
 -- The outline is computed a row at a time now (moy_p8.c), and row arithmetic
@@ -1446,6 +1499,28 @@ function draw_checks()
     end
   end
 
+  -- TILE 0 IS EMPTY, whichever way the cell was written. Both lanes above go
+  -- through the same walk, so neither could see this: the SEED path maps p8's
+  -- "sprite 0, empty by convention" onto cell 0, and the WRITE path stored a
+  -- runtime 0 as cell 1 instead -- so `mset(x, y, 0)`, which is p8's only way
+  -- to clear a cell, left one that drew sprite 0. Explicit rather than
+  -- lane-compared for exactly that reason.
+  reset_draw()
+  for a = 0x0000, 0x0fff do cpoke(a, 0x77) end     -- sprites 0 and 1, solid 7
+  __moy_mset(0, 0, 1)
+  m_cls(0)
+  __moy_p8_map(0, 0, 0, 0, 1, 1)
+  check("a cell holding tile 1 draws it", __moy_p8_pget(0, 0) == 7)
+  __moy_mset(0, 0, 0)
+  m_cls(0)
+  __moy_p8_map(0, 0, 0, 0, 1, 1)
+  check("mset(x, y, 0) CLEARS the cell", __moy_p8_pget(0, 0) == 0)
+  same("and mget reads the 0 back", __moy_mget(0, 0), 0)
+  cpoke(0x2000, 0)
+  m_cls(0)
+  __moy_p8_map(0, 0, 0, 0, 1, 1)
+  check("a poke of 0 into map memory clears it too", __moy_p8_pget(0, 0) == 0)
+
   -- The state the shim kept in Lua locals is the MEMORY MAP's now, so the
   -- verbs and peek/poke agree about it -- which is the whole reason it moved.
   reset_draw()
@@ -1577,6 +1652,7 @@ function _init()
   native_bit_checks()
   map_checks()
   span_checks()
+  span_verb_checks()
   draw_checks()
 end
 
