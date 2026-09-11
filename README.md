@@ -129,6 +129,16 @@ TIC-80 converter.
 
 This is early, and the useful contributions are arguments, not patches.
 
+If you send a patch at all, `tools/preflight.sh` runs what CI runs, here. It is
+not the same as `make -C libmoy test`, and the difference is the point: the
+steps `make test` leaves out are the ones that check a COMMITTED ARTIFACT
+against the sources it was built from — `runner/`, the browser player — which is
+exactly what a change to a header under `libmoy/port/` quietly invalidates.
+The wasm half runs in a PINNED emscripten container (`emscripten/emsdk`), because
+emcc is not byte-reproducible across versions: rebuilding on whatever this
+machine happens to have would produce a different `moy.wasm` and a different
+stamp. `--fast` skips that half when you have not touched C.
+
 If you do send a patch that touches the documents, `python3 tools/check_docs.py`
 is what CI runs on them: it holds the prose to the things that generate its facts
 — the suite's own scene count, SPEC.md's section numbers, the player's byte sizes
