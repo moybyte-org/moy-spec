@@ -24,9 +24,14 @@ from .sheet import MAP_MAX, TILE_COUNT
 
 # SPEC.md 4.1: the available Lua standard library is EXACTLY base (minus these),
 # math, string, table. "This is a maximum, not a suggestion."
+# SPEC.md 4.1's removals, and only those. `coroutine` is NOT one of them --
+# it is permitted, and unguarded, because it is pure VM with no reach outside
+# it; listing it here failed every PICO-8 port, whose shim implements p8's
+# cocreate/coresume over exactly this library. `loadfile` is here and not in
+# 4.1's prose because libmoy bans it and libmoy is the tiebreaker (SPEC.md 11).
 FORBIDDEN_GLOBALS = (
-    "io", "os", "debug", "package", "coroutine",
-    "load", "loadstring", "dofile", "require", "collectgarbage",
+    "io", "os", "debug", "package",
+    "load", "loadstring", "loadfile", "dofile", "require", "collectgarbage",
 )
 
 # SPEC.md 10 defines NO standard extensions. The two that once lived there are
@@ -166,7 +171,7 @@ def check_source(source, manifest, findings):
     code = strip_lua(source)
 
     for name in FORBIDDEN_GLOBALS:
-        if _calls(code, name) or (name in ("io", "os", "debug", "package", "coroutine")
+        if _calls(code, name) or (name in ("io", "os", "debug", "package")
                                   and (name + ".") in code):
             findings.append(("error", "sandbox",
                              "the cart reaches for `%s`, which SPEC.md 4.1 puts outside "
@@ -238,7 +243,10 @@ def check_cart(cart, files=None, findings=None):
     report be about the real file rather than a re-serialization."""
     findings = [] if findings is None else findings
     check_manifest(cart.manifest, findings)
-    check_source(cart.source, cart.manifest, findings)
+    # Every script, not just the authored one: SPEC.md 4 runs them all, so a
+    # prologue that reaches past the sandbox is the cart reaching past it.
+    check_source("\n".join(text for _, text in cart.sources), cart.manifest,
+                 findings)
 
     tm = cart.tilemap
     if tm.w > MAP_MAX or tm.h > MAP_MAX:
@@ -269,10 +277,12 @@ def check_cart(cart, files=None, findings=None):
         total = 0
         for name in files:
             total += len(files[name])
+        code = sum(len(text.encode("utf-8")) for _, text in cart.sources)
         findings.append(("info", "size",
-                         "cart is %s across %d files (source %s)"
-                         % (budget.human(total), len(files),
-                            budget.human(len(cart.source.encode("utf-8"))))))
+                         "cart is %s across %d files (%s of Lua in %d script%s)"
+                         % (budget.human(total), len(files), budget.human(code),
+                            len(cart.sources),
+                            "" if len(cart.sources) == 1 else "s")))
         cw, ch = cart.canvas_size
         findings.append(("info", "budget",
                          "fixed allocations: framebuffer %s, sheet %s, map %s of %s; "

@@ -1,9 +1,10 @@
 """The cart (SPEC.md 3).
 
 A cart is a folder: manifest.json and main.lua required, sprites.moygfx,
-map.moymap, sounds.json and config.json optional. How the folder TRAVELS -- a
-zip, a git clone, a directory on an SD card -- is packaging, and the spec says
-nothing about it.
+map.moymap, sounds.json and config.json optional, plus any further scripts the
+manifest's `sources` lists (SPEC.md 4). How the folder TRAVELS -- a zip, a git
+clone, a directory on an SD card -- is packaging, and the spec says nothing
+about it.
 
 So neither does the loader. `Cart.from_files` takes a plain {name: bytes} map,
 which is what a host has whether it read a directory, unpacked an archive or
@@ -40,6 +41,7 @@ MAP = "map.moymap"
 FLAGS = "flags.moyflags"
 SOUNDS = "sounds.json"
 CONFIG = "config.json"
+SOURCES = "sources"          # a manifest field, not a file (SPEC.md 4)
 
 
 class CartError(Exception):
@@ -115,9 +117,13 @@ class Cart:
     and points them at this."""
 
     def __init__(self, manifest, source, sheet=None, tilemap=None,
-                 sounds=None, config=None, name=None, flags=None):
+                 sounds=None, config=None, name=None, flags=None, sources=None):
         self.manifest = manifest
         self.source = source
+        # SPEC.md 4: every script the host runs, in order, each its own chunk.
+        # `source` stays the AUTHORED one (the file an editor opens and a crash
+        # line belongs to); a one-file cart is the same thing said once.
+        self.sources = list(sources) if sources else [(self.main, source)]
         self.sheet = sheet if sheet is not None else SpriteSheet()
         self.tilemap = tilemap if tilemap is not None else TileMap()
         # SPEC.md 3.5: one byte per tile, 512 tiles, absent = all zero.
@@ -244,6 +250,30 @@ class Cart:
         if main not in files:
             raise CartError("manifest names main %r but the cart has no such file" % main)
         source = _text(files[main])
+        # SPEC.md 4: `sources` is the whole load order, `main` one entry in it.
+        # Absent, it is [main] -- so every cart written before the field reads
+        # exactly as it did. Present and wrong, it is refused rather than
+        # part-run: a cart missing its prologue fails inside the author's code,
+        # which is the one report that sends the reader the wrong way.
+        names = manifest.get(SOURCES)
+        if names is None:
+            sources = [(main, source)]
+        else:
+            if (not isinstance(names, (list, tuple)) or not names
+                    or not all(isinstance(n, str) for n in names)):
+                raise CartError('manifest "sources" must be a non-empty list of '
+                                "file names (SPEC.md 4)")
+            if len(set(names)) != len(names):
+                raise CartError('manifest "sources" names the same file twice; '
+                                "each script runs once (SPEC.md 4)")
+            if main not in names:
+                raise CartError('manifest "sources" does not list main %r; '
+                                "SPEC.md 4 requires it" % main)
+            for n in names:
+                if n not in files:
+                    raise CartError('manifest "sources" names %r but the cart '
+                                    "has no such file" % n)
+            sources = [(n, _text(files[n])) for n in names]
 
         sheet = SpriteSheet()
         if SPRITES in files:
@@ -292,7 +322,7 @@ class Cart:
                 raise CartError("manifest palette: %s" % exc)
 
         return cls(manifest, source, sheet, tilemap, sounds, config, name=name,
-                   flags=flags)
+                   flags=flags, sources=sources)
 
 
 def load_cart(path, **kw):

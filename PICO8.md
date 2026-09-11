@@ -42,10 +42,17 @@ Two scripts, both in this repository:
 | | |
 |---|---|
 | `p8_import.py` | reads the cart. Parses `.p8` text and unpacks a `.p8.png` ROM (including the `pxa` and the older `:c:` code compression), and converts the sprite sheet, map, flags, sfx and music. |
-| `p8_lua_port.py` | writes the cart. Emits `main.lua` — a PICO-8 compatibility shim, the cart's own code mechanically converted to Lua 5.4, and the data tables — plus the assets and a manifest. |
+| `p8_lua_port.py` | writes the cart. Emits two scripts — `p8.lua`, the data tables and the PICO-8 compatibility shim, and `main.lua`, the cart's own code mechanically converted to Lua 5.4 — plus the assets and a manifest listing both in `sources` (SPEC.md 4). |
 
 The output is an ordinary `"runtime": "lua"` cart declaring a `128x128` canvas,
 so it draws real PICO-8 pixels 1:1 and the host does all scaling.
+
+**Two files, because `main.lua` should be the cart.** Line 1 of `main.lua` is
+the author's line 1, so a crash names a line they can find and an editor opens
+a game instead of 1,300 lines of generated stdlib. The layers cannot be split
+anywhere else: the shim captures the data tables as upvalues when its chunk
+loads, so those travel with it, and `main.lua`'s `local` aliases only reach
+code in their own chunk, so those travel with the game.
 
 ## What the importer decides before it writes
 
@@ -292,7 +299,7 @@ verdict names them per cart.
 | `load` | the launcher swaps carts here; a multi-cart game is refused |
 | `reboot` `stop` | there is no command line to drop to |
 | `trace` `info` `serial` | no traceback to fetch, no console to print to, nothing on the other end of the port |
-| `#include` | the included file does not travel with the cart |
+| `#include` | the included file does not travel with the cart. A moy cart can hold several scripts (SPEC.md 4), but `#include` splices TEXT into one scope and these are separate chunks, so a resolved include would still have to be pasted rather than listed |
 
 ## The test corpus
 

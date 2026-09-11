@@ -116,6 +116,7 @@ they are not symmetric:
 | `"extensions": ["something"]` you lack | **refuse the cart**, by name, before running a frame (§10) |
 | `"runtime"` naming a binding you lack | **refuse the cart** (§3.1, §15) — never hand the script to your Lua VM anyway |
 | `"canvas"` outside the closed set | **refuse the cart** (§1) — running at a size it did not ask for breaks every coordinate |
+| `"sources"` listing several scripts | **run them all, in order, each its own chunk** (§4); refuse a list that omits `main` or names a file the folder lacks |
 | an `"icon"` out of range or past the sheet | **ignore it** and choose your own (§3.4) |
 | a map larger than the format allows | **reject it** rather than allocating past your budget (§3.3) |
 
@@ -126,6 +127,15 @@ format exists to prevent.
 
 Refuse *cleanly* — tell the user which cart, and which requirement. A crash is
 not a refusal.
+
+`sources` is the one row above that is neither a refusal nor a degrade: it is
+work you have to do. Load each named file with your VM's own load call, one
+chunk each, in the listed order, and name the chunk after the file — that last
+part is what makes §4.3's line number land in a file the author can open.
+Never join the scripts into one buffer first: a `local` would then cross a file
+boundary on your console and nowhere else, which is a cart that runs only on
+you. Absent, `sources` is `[main]`, so the one-file path you already have *is*
+the general path with a list of one.
 
 ### 4. The Lua sandbox
 
@@ -371,6 +381,7 @@ Before you claim conformance:
 - [ ] An unknown `runtime` refuses it too, rather than reaching for the Lua VM
 - [ ] A `canvas` outside the set refuses; an out-of-range `icon` is ignored
 - [ ] Unknown manifest fields are ignored, not fatal
+- [ ] A cart listing several `sources` runs them in order, and a `local` in one is invisible in the next
 - [ ] 30 Hz holds; a `"fps": 60` cart ticks at 60, drawing on a divisor if it must
 - [ ] `dt` is the tick period, and dropped frames drop `_draw` only
 - [ ] The first `make_layer` succeeds

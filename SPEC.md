@@ -188,6 +188,7 @@ mygame.moy/
   flags.moyflags     optional — one flag byte per tile
   sounds.json        optional — the audio bank
   config.json        optional — author-exposed tuning values
+  …more .lua         optional — further scripts, listed in `sources` (§4)
 ```
 
 That folder is the whole format. How the folder *travels* — a zip, a tarball, a
@@ -216,7 +217,8 @@ wants to accept an archive unpacks it and hands the console a folder.
 | `title` | yes | display name |
 | `author` | no | |
 | `version` | no | integer, author's own versioning |
-| `main` | no | entry script, default `main.lua` |
+| `main` | no | the cart's own script, default `main.lua` |
+| `sources` | no | every script the host loads, in order; default `[main]` — see §4 |
 | `fps` | no | `30` (default), `60`, or `"free"` — see §5 |
 | `canvas` | no | raster size: `"320x240"` (default), `"160x120"` or `"128x128"` — see §1 |
 | `input` | no | input groups the cart reads — see §7.3 |
@@ -229,8 +231,8 @@ A host MUST ignore manifest fields it does not recognise. Implementations hang
 vendor metadata there (the reference console records editor state in fields of its
 own), and future minor versions may add fields — neither may break an existing host.
 
-**`runtime` and an out-of-set `canvas` are the exceptions, refused rather than
-ignored** (for `canvas`, see §1). Lua is
+**`runtime`, `sources` and an out-of-set `canvas` are the exceptions, refused or
+implemented rather than ignored** (for `canvas`, see §1; for `sources`, §4). Lua is
 core's only binding, so `"runtime"` absent or `"lua"` is the portable case and every
 conforming host runs it. A host that does not implement the named binding MUST
 refuse the cart cleanly, exactly as it refuses an unimplemented extension (§10) —
@@ -344,8 +346,9 @@ surface.
 
 ## 4. Program model
 
-A cart is one Lua 5.4 script. It defines up to three global functions and calls the
-console verbs, which are pre-injected as globals. **No `require`, no imports.**
+A cart is Lua 5.4. It defines up to three global functions and calls the console
+verbs, which are pre-injected as globals. **No `require`, no imports** — a cart
+never loads code; the host loads what the manifest lists, before `_init` runs.
 
 ```lua
 local x, y = 0, 0
@@ -369,11 +372,37 @@ end
 
 All three hooks are optional. `dt` is **seconds since the last update**, a float.
 
+**More than one file.** A cart may split its code. The manifest's `"sources"`
+lists every script, and the host runs them **in that order**:
+
+```json
+  "main": "main.lua",
+  "sources": ["p8.lua", "main.lua", "extra.lua"]
+```
+
+Omitted, it is `[main]`, so a one-file cart says nothing and nothing changes for
+it. `main` MUST appear in `sources`; it is not the first entry but the *authored*
+one — which file an editor opens, which file a crash's line number belongs to —
+and the entries around it are the prologue and epilogue the cart was built with.
+A `sources` that omits `main`, or names a file the folder does not hold, is a
+broken cart and gets §3.1's clean refusal, not a partial run.
+
+**Each script is its own chunk.** `local` does not cross a file boundary, so
+files share the way a cart already talks to the console: through globals. A
+prologue publishing a helper writes `function helper()`, not `local function
+helper()`. The alternative — pasting the files together so locals do carry —
+is rejected, and §12.8 says why.
+
+This is still not importing. The cart cannot reach `load` or `require` (§4.1)
+and does not decide what runs: the manifest declares a list, the host executes
+it. Two hosts given the same folder load the same files in the same order.
+
 ### 4.1 Sandbox
 
 The available Lua standard library is exactly:
 
-**`base`** (minus `load`, `loadstring`, `dofile`, `require`, `collectgarbage`),
+**`base`** (minus `load`, `loadstring`, `loadfile`, `dofile`, `require`,
+`collectgarbage`),
 **`math`**, **`string`**, **`table`**, **`coroutine`**.
 
 Absent entirely: `io`, `os`, `debug`, `package`.
@@ -1166,6 +1195,28 @@ their game is represented.
 **Cost:** a store built on 0.3 lays out 8 × 8 tile art and will look sparse beside a
 storefront with key art. Right way round: a missing cover is a design problem later, a
 wrong image format is a compatibility problem forever.
+
+### 12.8 — Several files, several chunks — not one program pasted together.
+
+`sources` (§4) runs each script separately, so a `local` in one is invisible to the
+next. PICO-8's `#include` does the opposite: it splices the text in, making one
+program with one scope, and that is what most people expect because it is what they
+have used.
+
+Splicing was rejected on two costs, both paid by the reader rather than the author.
+A spliced program has **one** line numbering, so a syntax error in the first file is
+reported at a line in the third — and a crash at "line 1413" of a cart whose own code
+begins at line 1 is a debugging session spent finding the offset. Separate chunks
+name the file and count from its own first line. Second, the splice has to exist: the
+host holds the joined program beside the pieces it joined, double the cart's code at
+the moment of loading, on the host with the least memory to spare.
+
+**Cost:** a prologue cannot hand the cart a private helper. Everything shared is a
+global — one flat namespace, and a table lookup per call rather than an upvalue slot.
+The first is a discipline a program this size already lives with, since the console's
+own verbs are globals too. The second is real, and its answer is an alias at the top
+of the file that uses the name (`local spr = spr`): a line a person can read and a
+converter can write.
 
 ---
 

@@ -158,8 +158,9 @@ end
 coordinate you cannot reason about.
 
 `math`, `string` and `table` are all available. `io`, `os`, `require` and
-friends are not, on any console, ever (§4.1). A cart is one script: there is no
-importing a second file.
+friends are not, on any console, ever (§4.1). A cart may still be several files
+— you list them in the manifest's `sources` and the console runs them in that
+order — but nothing in your code reaches out and fetches one (§4).
 
 ### 6. Make a noise
 
@@ -654,8 +655,10 @@ The short list of things that catch everyone exactly once.
     it (§8.2).
 11. **Lua tables are 1-based**, and `#t` on a table with holes is not what you
     want. Remove backwards when iterating.
-12. **There is no `require`.** One script. Long files are the idiom here; the
-    examples in this repository are single files on purpose.
+12. **There is no `require`.** Split a cart with `sources` if you must (§4) and
+    remember each file is its own scope — a `local` in one is invisible in the
+    next. Long files are the idiom here; the examples in this repository are
+    single files on purpose.
 
 ### Where to look next
 

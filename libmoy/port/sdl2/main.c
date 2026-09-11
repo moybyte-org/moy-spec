@@ -45,6 +45,7 @@
 
 #include "moy.h"
 #include "moy_audio.h"
+#include "../moy_manifest.h"
 
 static uint8_t  frame[MOY_W * MOY_H];
 static uint8_t  sheet_pix[MOY_SHEET_W * MOY_SHEET_H];
@@ -301,19 +302,34 @@ static void load_map(const char *dir, moy_map *m)
     moy_map_init(m, map_cells, w, h);
 }
 
-/* A manifest field, by minimal scan. A real host wants a JSON parser -- it has
- * `extensions` and `runtime` to refuse on (SPEC.md 3.1, 10) and a possible
- * `palette` to honour (2.2). This example reads the fields it needs. */
-static void manifest_str(const char *text, const char *key, char *out, size_t n)
+/* SPEC.md 4: run every script in `sources`, in order, each as its own chunk --
+ * so a `local` in one does not reach the next, and 4.3's line number names the
+ * file it counts from. Used by boot AND by the reload below, because a load
+ * order that differs between the two is a bug you only meet mid-edit. */
+static int load_sources(lua_State *L, const char *dir,
+                        char src[][MOY_NAME_MAX], int n, char *err, size_t errn)
 {
-    char pat[64];
-    const char *p;
-    snprintf(pat, sizeof pat, "\"%s\"", key);
-    p = text ? strstr(text, pat) : NULL;
-    if (p && (p = strchr(p + strlen(pat), '"')) != NULL) {
-        const char *s = p + 1, *e = strchr(s, '"');
-        if (e && (size_t)(e - s) < n) { memcpy(out, s, (size_t)(e - s)); out[e - s] = 0; }
+    int i;
+    for (i = 0; i < n; i++) {
+        char path[1024], chunk[MOY_NAME_MAX + 2];
+        char *text;
+        if (snprintf(path, sizeof path, "%s/%s", dir, src[i]) >= (int)sizeof path) {
+            snprintf(err, errn, "cart path too long for %s", src[i]);
+            return 1;
+        }
+        text = slurp(path, NULL);
+        if (!text) { snprintf(err, errn, "cannot read %.400s", path); return 1; }
+        /* "@name" so Lua reports `main.lua:3`, not `[string "main.lua"]:3`. */
+        snprintf(chunk, sizeof chunk, "@%.*s", MOY_NAME_MAX - 1, src[i]);
+        if (luaL_loadbuffer(L, text, strlen(text), chunk) != LUA_OK ||
+            lua_pcall(L, 0, 0, 0) != LUA_OK) {
+            snprintf(err, errn, "%s", lua_tostring(L, -1));
+            free(text);
+            return 1;
+        }
+        free(text);
     }
+    return 0;
 }
 
 /* -- hot reload ----------------------------------------------------------
@@ -339,19 +355,23 @@ static uint64_t fnv1a(uint64_t h, const void *p, size_t n)
     return h;
 }
 
-static uint64_t cart_stamp(const char *dir, const char *mainfile)
+static uint64_t cart_stamp(const char *dir, char src[][MOY_NAME_MAX], int nsrc)
 {
     static const char *const also[] = {
         "manifest.json", "sprites.moygfx", "map.moymap",
         "sounds.json", "config.json"
     };
     uint64_t h = 14695981039346656037ull;
-    size_t k;
-    for (k = 0; k <= sizeof also / sizeof *also; k++) {
+    size_t k, nfixed = sizeof also / sizeof *also;
+    /* EVERY script (SPEC.md 4), not just main: a cart whose shim lives in its
+     * own file is one whose shim you also want to edit and see. manifest.json
+     * is in the list, so a change to `sources` itself is caught too. */
+    for (k = 0; k < nfixed + (size_t)nsrc; k++) {
         char path[1024];
         long n = 0;
         char *t;
-        snprintf(path, sizeof path, "%s/%s", dir, k ? also[k - 1] : mainfile);
+        const char *name = k < nfixed ? also[k] : src[k - nfixed];
+        snprintf(path, sizeof path, "%s/%.*s", dir, MOY_NAME_MAX - 1, name);
         t = slurp(path, &n);
         if (t) { h = fnv1a(h, t, (size_t)n); free(t); }
         h = fnv1a(h, "|", 1);       /* a file appearing or vanishing counts */
@@ -370,11 +390,12 @@ int main(int argc, char **argv)
     SDL_Window *win;
     SDL_Renderer *ren;
     SDL_Texture *tex;
-    char path[1024], mainfile[256] = "main.lua", title[256] = "moy";
+    char path[1024], mainfile[MOY_NAME_MAX] = "main.lua", title[256] = "moy";
     char fps_s[16] = "30", canvas_s[16] = "320x240", err[512];
-    char *manifest, *source;
+    char srcname[MOY_SOURCES_MAX][MOY_NAME_MAX];
+    char *manifest;
     const char *cart = NULL;
-    int i, scale = 0, fullscreen = 0, fps, frame_ms, cw, ch;
+    int i, scale = 0, fullscreen = 0, fps, frame_ms, cw, ch, nsrc;
     int watch = 0, live = 1, arate = 0;
     int lw, lh;              /* the renderer's logical size, as last set */
     uint64_t stamp;
@@ -394,9 +415,10 @@ int main(int argc, char **argv)
 
     snprintf(path, sizeof path, "%s/manifest.json", cart);
     manifest = slurp(path, NULL);
-    manifest_str(manifest, "main", mainfile, sizeof mainfile);
-    manifest_str(manifest, "title", title, sizeof title);
-    manifest_str(manifest, "canvas", canvas_s, sizeof canvas_s);
+    moy_manifest_str(manifest, "main", mainfile, sizeof mainfile);
+    moy_manifest_str(manifest, "title", title, sizeof title);
+    moy_manifest_str(manifest, "canvas", canvas_s, sizeof canvas_s);
+    nsrc = moy_manifest_sources(manifest, mainfile, srcname, MOY_SOURCES_MAX);
     /* fps is a number, not a string, so scan it as one. SPEC.md 5: 30 or 60,
      * and anything else falls back to the guaranteed 30. */
     if (manifest) {
@@ -407,6 +429,15 @@ int main(int argc, char **argv)
     if (fps != 60) fps = 30;
     frame_ms = 1000 / fps;
     free(manifest);
+
+    /* SPEC.md 4: `sources` is refused, never ignored -- a cart run without its
+     * prologue fails inside the author's code, which sends the reader the
+     * wrong way. */
+    if (nsrc < 0) {
+        fprintf(stderr, "moy-play: this cart's \"sources\" is not a load order "
+                        "this player can follow (SPEC.md 4)\n");
+        return 2;
+    }
 
     /* SPEC.md 1: three canvas sizes, closed set; anything else is refused,
      * never run at the wrong dimensions. */
@@ -460,21 +491,15 @@ int main(int argc, char **argv)
     con.host.background = h_background;
     moy_srand(&con, (uint32_t)time(NULL));
 
-    snprintf(path, sizeof path, "%s/%s", cart, mainfile);
-    source = slurp(path, NULL);
-    if (!source) { fprintf(stderr, "moy-play: cannot read %s\n", path); return 2; }
-
     L = luaL_newstate();
     moy_lua_open(L, &con);
     moy_p8_open(L, &con, &p8, p8_mem, p8_rom);   /* the PICO-8 machine, for ports */
-    if (luaL_loadbuffer(L, source, strlen(source), mainfile) != LUA_OK ||
-        lua_pcall(L, 0, 0, 0) != LUA_OK) {
+    if (load_sources(L, cart, srcname, nsrc, err, sizeof err)) {
         /* SPEC.md 4.3: report it with the line number and return to where the
          * cart was launched from. Never leave it running, never swallow it. */
-        fprintf(stderr, "moy-play: %s\n", lua_tostring(L, -1));
+        fprintf(stderr, "moy-play: %s\n", err);
         return 1;
     }
-    free(source);
 
     if (SDL_Init(SDL_INIT_VIDEO) != 0) { fprintf(stderr, "SDL: %s\n", SDL_GetError()); return 2; }
 
@@ -549,7 +574,7 @@ int main(int argc, char **argv)
     host.t0 = SDL_GetTicks();
     if (moy_lua_init(L, err, sizeof err)) { fprintf(stderr, "moy-play: _init: %s\n", err); return 1; }
     last = checked = SDL_GetTicks();
-    stamp = watch ? cart_stamp(cart, mainfile) : 0;
+    stamp = watch ? cart_stamp(cart, srcname, nsrc) : 0;
     if (watch)
         fprintf(stderr, "moy-play: watching %s -- save a file and it reloads\n", cart);
 
@@ -570,26 +595,31 @@ int main(int argc, char **argv)
          * cart stopped rather than closing the window -- you fix the file and
          * the next save brings it back, which is the whole point of the loop. */
         if (watch && SDL_GetTicks() - checked >= WATCH_MS) {
-            uint64_t now_stamp = cart_stamp(cart, mainfile);
+            uint64_t now_stamp = cart_stamp(cart, srcname, nsrc);
             checked = SDL_GetTicks();
             if (now_stamp != stamp) {
-                char nmain[256], ntitle[256], ncanvas[16];
-                int ncw, nch;
-                char *src2;
+                char nmain[MOY_NAME_MAX], ntitle[256], ncanvas[16];
+                char nsrcname[MOY_SOURCES_MAX][MOY_NAME_MAX];
+                int ncw, nch, nnsrc;
 
                 stamp = now_stamp;
                 memcpy(nmain, mainfile, sizeof nmain);
                 memcpy(ntitle, title, sizeof ntitle);
+                memcpy(nsrcname, srcname, sizeof nsrcname);
+                nnsrc = nsrc;
                 snprintf(ncanvas, sizeof ncanvas, "%dx%d", cw, ch);
 
-                /* the manifest moves too -- a new title, fps, canvas or main */
+                /* the manifest moves too -- a new title, fps, canvas, main,
+                 * or a different set of scripts */
                 snprintf(path, sizeof path, "%s/manifest.json", cart);
                 manifest = slurp(path, NULL);
                 if (manifest) {
                     const char *fp;
-                    manifest_str(manifest, "main", nmain, sizeof nmain);
-                    manifest_str(manifest, "title", ntitle, sizeof ntitle);
-                    manifest_str(manifest, "canvas", ncanvas, sizeof ncanvas);
+                    moy_manifest_str(manifest, "main", nmain, sizeof nmain);
+                    moy_manifest_str(manifest, "title", ntitle, sizeof ntitle);
+                    moy_manifest_str(manifest, "canvas", ncanvas, sizeof ncanvas);
+                    nnsrc = moy_manifest_sources(manifest, nmain, nsrcname,
+                                                 MOY_SOURCES_MAX);
                     fp = strstr(manifest, "\"fps\"");
                     if (fp && (fp = strchr(fp, ':')) != NULL)
                         frame_ms = 1000 / (atoi(fp + 1) == 60 ? 60 : 30);
@@ -603,26 +633,26 @@ int main(int argc, char **argv)
                     ncw = cw; nch = ch;
                 }
 
-                snprintf(path, sizeof path, "%s/%s", cart, nmain);
-                src2 = slurp(path, NULL);
-                if (!src2) {
-                    fprintf(stderr, "moy-play: reload: cannot read %s\n", path);
+                if (nnsrc < 0) {
+                    fprintf(stderr, "moy-play: reload: \"sources\" is not a load "
+                                    "order this player can follow (SPEC.md 4)\n");
                     live = 0;
                 } else {
                     lua_State *nl = luaL_newstate();
                     moy_lua_open(nl, &con);
                     moy_p8_open(nl, &con, &p8, p8_mem, p8_rom);
-                    if (luaL_loadbuffer(nl, src2, strlen(src2), nmain) != LUA_OK ||
-                        lua_pcall(nl, 0, 0, 0) != LUA_OK) {
+                    if (load_sources(nl, cart, nsrcname, nnsrc, err, sizeof err)) {
                         /* the common case: a syntax error mid-edit. Say it and
                          * wait; nothing has been torn down yet. */
-                        fprintf(stderr, "moy-play: reload: %s\n", lua_tostring(nl, -1));
+                        fprintf(stderr, "moy-play: reload: %s\n", err);
                         lua_close(nl);
                         live = 0;
                     } else {
                         lua_close(L);           /* committed from here */
                         L = nl;
                         memcpy(mainfile, nmain, sizeof mainfile);
+                        memcpy(srcname, nsrcname, sizeof srcname);
+                        nsrc = nnsrc;
                         if (strcmp(title, ntitle)) {
                             memcpy(title, ntitle, sizeof title);
                             SDL_SetWindowTitle(win, title);
@@ -670,7 +700,6 @@ int main(int argc, char **argv)
                             fprintf(stderr, "moy-play: reloaded\n");
                         last = SDL_GetTicks();
                     }
-                    free(src2);
                 }
             }
         }

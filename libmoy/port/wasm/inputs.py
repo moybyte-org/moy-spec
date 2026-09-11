@@ -31,6 +31,7 @@ PATTERNS = (
     "libmoy/vendor/lua/*.c",
     "libmoy/vendor/lua/*.h",
     "libmoy/port/wasm/main.c",
+    "libmoy/port/*.h",              # the manifest scanner the three ports share
     "libmoy/port/wasm/page/*",
     "libmoy/port/wasm/build.sh",
 )

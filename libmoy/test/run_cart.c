@@ -33,35 +33,100 @@
 #include "lauxlib.h"
 
 #include "moy.h"
+#include "../port/moy_manifest.h"
 
 /* -- MOY_PROFILE=1: a Lua line profiler ----------------------------------
  * A count hook samples the running line every PROF_EVERY VM instructions and
- * the report at exit ranks lines and functions by samples, split into the
- * ported cart's shim (up to the "end shim" marker) and the cart itself. */
+ * the report at exit ranks lines and functions by samples, per script.
+ *
+ * ONE FLAT LINE SPACE ACROSS EVERY SCRIPT (SPEC.md 4): script i's line L is
+ * slot prof_base + L, so the per-line arrays stay one-dimensional and a row
+ * can still name the file it came from. Without the base, line 25 of a port's
+ * shim and line 25 of the game it wraps would be added together -- which is
+ * the confusion splitting the files existed to remove. */
 #define PROF_EVERY 1000
 #define PROF_LINES 16384
 static int prof_hits[PROF_LINES];
 static int prof_fn[PROF_LINES];
 static long prof_total;
-static const char *prof_src;
-static int prof_shim_end;
+static struct prof_chunk {
+    const char *name;
+    const char *text;
+    int base;                       /* slot of this script's line 0 */
+    int lines;
+    long hits;
+} prof_chunk[MOY_SOURCES_MAX];
+static int prof_n;
+
+/* Register a script in the flat space. Returns 0 when it does not fit, which
+ * only costs the profile -- never the run. */
+static int prof_add(const char *name, const char *text)
+{
+    const char *p;
+    int lines = 1, base = 0;
+    if (prof_n >= MOY_SOURCES_MAX) return 0;
+    for (p = text; *p; p++) if (*p == '\n') lines++;
+    if (prof_n) base = prof_chunk[prof_n - 1].base + prof_chunk[prof_n - 1].lines + 1;
+    if (base + lines + 1 >= PROF_LINES) return 0;
+    prof_chunk[prof_n].name = name;
+    prof_chunk[prof_n].text = text;
+    prof_chunk[prof_n].base = base;
+    prof_chunk[prof_n].lines = lines;
+    prof_chunk[prof_n].hits = 0;
+    prof_n++;
+    return 1;
+}
+
+/* The flat slot -> which script, by the highest base at or below it. */
+static int prof_owner(int slot)
+{
+    int i, best = -1;
+    for (i = 0; i < prof_n; i++)
+        if (prof_chunk[i].base <= slot) best = i;
+    return best;
+}
 
 static void prof_hook(lua_State *L, lua_Debug *ar)
 {
-    if (!lua_getinfo(L, "Sl", ar) || ar->currentline <= 0 ||
-        ar->currentline >= PROF_LINES) return;
+    int i, slot;
+    if (!lua_getinfo(L, "Sl", ar) || ar->currentline <= 0) return;
+    for (i = 0; i < prof_n; i++)
+        if (!strcmp(prof_chunk[i].name, ar->short_src)) break;
+    if (i == prof_n) return;                /* not one of the cart's scripts */
+    slot = prof_chunk[i].base + ar->currentline;
+    if (slot >= PROF_LINES) return;
     prof_total++;
-    prof_hits[ar->currentline]++;
-    prof_fn[ar->currentline] = ar->linedefined;
+    prof_chunk[i].hits++;
+    prof_hits[slot]++;
+    prof_fn[slot] = ar->linedefined > 0 ? prof_chunk[i].base + ar->linedefined
+                                        : prof_chunk[i].base;
 }
 
-static const char *prof_line_text(int line, char *buf, size_t n)
+/* "name:line", or "name:(main chunk)" for a script's own top level. */
+static const char *prof_where(int slot, char *buf, size_t n)
 {
-    const char *p = prof_src;
-    int l = 1;
+    int ci = prof_owner(slot);
+    if (ci < 0) { snprintf(buf, n, "?:%d", slot); return buf; }
+    if (slot == prof_chunk[ci].base)
+        snprintf(buf, n, "%s:(main chunk)", prof_chunk[ci].name);
+    else
+        snprintf(buf, n, "%s:%d", prof_chunk[ci].name, slot - prof_chunk[ci].base);
+    return buf;
+}
+
+static const char *prof_line_text(int slot, char *buf, size_t n)
+{
+    int ci = prof_owner(slot), line;
+    const char *p;
     size_t i = 0;
+    int l = 1;
+    buf[0] = 0;
+    if (ci < 0) return buf;
+    line = slot - prof_chunk[ci].base;
+    if (line <= 0) return buf;
+    p = prof_chunk[ci].text;
     while (p && *p && l < line) { if (*p == '\n') l++; p++; }
-    if (!p) { buf[0] = 0; return buf; }
+    if (!p) return buf;
     while (*p == ' ' || *p == '\t') p++;
     while (*p && *p != '\n' && i + 1 < n) buf[i++] = *p++;
     buf[i] = 0;
@@ -71,21 +136,20 @@ static const char *prof_line_text(int line, char *buf, size_t n)
 static void prof_report(void)
 {
     int fn_hits[PROF_LINES], top[40], i, k, n;
-    long shim = 0;
-    char text[72];
+    char text[72], where[80];
     if (!prof_total) return;
     memset(fn_hits, 0, sizeof fn_hits);
     for (i = 1; i < PROF_LINES; i++) {
         if (!prof_hits[i]) continue;
-        if (i <= prof_shim_end) shim += prof_hits[i];
-        if (prof_fn[i] > 0 && prof_fn[i] < PROF_LINES) fn_hits[prof_fn[i]] += prof_hits[i];
-        else fn_hits[0] += prof_hits[i];
+        if (prof_fn[i] >= 0 && prof_fn[i] < PROF_LINES) fn_hits[prof_fn[i]] += prof_hits[i];
     }
-    printf("MOY_PROFILE: %ld samples x %d instructions; shim %.1f%%, cart %.1f%% "
-           "(shim ends at line %d)\n", prof_total, PROF_EVERY,
-           100.0 * (double)shim / (double)prof_total,
-           100.0 * (double)(prof_total - shim) / (double)prof_total, prof_shim_end);
-    printf("-- top lines: samples %% line fn | text\n");
+    printf("MOY_PROFILE: %ld samples x %d instructions, across %d script%s\n",
+           prof_total, PROF_EVERY, prof_n, prof_n == 1 ? "" : "s");
+    for (i = 0; i < prof_n; i++)
+        printf("   %5.1f%%  %s\n",
+               100.0 * (double)prof_chunk[i].hits / (double)prof_total,
+               prof_chunk[i].name);
+    printf("-- top lines: samples %% where fn | text\n");
     for (n = 0; n < 40; n++) {
         int best = 0;
         for (i = 1; i < PROF_LINES; i++) {
@@ -95,11 +159,12 @@ static void prof_report(void)
         }
         if (!best || !prof_hits[best]) break;
         top[n] = best;
-        printf("%7d %5.1f%% %5d %5d | %s\n", prof_hits[best],
-               100.0 * (double)prof_hits[best] / (double)prof_total, best,
-               prof_fn[best], prof_line_text(best, text, sizeof text));
+        printf("%7d %5.1f%% %-24s | %s\n", prof_hits[best],
+               100.0 * (double)prof_hits[best] / (double)prof_total,
+               prof_where(best, where, sizeof where),
+               prof_line_text(best, text, sizeof text));
     }
-    printf("-- top functions (by linedefined): samples %% fn | text\n");
+    printf("-- top functions (by definition line): samples %% where | text\n");
     for (n = 0; n < 25; n++) {
         int best = -1;
         for (i = 0; i < PROF_LINES; i++) {
@@ -110,9 +175,10 @@ static void prof_report(void)
         }
         if (best < 0) break;
         top[n] = best;
-        printf("%7d %5.1f%% %5d | %s\n", fn_hits[best],
-               100.0 * (double)fn_hits[best] / (double)prof_total, best,
-               best ? prof_line_text(best, text, sizeof text) : "(main chunk)");
+        printf("%7d %5.1f%% %-24s | %s\n", fn_hits[best],
+               100.0 * (double)fn_hits[best] / (double)prof_total,
+               prof_where(best, where, sizeof where),
+               prof_line_text(best, text, sizeof text));
     }
 }
 
@@ -347,30 +413,6 @@ static int manifest_canvas(const char *dir, int *w, int *h)
     return ok;
 }
 
-/* The manifest's `main` (SPEC.md 3.1), by a deliberately minimal scan rather
- * than a JSON parser: a host has one already, and this needs one field. */
-static void manifest_main(const char *dir, char *out, size_t outlen)
-{
-    char path[1024];
-    char *text;
-    const char *p;
-    snprintf(out, outlen, "main.lua");
-    snprintf(path, sizeof path, "%s/manifest.json", dir);
-    text = slurp(path, NULL);
-    if (!text) return;
-    p = strstr(text, "\"main\"");
-    /* One strchr past the key finds the value's OPENING quote; a second would
-     * land on its closing one and yield the comma after it. */
-    if (p && (p = strchr(p + 6, '"')) != NULL) {
-        const char *start = p + 1, *end = strchr(start, '"');
-        if (end && (size_t)(end - start) < outlen) {
-            memcpy(out, start, (size_t)(end - start));
-            out[end - start] = 0;
-        }
-    }
-    free(text);
-}
-
 int main(int argc, char **argv)
 {
     moy_canvas canvas;
@@ -378,10 +420,11 @@ int main(int argc, char **argv)
     moy_map map;
     moy_console con;
     lua_State *L;
-    char path[1024], mainfile[256], err[512] = {0};
-    char *source;
+    char path[1024], mainfile[MOY_NAME_MAX] = "main.lua", err[512] = {0};
+    char srcname[MOY_SOURCES_MAX][MOY_NAME_MAX], chunk[MOY_NAME_MAX + 2];
+    char *manifest, *source;
     const char *cart = NULL, *out = NULL;
-    int i, frames = 2, cw, ch;
+    int i, frames = 2, cw, ch, nsrc, profiling, keep;
     float dt = 1.0f / 30.0f;
 
     for (i = 1; i < argc; i++) {
@@ -430,11 +473,14 @@ int main(int argc, char **argv)
     con.host.layer_new = h_layer_new;
     con.host.layer_free = h_layer_free;
 
-    manifest_main(cart, mainfile, sizeof mainfile);
-    snprintf(path, sizeof path, "%s/%s", cart, mainfile);
-    source = slurp(path, NULL);
-    if (!source) {
-        fprintf(stderr, "run_cart: cannot read %s\n", path);
+    snprintf(path, sizeof path, "%s/manifest.json", cart);
+    manifest = slurp(path, NULL);
+    moy_manifest_str(manifest, "main", mainfile, sizeof mainfile);
+    nsrc = moy_manifest_sources(manifest, mainfile, srcname, MOY_SOURCES_MAX);
+    free(manifest);
+    if (nsrc < 0) {
+        fprintf(stderr, "run_cart: this cart's \"sources\" is not a load order "
+                        "this player can follow (SPEC.md 4)\n");
         return 2;
     }
 
@@ -443,20 +489,37 @@ int main(int argc, char **argv)
     moy_lua_open(L, &con);
     moy_p8_open(L, &con, &p8, p8_mem, p8_rom);   /* the PICO-8 machine, for ports */
 
-    if (getenv("MOY_PROFILE")) {
-        const char *m = strstr(source, "end shim");
-        const char *p;
-        for (p = source; m && p < m; p++) if (*p == '\n') prof_shim_end++;
-        prof_src = source;
-        lua_sethook(L, prof_hook, LUA_MASKCOUNT, PROF_EVERY);
+    profiling = getenv("MOY_PROFILE") != NULL;
+    if (profiling) lua_sethook(L, prof_hook, LUA_MASKCOUNT, PROF_EVERY);
+
+    /* SPEC.md 4: every script in `sources`, in order, each as its own chunk --
+     * so a `local` in one does not reach the next, and a runtime error names
+     * the file it happened in. The chunk name IS the file name for exactly
+     * that reason. */
+    for (i = 0; i < nsrc; i++) {
+        if (snprintf(path, sizeof path, "%s/%s", cart, srcname[i])
+                >= (int)sizeof path) {
+            fprintf(stderr, "run_cart: cart path too long for %s\n", srcname[i]);
+            return 2;
+        }
+        source = slurp(path, NULL);
+        if (!source) {
+            fprintf(stderr, "run_cart: cannot read %s\n", path);
+            return 2;
+        }
+        keep = profiling && prof_add(srcname[i], source);
+        /* "@name", not "name": the '@' is what makes Lua report `main.lua:3`
+         * instead of `[string "main.lua"]:3`, and what makes lua_Debug's
+         * short_src the bare file name the profiler matches on. */
+        snprintf(chunk, sizeof chunk, "@%.*s", MOY_NAME_MAX - 1, srcname[i]);
+        if (luaL_loadbuffer(L, source, strlen(source), chunk) != LUA_OK ||
+            lua_pcall(L, 0, 0, 0) != LUA_OK) {
+            /* SPEC.md 4.3: report it with the line number, never swallow it. */
+            fprintf(stderr, "run_cart: %s\n", lua_tostring(L, -1));
+            return 1;
+        }
+        if (!keep) free(source);
     }
-    if (luaL_loadbuffer(L, source, strlen(source), mainfile) != LUA_OK ||
-        lua_pcall(L, 0, 0, 0) != LUA_OK) {
-        /* SPEC.md 4.3: report it with the script line number, never swallow it. */
-        fprintf(stderr, "run_cart: %s\n", lua_tostring(L, -1));
-        return 1;
-    }
-    if (!prof_src) free(source);
 
     if (moy_lua_init(L, err, sizeof err)) {
         fprintf(stderr, "run_cart: _init: %s\n", err);

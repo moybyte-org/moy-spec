@@ -36,6 +36,7 @@
 #include "lauxlib.h"
 
 #include "moy.h"
+#include "../moy_manifest.h"
 #include "moy_audio.h"
 
 #define KEEP EMSCRIPTEN_KEEPALIVE
@@ -195,21 +196,6 @@ static void load_map(void)
         }
     }
     moy_map_init(&map, map_cells, w, h);
-}
-
-/* A manifest string field, by minimal scan -- the same deliberate shortcut the
- * other ports take. A production host wants a real parser: it has `extensions`
- * and `runtime` to refuse on (SPEC.md 3.1, 10). */
-static void json_str(const char *text, const char *key, char *out, size_t n)
-{
-    char pat[64];
-    const char *p;
-    snprintf(pat, sizeof pat, "\"%s\"", key);
-    p = text ? strstr(text, pat) : NULL;
-    if (p && (p = strchr(p + strlen(pat), '"')) != NULL) {
-        const char *s = p + 1, *e = strchr(s, '"');
-        if (e && (size_t)(e - s) < n) { memcpy(out, s, (size_t)(e - s)); out[e - s] = 0; }
-    }
 }
 
 /* -- the host (SPEC.md 7.3, 9) ------------------------------------------- */
@@ -417,20 +403,33 @@ KEEP int moy_web_boot(uint32_t seed)
     const char *manifest = cart_get("manifest.json", NULL);
     const char *source;
     const char *sounds = cart_get("sounds.json", NULL);
-    char mainfile[64] = "main.lua", canvas_s[32] = "320x240", runtime_s[32] = "lua";
+    char mainfile[MOY_NAME_MAX] = "main.lua";
+    char canvas_s[32] = "320x240", runtime_s[32] = "lua";
+    char srcname[MOY_SOURCES_MAX][MOY_NAME_MAX];
+    char chunk[MOY_NAME_MAX + 2];
     long srclen = 0;
+    int nsrc, i;
 
     errmsg[0] = 0;
-    json_str(manifest, "main", mainfile, sizeof mainfile);
-    json_str(manifest, "title", title, sizeof title);
-    json_str(manifest, "canvas", canvas_s, sizeof canvas_s);
-    json_str(manifest, "runtime", runtime_s, sizeof runtime_s);
+    moy_manifest_str(manifest, "main", mainfile, sizeof mainfile);
+    moy_manifest_str(manifest, "title", title, sizeof title);
+    moy_manifest_str(manifest, "canvas", canvas_s, sizeof canvas_s);
+    moy_manifest_str(manifest, "runtime", runtime_s, sizeof runtime_s);
     if (strcmp(runtime_s, "lua") != 0) {
         /* SPEC.md 3.1/10: a host refuses what it cannot run rather than
          * guessing. This player has one runtime. */
         snprintf(errmsg, sizeof errmsg,
                  "this cart declares runtime \"%s\"; this player runs lua "
                  "(SPEC.md 3.1)", runtime_s);
+        return 1;
+    }
+    /* SPEC.md 4: the whole load order, refused rather than ignored -- a cart
+     * run without its prologue fails inside the author's own code. */
+    nsrc = moy_manifest_sources(manifest, mainfile, srcname, MOY_SOURCES_MAX);
+    if (nsrc < 0) {
+        snprintf(errmsg, sizeof errmsg,
+                 "this cart's \"sources\" is not a load order this player can "
+                 "follow (SPEC.md 4)");
         return 1;
     }
     if (manifest) {
@@ -500,22 +499,31 @@ KEEP int moy_web_boot(uint32_t seed)
     con.host.sound_stop = h_sound_stop;
     con.host.volume = h_volume;
 
-    source = cart_get(mainfile, &srclen);
-    if (!source) {
-        snprintf(errmsg, sizeof errmsg, "cannot read %s", mainfile);
-        return 1;
-    }
-
     L = luaL_newstate();
     if (!L) { snprintf(errmsg, sizeof errmsg, "no lua_State"); return 1; }
     moy_lua_open(L, &con);
     moy_p8_open(L, &con, &p8, p8_mem, p8_rom);   /* the PICO-8 machine, for ports */
-    if (luaL_loadbuffer(L, source, (size_t)srclen, mainfile) != LUA_OK ||
-        lua_pcall(L, 0, 0, 0) != LUA_OK) {
-        snprintf(errmsg, sizeof errmsg, "%s", lua_tostring(L, -1));
-        lua_close(L);
-        L = NULL;
-        return 1;
+
+    /* Each script its own chunk, in the manifest's order (SPEC.md 4). The
+     * chunk name is "@file" so 4.3's line number arrives naming the file it
+     * counts from -- `p8.lua:412` rather than a line in a program nobody
+     * wrote. */
+    for (i = 0; i < nsrc; i++) {
+        source = cart_get(srcname[i], &srclen);
+        if (!source) {
+            snprintf(errmsg, sizeof errmsg, "cannot read %s", srcname[i]);
+            lua_close(L);
+            L = NULL;
+            return 1;
+        }
+        snprintf(chunk, sizeof chunk, "@%.*s", MOY_NAME_MAX - 1, srcname[i]);
+        if (luaL_loadbuffer(L, source, (size_t)srclen, chunk) != LUA_OK ||
+            lua_pcall(L, 0, 0, 0) != LUA_OK) {
+            snprintf(errmsg, sizeof errmsg, "%s", lua_tostring(L, -1));
+            lua_close(L);
+            L = NULL;
+            return 1;
+        }
     }
     if (moy_lua_init(L, errmsg, sizeof errmsg)) { lua_close(L); L = NULL; return 1; }
     running = 1;

@@ -35,7 +35,7 @@ LUA_OBJ  := $(LUA_SRC:.c=.o)
 LUA_CFLAGS := -std=c99 -O2 -w -I$(LUA_DIR)
 RUNCART  := build/run_cart
 
-.PHONY: all clean data conform conform-lua test lua play audio-test p8-carts float-fold
+.PHONY: all clean data conform conform-lua test lua play audio-test p8-carts float-fold sources-test
 
 all: $(LIB) $(REPLAY)
 
@@ -147,6 +147,12 @@ $(EXTT): test/ext_test.c src/moy_lua.o src/moy_p8.o $(LUA_OBJ) $(LIB)
 ext-test: $(EXTT)
 	./$(EXTT)
 
+# SPEC.md 4's `sources`: load order, chunk isolation, and the refusals. Driven
+# through run_cart because the claim is about the LOADER, not the raster -- a
+# host that concatenated the scripts would render every golden perfectly.
+sources-test: $(RUNCART)
+	bash test/sources_test.sh ./$(RUNCART)
+
 $(AUDIOT): test/audio_test.c $(LIB)
 	@mkdir -p build
 	$(CC) $(CFLAGS) $< $(LIB) $(LDLIBS) -o $@
@@ -208,7 +214,7 @@ p8-test: $(RUNCART) $(FLOATFOLD)
 	python3 test/p8_first_draw.py
 	python3 test/p8_port_check.py
 
-test: conform conform-lua ext-test audio-test lowres spr-sweep p8-test p8-carts
+test: conform conform-lua ext-test sources-test audio-test lowres spr-sweep p8-test p8-carts
 
 clean:
 	rm -f $(OBJ) $(LUA_OBJ) src/moy_lua.o src/moy_p8.o $(LIB)

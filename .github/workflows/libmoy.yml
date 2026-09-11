@@ -104,6 +104,14 @@ jobs:
         run: make p8-carts
         working-directory: libmoy
 
+      # SPEC.md 4's `sources`: several scripts, in order, each its own chunk.
+      # Not something the goldens can reach -- a host that concatenated the
+      # files, or ran only `main`, renders every scene perfectly and then
+      # fails the first cart whose shim lives in its own file.
+      - name: A cart made of several scripts loads as several chunks
+        run: make sources-test
+        working-directory: libmoy
+
       # SPEC.md 6's host-dependent core verbs -- view, background, layers. It
       # asserts they exist on a console that implements NONE of them, which is
       # the property that keeps them out of 10 and lets a cart drop the guard.
