@@ -18,11 +18,21 @@ end
 -- ---- the shim's Lua, verbatim -------------------------------------------
 local tremove = table.remove
 
-local function L_add(t, v) t[#t + 1] = v return v end
+local function L_add(t, v, i)
+  if t == nil then return nil end
+  local n = #t
+  if i == nil or i > n then t[n + 1] = v return v end
+  if i < 1 then i = 1 end
+  for k = n, i, -1 do t[k + 1] = t[k] end
+  t[i] = v
+  return v
+end
 local function L_del(t, v)
+  if t == nil then return nil end
   for i = 1, #t do
-    if t[i] == v then tremove(t, i) return end
+    if t[i] == v then return tremove(t, i) end
   end
+  return nil
 end
 local function L_all(t)
   if t == nil then return function() return nil end end
@@ -36,6 +46,7 @@ local function L_all(t)
 end
 local function L_foreach(t, f) for v in L_all(t) do f(v) end end
 local function L_count(t, v)
+  if t == nil then return 0 end
   if v == nil then return #t end
   local n = 0
   for i = 1, #t do if t[i] == v then n = n + 1 end end
@@ -1560,6 +1571,32 @@ function _init()
   same("deli(t, i)", __moy_deli(a, 2), L_deli(b, 2))
   same("deli left the same list", dump(a), dump(b))
   check("deli(nil) is nil", __moy_deli(nil) == nil)
+
+  -- p8's add takes an INDEX, del ANSWERS with what it removed, and neither
+  -- minds a nil table -- `libryinth` needs all three on its first frame.
+  local ia, ib = {}, {}
+  for _, v in ipairs({"a", "b", "c"}) do __moy_add(ia, v) L_add(ib, v) end
+  same("add(t, v, i) inserts", dump(ia), dump(ib))
+  __moy_add(ia, "X", 2) L_add(ib, "X", 2)
+  same("...and shifts the rest up", dump(ia), dump(ib))
+  __moy_add(ia, "Y", 1) L_add(ib, "Y", 1)
+  same("an index of 1 goes first", dump(ia), dump(ib))
+  __moy_add(ia, "Z", 99) L_add(ib, "Z", 99)
+  same("an index past the end appends", dump(ia), dump(ib))
+  __moy_add(ia, "W", 0) L_add(ib, "W", 0)
+  same("an index below 1 is clamped", dump(ia), dump(ib))
+  same("add returns the value at an index",
+       __moy_add(ia, "R", 3), L_add(ib, "R", 3))
+  same("del answers with what it removed",
+       __moy_del(ia, "X"), L_del(ib, "X"))
+  same("del of an absent value answers nil",
+       tostring(__moy_del(ia, "nope")), tostring(L_del(ib, "nope")))
+  same("both lanes hold the same list", dump(ia), dump(ib))
+  check("add(nil, v) is a no-op", __moy_add(nil, 1) == nil
+        and L_add(nil, 1) == nil)
+  check("del(nil, v) is a no-op", __moy_del(nil, 1) == nil
+        and L_del(nil, 1) == nil)
+  check("count(nil) is 0", __moy_count(nil) == 0 and L_count(nil) == 0)
 
   -- __eq and __index are honoured: all() compares with `==` and reads with
   -- `t[i]`, so a cart's own metatables answer as they did in Lua. Lua answers

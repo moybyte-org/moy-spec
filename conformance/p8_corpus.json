@@ -1,6 +1,13 @@
 {
-  "_": "The PICO-8 conformance corpus: which carts the p8 importer is tested against, and where to get them. THE CARTS ARE NOT REDISTRIBUTED -- they are their authors' work, several under licences that forbid it, so this file holds LINKS and the fetcher caches them outside the tree. Chosen to stress DIFFERENT things rather than to be a top twelve by rating: a raycaster, a world-gen sim, a minified bytecode VM, two carts whose graphics live in packed strings. Twelve similar carts would have found perhaps three of the fifteen dialect bugs the first pass over these found.",
+  "_": "The PICO-8 conformance corpus: which carts the p8 importer is tested against, and where to get them. THE CARTS ARE NOT REDISTRIBUTED -- they are their authors' work, several under licences that forbid it, so this file holds LINKS and the fetcher caches them outside the tree. Chosen to stress DIFFERENT things rather than to be a top twelve by rating: a raycaster, a world-gen sim, a minified bytecode VM, two carts whose graphics live in packed strings. Sixteen similar carts would have found perhaps three of the fifteen dialect bugs the first pass over these found. Four of the sixteen came off PICO-8's own front page on 2026-09-12, added because each one was the only cart here that reached a particular dialect bug.",
   "carts": [
+    {
+      "lid": "42930",
+      "stresses": "`//` line comments, 105 of them",
+      "cart": "https://www.lexaloffle.com/bbs/cposts/4/42930.p8.png",
+      "title": "Charge! (LD39)",
+      "thread": "https://www.lexaloffle.com/bbs/?pid=42930"
+    },
     {
       "lid": "bunnysurvivor-9",
       "stresses": "60fps _update60 cart; btnp-driven upgrade menu",
@@ -30,11 +37,32 @@
       "thread": "https://www.lexaloffle.com/bbs/?tid=29709"
     },
     {
+      "lid": "deepdark-1",
+      "stresses": "takes `camera` for itself as a table global",
+      "cart": "https://www.lexaloffle.com/bbs/cposts/de/deepdark-1.p8.png",
+      "title": "Deep Dark",
+      "thread": "https://www.lexaloffle.com/bbs/?pid=deepdark-1"
+    },
+    {
       "lid": "dungeons_and_diagrams-5",
       "stresses": "menus, dget/dset save data, fillp",
       "cart": "https://www.lexaloffle.com/bbs/cposts/du/dungeons_and_diagrams-5.p8.png",
       "title": "Dungeons & Diagrams PICO-8 Demake",
       "thread": "https://www.lexaloffle.com/bbs/?tid=48966"
+    },
+    {
+      "lid": "giftguardian-5",
+      "stresses": "`?` over a long string that closes on the next line",
+      "cart": "https://www.lexaloffle.com/bbs/cposts/gi/giftguardian-5.p8.png",
+      "title": "Gift Guardian",
+      "thread": "https://www.lexaloffle.com/bbs/?pid=giftguardian-5"
+    },
+    {
+      "lid": "loop-4",
+      "stresses": "P8SCII glyphs INSIDE identifiers (`p1<right>`)",
+      "cart": "https://www.lexaloffle.com/bbs/cposts/lo/loop-4.p8.png",
+      "title": "Loop",
+      "thread": "https://www.lexaloffle.com/bbs/?pid=loop-4"
     },
     {
       "lid": "lowmemsky-1",

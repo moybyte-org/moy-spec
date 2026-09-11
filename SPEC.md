@@ -1117,7 +1117,7 @@ in the spec, so the screen palette now **composes**: `store[i] = wire[spal[pal[i
 rebuilt per call, and a pixel costs one lookup whether a cart set neither palette
 or both. **Cost:** a pixel already on the canvas does not move. A fade over a frame
 that is not redrawn, and a remap issued after drawing within a frame, behave as the
-draw palette would. Of the twelve carts in the PICO-8 conformance corpus, five hold
+draw palette would. Of the sixteen carts in the PICO-8 conformance corpus, six hold
 a screen palette, and every one sets it before it draws — the machine restores it
 from `0x5f10` at the top of each frame, ahead of any cart code — so the idiom the
 verb exists for is unchanged.

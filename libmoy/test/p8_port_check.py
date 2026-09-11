@@ -122,6 +122,7 @@ def main():
         FAIL.append("the shim does not define __p8_lut_span")
 
     bitops()
+    dialect()
     shifts_by_16()
     bit_twins()
 
@@ -146,6 +147,53 @@ def main():
     print("p8 port: the lut-span fold takes its shape and nothing else, and "
           "the bit operators are one call each with no floor to spare")
     return 0
+
+
+def dialect():
+    """The four p8 spellings a featured cart turned up that Lua cannot read.
+
+    Every one of these came off the carts on PICO-8's own front page, and
+    three of the four were SILENT: the output parsed and ran, as something
+    else.
+    """
+    # `//` is a p8 line comment, and p8 has no `//` operator to confuse it
+    # with -- integer divide there is `\`. Lua 5.4 has the operator and not
+    # the comment, so this was a division (`42930` writes 105 of them).
+    emits("a // comment", "// room faff", "-- room faff")
+    emits("a trailing // comment", "x=1 // why", "x=1 -- why")
+    emits("// inside a -- comment", "-- see https://x", "-- see https://x")
+    emits("// inside a string", 'x="a//b"', 'x="a//b"')
+
+    # p8 reads a high byte as a LETTER, so a glyph beside a name is part of
+    # that name -- `loop` writes `p1<right>`, `hwd elite dock` `<x>_down` --
+    # and a glyph ALONE is the value, which is what `squiddy` assigns to and
+    # `fillp(<shade>)` wants.
+    emits("a glyph inside a name", "p1\x91={1}", "p1_p8g145={1}")
+    emits("a glyph opening a name", "\x97_down=0", "_p8g151_down=0")
+    emits("a glyph alone is a value", "if btn(\x91) then x=1 end",
+          "if btn(_p8g145) then x=1 end")
+    emits("a glyph alone is assignable", "\x91=5", "_p8g145=5")
+
+    # `if cond do`, at a bracket depth the line did not open. A minified cart
+    # closes the line above's parens first (`libryinth`), and a callback on
+    # one line never comes back to zero at all.
+    emits("if..do under unbalanced parens", ")) if e0 do x=1 end",
+          ")) if e0 then x=1 end")
+    emits("if..do inside a callback", "f(function() if x do y=1 end end)",
+          "f(function() if x then y=1 end end)")
+    emits("a for's do is not an if's", "if a do for i=1,2 do z=1 end end",
+          "if a then for i=1,2 do z=1 end end")
+    emits("a while's do is its own", "while a do x=1 end", "while a do x=1 end")
+
+    # `?` prints the rest of the LINE, and a long string outlives the line it
+    # opened on: `gift guardian` closes the string and its remaining arguments
+    # on the next one, where the paren belongs.
+    got = convert('?[[bY nERDY\n tEACHERS]],90,20,5\nend').strip()
+    want = 'print([[bY nERDY\n tEACHERS]],90,20,5)\nend'
+    if got != want:
+        FAIL.append("? over a long string: wanted %r, got %r" % (want, got))
+    emits("? still ends before a block keyword", 'if a then ?"x",1 end',
+          'if a then print("x",1) end')
 
 
 def bitops():
@@ -185,6 +233,38 @@ def bitops():
     emits("a unary minus comes along", "x=-a|b", "x=__p8_bor(-a, b)")
     emits("`#` is the operand, not the table", "x=#t&a",
           "x=__p8_band(#t, a)")
+    # THE WHOLE SUFFIX CHAIN on the left, mixed in any order. A walk that knew
+    # `a.b.c` and `a[1]` but not the two together stopped at the last field and
+    # let the call land INSIDE the expression -- `libryinth`'s
+    # `T[2].ready << 1` came out as `T[2].__p8_shl(ready, 1)`, which parses,
+    # runs, and is not what the cart wrote.
+    emits("an index then a field", "x=a[1].b<<1", "x=__p8_shl(a[1].b, 1)")
+    emits("a call then a field", "x=f(1).b<<1", "x=__p8_shl(f(1).b, 1)")
+    emits("fields either side of an index", "x=t.a[1].b.c<<1",
+          "x=__p8_shl(t.a[1].b.c, 1)")
+    emits("a method call", "x=t:m(1)<<1", "x=__p8_shl(t:m(1), 1)")
+    emits("a chained call", "x=f(1)(2)<<1", "x=__p8_shl(f(1)(2), 1)")
+    emits("a chained index", "x=t[1][2]<<1", "x=__p8_shl(t[1][2], 1)")
+    # ...and the keyword that is not a callee, which is what the bracket walk
+    # has to keep refusing: `band(return (a), 1)` was a real output.
+    emits("a keyword is not a callee", "return (a)&1",
+          "return __p8_band((a), 1)")
+    emits("a parenthesised operand", "x=(a+b)<<1", "x=__p8_shl((a+b), 1)")
+
+    # p8's `\` is a MULTIPLICATIVE operator, left-associative beside `*`, `/`
+    # and `%` -- not something that takes the primary either side of it. Both
+    # of the first two were silent: they parsed, ran, and answered something
+    # else. `crimson_night` unpacks its strings base-26 with the second.
+    emits("`\` takes the whole product", "x=a*b\\c", "x=flr(a*b/c)")
+    emits("`^` binds tighter than `\`", "x=v\\26^i%26+1",
+          "x=flr(v/26^i)%26+1")
+    emits("...and `*` on the right does not", "x=a\\b*c", "x=flr(a/b)*c")
+    emits("`\` is left-associative", "x=a\\b\\c", "x=flr(flr(a/b)/c)")
+    emits("`+` is looser either side", "x=1+a\\b+1", "x=1+flr(a/b)+1")
+    emits("`..` is looser too", "x=a..b\\c", "x=a..flr(b/c)")
+    emits("a length operand comes along", "x=#snd\\4", "x=flr(#snd/4)")
+    emits("a minus on the right", "x=a\\-b", "x=flr(a/-b)")
+    emits("an index and a product", "x=i\\2*128", "x=flr(i/2)*128")
     # p8 breaks a line at the operator, and dank tomb's lighting is one of
     # them: the operand on the next line is still the operand.
     emits("split at the operator", "x=a|\nb", "x=__p8_bor(a, b)")
@@ -306,7 +386,11 @@ def shifts_by_16():
 # be, and while it was not, a wrong reading of `shr` sat green in both copies
 # for weeks. This is that missing edge.
 _TWINS = ("fx", "unfx", "is_int", "band", "bor", "bxor", "bnot",
-          "shl", "shr", "lshr", "rotl", "rotr")
+          "shl", "shr", "lshr", "rotl", "rotr",
+          # The TABLE verbs are the same three copies and were unpinned until
+          # `libryinth` found the edge: p8's add takes an index, its del
+          # answers with what it removed, and neither minds a nil table.
+          "add", "del", "all", "foreach", "count", "deli")
 _OPENS = ("function", "if", "do", "repeat")
 _BLOCK = re.compile(r"\b(function|if|do|repeat|end|until)\b")
 

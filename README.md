@@ -81,7 +81,7 @@ the memory map, the screen palette, the fill pattern, the flags, coroutines,
 the system font — so the line falls at 16.16 fixed point and at multi-cart
 games, and the importer says which side of it a cart is on before it writes.
 [PICO8.md](PICO8.md) lists what comes across, what is approximated, what cannot,
-and the corpus of twelve real carts with what each one actually does. Note the licensing section: BBS carts default to CC BY-NC-SA
+and the corpus of sixteen real carts with what each one actually does. Note the licensing section: BBS carts default to CC BY-NC-SA
 4.0.
 
 ## Why this exists

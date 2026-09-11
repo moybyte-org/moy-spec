@@ -140,12 +140,14 @@ at 16–31, so `pal(c, 128 + i)` lands on the real colour.
 | `if (c) stmt` / `while (c) stmt` | `if c then stmt end` / `while c do stmt end` |
 | `if c do ... end` | `if c then ... end` |
 | `?"text"` | `print("text")` |
-| `a \\ b` | `flr(a / b)` — an integer, so `x \\ 8 .. ","` prints `3,` and not `3.0,` |
+| `a \\ b` | `flr(a / b)` — an integer, so `x \\ 8 .. ","` prints `3,` and not `3.0,`. It is a MULTIPLICATIVE operator, left-associative beside `*`, `/` and `%`, so `a*b\\c` is `(a*b)\\c` and `v\\26^i` is `v\\(26^i)` — `crimson_night` unpacks its high-score names with the second |
 | `0xffff`, `0x0.0001`, `0xA5A5.8` | the 16.16 bit pattern PICO-8 reads: `(-1)`, `(1/65536)`, `(-1515880448/65536)` |
 | `@addr`, `%addr`, `$addr` | `peek(addr)`, `peek2(addr)`, `peek4(addr)` |
 | `0b1010`, `0x1f`, `.5`, `0or` | Lua-legal numbers (PICO-8 has no exponent form, so `0or1` lexes as `0 or 1`) |
 | `[[ long strings ]]` | quoted strings |
+| `// a comment` | `-- a comment`. p8 takes `//` as a line comment and has no `//` operator to confuse it with — integer divide there is `\`. Lua 5.4 has the operator and not the comment, so every one of these used to come out a DIVISION: `x=1 // why` became `x=flr(1/why)` |
 | P8SCII glyph bytes (`\x80`+) | named constants — the six button glyphs keep their identity, so `btn(➡️)` and `btn(⬆️)` stay distinct |
+| a glyph beside a name (`p1➡️`, `❎_down`) | ONE mangled name (`p1_p8g145`, `_p8g151_down`). p8's lexer reads a high byte as a letter, so a glyph touching an identifier is part of it; a glyph standing alone is still the value above |
 | `_init` / `_update` / `_update60` / `_draw` | `p8_*`, paced by the shim |
 
 A cart defining `_update60` is declared as a 60 fps cart in its manifest, so
@@ -201,7 +203,10 @@ under 16 bits and so fits float32 exactly — could not run either.
 
 **The API.** The shim implements PICO-8's verbs over the moy cart API —
 `sin`/`cos` with their turn-and-flip semantics, the table verbs
-(`add`/`del`/`foreach`/`all`/`count`), `btn`/`btnp` with PICO-8's auto-repeat,
+(`add`/`del`/`foreach`/`all`/`count`) — `add` taking an INDEX, `del`
+ANSWERING with what it removed, and a nil table a no-op in every one of them,
+which is how `libryinth` deals a hand (`add(e.books, del(E, rnd(E)))`) and
+fills a list it has not created yet — `btn`/`btnp` with PICO-8's auto-repeat,
 `pal()` in every form including the table form and the **screen palette**
 (`pal(c, d, 1)`, kept across frames as PICO-8 keeps it -- and applied as pixels
 are drawn, not to the finished frame, so a fade over a frame the cart does not
@@ -326,9 +331,11 @@ verdict names them per cart.
 
 ## The test corpus
 
-Twelve carts, chosen to stress *different* things rather than to be a top
-twelve: a raycaster, a world-gen sim, a minified bytecode VM, carts whose
-graphics live in packed strings. They are not in this repository — see
+Sixteen carts, chosen to stress *different* things rather than to be a top
+sixteen: a raycaster, a world-gen sim, a minified bytecode VM, carts whose
+graphics live in packed strings. The last four came off PICO-8's own front
+page on 2026-09-12 and each earned its place by being the only cart here that
+reached a particular dialect bug. They are not in this repository — see
 [`conformance/p8_corpus.json`](conformance/p8_corpus.json) for the links and
 `conformance/fetch_p8_corpus.py` to cache them. `make -C libmoy p8-carts` runs
 the gate.
@@ -353,16 +360,38 @@ gate.
 | mossmoss | gaps | yes | yes | yes | **plays**; slows at its later levels on the S3 boards |
 | lowmemsky | gaps | yes | yes | yes | **plays**; it reads its buttons as `btn"1"`, the size-coder's string form, which both lanes coerce as PICO-8 does |
 | dank_tomb | gaps | yes | yes | yes | **plays**; its lighting loop is one `__moy_lut_span` |
+| 42930 (*Charge!*) | runs | yes | yes | yes | *(frames only)* — 105 `//` comments, every one of which used to convert to a division |
+| deepdark | runs | yes | yes | yes | *(frames only)* — its torch-lit room scrolls; it keeps that scroll in a global called `camera` |
+| giftguardian | runs | yes | yes | no | *(frames only)* — title, iris wipe, then the game; its `?` prints a long string that closes on the next line |
+| loop | gaps | yes | yes | yes | *(frames only)* — reaches its menu; its button tables are named `p1➡️`, `p1⬆️`, one identifier each |
 | terra_1cart | gaps | no | no | no | *(not played — generates its world past the harness's 45 s)* |
 | celeste_classic_2 | refused | yes | yes | yes | starts; nothing moves, only the clouds draw — its levels are px9-packed 16.16 |
 | nimudazus | refused | no | no | no | *(not played — errors decoding its bytecode)* |
 | poom | refused | yes | yes | no | multi-cart; the loading screen draws through the memory map and stops there |
 
-Eleven of twelve boot, three are refused up front and two of those would have
-sat on a shelf looking broken. Of the nine that import, one the verdict calls
-"gaps" still fails — on time, not on a verb — which is the honest edge of a
-static reading. If you convert a cart and play it, the useful contribution is
-a line in this table.
+Fourteen of sixteen boot, three are refused up front and two of those would
+have sat on a shelf looking broken. Of the thirteen that import, one the
+verdict calls "gaps" still fails — on time, not on a verb — which is the
+honest edge of a static reading. If you convert a cart and play it, the useful
+contribution is a line in this table.
+
+**Where the bugs actually were (2026-09-12).** The eighteen carts on PICO-8's
+front page were run through this as a sweep, and twelve booted. Five of the
+six failures were not a missing verb or a machine this console lacks: they
+were the porter handing Lua something the cart had not written — `//` read as
+a division, a glyph split out of the middle of a name, `if cond do` skipped
+because the line opened on a closing paren, a `?`'s paren landed inside a long
+string, and `T[2].ready << 1` rewritten as `T[2].__p8_shl(ready, 1)`. Three of
+those five produce output that PARSES, which is why none of them had been
+found by a corpus of carts that ran. Sixteen of eighteen boot now; the two
+that do not are the two the verdict refuses up front, both multi-cart.
+
+The sweep also found two that no cart FAILS on, because both answer: `\`
+taking the primary beside it rather than the product (above), and `add`/`del`
+answering differently from PICO-8's. A cart is a poor detector of a wrong
+answer — which is what `libmoy/test/p8lib.moy` and
+`libmoy/test/p8_port_check.py` are for, and where each of these now has a
+case.
 
 ## Performance on the reference boards — a dated snapshot
 

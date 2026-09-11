@@ -1,6 +1,14 @@
 {
   "_": "What each corpus cart does under libmoy -- the real C console and its LUA_32BITS VM. A RATCHET: a cart that stops running, animating or taking input fails the build; runs/animates also fail if a cart starts, asking for this file to be raised. Recorded as the AND of THREE runs, so a borderline cart is pinned at its weakest observed behaviour -- these are real carts with clocks and randomness, and a gate that flaps gets deleted rather than fixed. The carts are not in this repository (see conformance/p8_carts.py). `verdict` and `reasons` are what the IMPORTER says before writing (PICO8.md, the static verdict) -- goldens too, since the classifier is deterministic. The REASONS are pinned and not just the word: celeste 2 is refused for two things at once, and when one of them stopped firing the word did not move and this gate stayed green.",
   "carts": {
+    "42930": {
+      "animates": true,
+      "note": "runs and animates; takes input",
+      "reasons": [],
+      "responds": true,
+      "runs": true,
+      "verdict": "runs"
+    },
     "bunnysurvivor-9": {
       "animates": true,
       "note": "runs and animates; takes input",
@@ -40,10 +48,39 @@
       "runs": true,
       "verdict": "gaps"
     },
+    "deepdark-1": {
+      "animates": true,
+      "note": "runs and animates; takes input",
+      "reasons": [],
+      "responds": true,
+      "runs": true,
+      "verdict": "runs"
+    },
     "dungeons_and_diagrams-5": {
       "animates": true,
       "note": "runs and animates; takes input",
       "reasons": [
+        "its pause-menu entries (menuitem) are not shown; the console owns the menu",
+        "stat() reads zero: clock, CPU and audio counters are not measured",
+        "it reads the mouse; there is no pointer in a PICO-8 port's input"
+      ],
+      "responds": true,
+      "runs": true,
+      "verdict": "gaps"
+    },
+    "giftguardian-5": {
+      "animates": true,
+      "note": "runs and animates",
+      "reasons": [],
+      "responds": false,
+      "runs": true,
+      "verdict": "runs"
+    },
+    "loop-4": {
+      "animates": true,
+      "note": "runs and animates; takes input",
+      "reasons": [
+        "flip() does nothing here; the console draws each frame itself",
         "its pause-menu entries (menuitem) are not shown; the console owns the menu",
         "stat() reads zero: clock, CPU and audio counters are not measured",
         "it reads the mouse; there is no pointer in a PICO-8 port's input"

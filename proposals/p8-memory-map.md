@@ -62,9 +62,10 @@ are the earlier screen-only build's, scaled where marked.
 
 ## What real carts do with it
 
-The twelve-cart import corpus, run 900 frames each on the desktop MicroPython
-build with the shim's memory verbs counting themselves, a scripted button
-masher on the sticks. Per-frame means; `max` is the busiest frame.
+The import corpus as it then stood -- twelve carts -- run 900 frames each on
+the desktop MicroPython build with the shim's memory verbs counting
+themselves, a scripted button masher on the sticks. Per-frame means; `max` is
+the busiest frame.
 
 | cart | peek/frame | poke/frame | bulk | notes |
 |---|---|---|---|---|
