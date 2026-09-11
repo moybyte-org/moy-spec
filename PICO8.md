@@ -42,17 +42,40 @@ Two scripts, both in this repository:
 | | |
 |---|---|
 | `p8_import.py` | reads the cart. Parses `.p8` text and unpacks a `.p8.png` ROM (including the `pxa` and the older `:c:` code compression), and converts the sprite sheet, map, flags, sfx and music. |
-| `p8_lua_port.py` | writes the cart. Emits two scripts — `p8.lua`, the data tables and the PICO-8 compatibility shim, and `main.lua`, the cart's own code mechanically converted to Lua 5.4 — plus the assets and a manifest listing both in `sources` (SPEC.md 4). |
+| `p8_lua_port.py` | writes the cart. Emits `p8.lua`, the data tables and the PICO-8 compatibility shim; `main.lua`, the cart's own code mechanically converted to Lua 5.4; one more script per PICO-8 **tab** past the first — plus the assets and a manifest listing them all in `sources` (SPEC.md 4). |
 
 The output is an ordinary `"runtime": "lua"` cart declaring a `128x128` canvas,
 so it draws real PICO-8 pixels 1:1 and the host does all scaling.
 
-**Two files, because `main.lua` should be the cart.** Line 1 of `main.lua` is
-the author's line 1, so a crash names a line they can find and an editor opens
-a game instead of 1,300 lines of generated stdlib. The layers cannot be split
-anywhere else: the shim captures the data tables as upvalues when its chunk
-loads, so those travel with it, and `main.lua`'s `local` aliases only reach
-code in their own chunk, so those travel with the game.
+**The generated half is its own file, because `main.lua` should be the cart.**
+Line 1 of `main.lua` is the author's line 1, so a crash names a line they can
+find and an editor opens a game instead of 1,300 lines of generated stdlib.
+That cut cannot fall anywhere else: the shim captures the data tables as
+upvalues when its chunk loads, so those travel with it, and `main.lua`'s
+`local` aliases only reach code in their own chunk, so those travel with the
+game.
+
+### Tabs are files
+
+PICO-8 keeps a cart's code in numbered **tabs**, separated in the file by a
+line that reads `-->8`. That is where the author put the cart's structure —
+*dungeons_and_diagrams* opens its four at `--menu`, `--tutorial`, `--board`,
+`--puzzles list` — so each tab becomes a source of its own, in tab order, tab 0
+being `main.lua`. A tab titled by its first comment line takes that name
+(`board.lua`); anything else takes the number PICO-8 itself shows (`tab3.lua`).
+
+It works because a PICO-8 cart's top-level names are **globals** by
+construction — p8 Lua has no module scope to hide them in, and a tab writes
+`board = {}` — so they cross a chunk boundary exactly as the shim's own globals
+do. Where they would not, the tabs stay in one `main.lua` and the import report
+says which of three it was: a top-level `local` in one tab that a later tab
+reads (separate chunks would make it nil, silently, in code the author *did*
+write), a top-level `goto` and its label in different tabs, or a long string
+holding a line that reads `-->8` — PICO-8 splits for display and joins to run,
+so a string may legally span a tab boundary there.
+
+`#include` is a different thing and is refused — see *What cannot come across*
+for why an included file cannot travel with a cart at all.
 
 ## What the importer decides before it writes
 

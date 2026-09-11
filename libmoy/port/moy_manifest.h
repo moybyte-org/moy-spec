@@ -17,8 +17,13 @@
 #include <stdio.h>
 #include <string.h>
 
-#define MOY_SOURCES_MAX 16      /* SPEC.md 4 sets no ceiling; a cart past this
-                                 * is not one these example loaders read */
+#define MOY_SOURCES_MAX 24      /* SPEC.md 4 sets no ceiling; a cart past this
+                                 * is not one these example loaders read. 24
+                                 * clears the worst real cart: PICO-8 allows a
+                                 * cart SIXTEEN tabs and the porter makes each
+                                 * one a source, which is 17 with the generated
+                                 * p8.lua and 18 once a host appends a wrapper
+                                 * of its own. */
 #define MOY_NAME_MAX    64
 
 /* A manifest string field. `out` is left ALONE when the key is absent, so the
