@@ -123,6 +123,7 @@ def main():
 
     bitops()
     dialect()
+    mouse()
     shifts_by_16()
     bit_twins()
 
@@ -147,6 +148,54 @@ def main():
     print("p8 port: the lut-span fold takes its shape and nothing else, and "
           "the bit operators are one call each with no floor to spare")
     return 0
+
+
+def mouse():
+    """p8's mouse, over the console's own pointer.
+
+    The SHIM half is asserted here (the shape the porter emits); the two lanes
+    it runs over -- libmoy's touch() and the snapshot behind it -- are the
+    host's, and moybyte's tests/test_host_lua_binding.py pins those.
+    """
+    shim = p8_lua_port.SHIM
+    # The latch runs once a TICK, beside the button latch, so three stat()
+    # reads in one frame cannot disagree.
+    if "p8_mouse_tick()" not in shim:
+        FAIL.append("the shim never latches the mouse")
+    # Gated on p8's OWN enable bit: a cart that never asks for a pointer must
+    # not pay a crossing for one.
+    if "0x5f2d" not in _lua_body(shim, "p8_mouse_tick").replace("L_", ""):
+        FAIL.append("the mouse latch does not read p8's enable bit (0x5f2d)")
+    # Captured as an UPVALUE, not read off _G every tick: a cart may take the
+    # name `touch` for itself, which is exactly how `camera` crashed deep dark.
+    if "local m_touch = touch" not in shim:
+        FAIL.append("the shim reads touch() off _G instead of capturing it")
+    for n in (32, 33, 34):
+        if "if n == %d then return p8_m" % n not in shim:
+            FAIL.append("stat(%d) does not read the latched mouse" % n)
+    # NO FAKE POINTER. The mouse starts at 0,0 -- p8's own "it has not moved
+    # yet" -- and not mid-screen, because a cart reads a position as a cursor
+    # that is THERE: `dungeons & diagrams` takes `x > 8 and y > 8` for "over
+    # the board", so a centred phantom turned its board on and its button path
+    # off on a console with no pointer at all. The corpus gate caught it; this
+    # is the cheaper net.
+    if "local p8_mx, p8_my, p8_mb = 0, 0, 0" not in shim:
+        FAIL.append("the mouse does not start at 0,0 -- a cart with no pointer "
+                    "is being handed a phantom one")
+
+    # THE MANIFEST HINT (SPEC.md 7.3), off either spelling of asking.
+    for src, want in (("function _update() x=stat(32) end", True),
+                      ("function _init() poke(0x5f2d,1) end", True),
+                      ("function _update() x=stat(6) end", False),
+                      ("function _update() x=btn(0) end", False)):
+        got = p8_lua_port._reads_mouse(p8_lua_port._strip_lua(convert(src)))
+        if got != want:
+            FAIL.append("_reads_mouse(%r) answered %s" % (src, got))
+    man = p8_lua_port.build_manifest("t", mouse=True)["input"]
+    if "touch" not in man:
+        FAIL.append("a mouse cart's manifest does not declare touch: %r" % man)
+    if "touch" in p8_lua_port.build_manifest("t")["input"]:
+        FAIL.append("a cart that never asks for a pointer declares touch")
 
 
 def dialect():

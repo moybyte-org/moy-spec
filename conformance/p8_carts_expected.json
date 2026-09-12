@@ -62,7 +62,7 @@
       "reasons": [
         "its pause-menu entries (menuitem) are not shown; the console owns the menu",
         "stat() reads zero: clock, CPU and audio counters are not measured",
-        "it reads the mouse; there is no pointer in a PICO-8 port's input"
+        "it reads the mouse: the console's pointer drives stat(32)-(34), but there is no wheel and no second or third button"
       ],
       "responds": true,
       "runs": true,
@@ -83,7 +83,7 @@
         "flip() does nothing here; the console draws each frame itself",
         "its pause-menu entries (menuitem) are not shown; the console owns the menu",
         "stat() reads zero: clock, CPU and audio counters are not measured",
-        "it reads the mouse; there is no pointer in a PICO-8 port's input"
+        "it reads the mouse: the console's pointer drives stat(32)-(34), but there is no wheel and no second or third button"
       ],
       "responds": true,
       "runs": true,
@@ -116,7 +116,7 @@
       "reasons": [
         "it unpacks its data with 16.16 fixed-point shifts that this console's float numbers cannot reproduce",
         "stat() reads zero: clock, CPU and audio counters are not measured",
-        "it reads the mouse; there is no pointer in a PICO-8 port's input",
+        "it reads the mouse: the console's pointer drives stat(32)-(34), but there is no wheel and no second or third button",
         "it uses bitplane masks (0x5f5e); the mask is remembered, not applied"
       ],
       "responds": false,
@@ -145,7 +145,7 @@
       "reasons": [
         "it loads other carts (load) -- a multi-cart game; this console runs one cart at a time",
         "stat() reads zero: clock, CPU and audio counters are not measured",
-        "it reads the mouse; there is no pointer in a PICO-8 port's input"
+        "it reads the mouse: the console's pointer drives stat(32)-(34), but there is no wheel and no second or third button"
       ],
       "responds": false,
       "runs": true,
@@ -158,7 +158,7 @@
         "flip() does nothing here; the console draws each frame itself",
         "its pause-menu entries (menuitem) are not shown; the console owns the menu",
         "stat() reads zero: clock, CPU and audio counters are not measured",
-        "it reads the mouse; there is no pointer in a PICO-8 port's input",
+        "it reads the mouse: the console's pointer drives stat(32)-(34), but there is no wheel and no second or third button",
         "sfx() with an offset or length plays the whole sound",
         "serial() has nothing on the other end"
       ],

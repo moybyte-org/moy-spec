@@ -308,7 +308,8 @@ verdict names them per cart.
 | verb | what happens instead |
 |---|---|
 | `menuitem` | the pause menu is the console's; entries are not shown |
-| `stat` | clock, CPU and audio counters read 0; the mouse reads nothing |
+| `stat` | clock, CPU and audio counters read 0 |
+| the mouse (`stat(32)`/`(33)`/`(34)`) | **real** — the console's own pointer, which is the glass on a board and a mouse on a desktop or in a browser. Enabled by `poke(0x5f2d, 1)` as it is there, latched once a tick beside the buttons. No wheel (`stat(36)` is 0) and no second or third button, and the position is STICKY: p8's mouse has no "absent" state for a cart to read, so a released finger leaves the pointer where it was and only the button falls to 0. It reads **0,0 until a pointer actually reports one** — p8's own "the mouse has not moved yet" — because a cart takes a position for a cursor that is there, and a console with no pointer must not hand it a phantom |
 | `flip` | does nothing; the console calls `_draw()` for you. A cart whose whole loop is `flip()` with no `_update`/`_draw` is refused |
 | the frame cadence | the host's, not the shim's (§5): one tick per PICO-8 period on the host's clock, with the host's catch-up rule (extra ticks only while a tick costs under half the period, PICO-8's own line for two ticks per draw; past it a late frame slows time, as on PICO-8). `_draw` never runs before the first `_update`. A 60 fps cart on a host drawing 30 runs two ticks per draw, PICO-8's degraded mode, not something to improve on |
 | sfx/music memory (`0x3100`–`0x42ff`) | remembered, not played; the imported sounds play |
@@ -356,7 +357,7 @@ gate.
 | crimson_night | runs | yes | yes | no | **plays** — its audio drove the sfx-filter work |
 | picooffroad | runs | yes | yes | yes | **plays** — races, with its shadow and its fades, on the reference boards |
 | petal_quest | runs | yes | yes | yes | **plays** from the title into its coroutine cutscenes, with its map |
-| dungeons_and_diagrams | gaps | yes | yes | yes | **plays**; its packed-flag bit trick reads right now (16.16 bit verbs) |
+| dungeons_and_diagrams | gaps | yes | yes | yes | **plays**; its packed-flag bit trick reads right now (16.16 bit verbs), and it is the corpus cart that asks for the MOUSE — a puzzle whose natural input is pointing at a cell, on boards that all have a touchscreen |
 | mossmoss | gaps | yes | yes | yes | **plays**; slows at its later levels on the S3 boards |
 | lowmemsky | gaps | yes | yes | yes | **plays**; it reads its buttons as `btn"1"`, the size-coder's string form, which both lanes coerce as PICO-8 does |
 | dank_tomb | gaps | yes | yes | yes | **plays**; its lighting loop is one `__moy_lut_span` |
