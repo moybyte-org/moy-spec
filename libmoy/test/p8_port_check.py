@@ -173,15 +173,23 @@ def mouse():
     for n in (32, 33, 34):
         if "if n == %d then return p8_m" % n not in shim:
             FAIL.append("stat(%d) does not read the latched mouse" % n)
-    # NO FAKE POINTER. The mouse starts at 0,0 -- p8's own "it has not moved
-    # yet" -- and not mid-screen, because a cart reads a position as a cursor
-    # that is THERE: `dungeons & diagrams` takes `x > 8 and y > 8` for "over
-    # the board", so a centred phantom turned its board on and its button path
-    # off on a console with no pointer at all. The corpus gate caught it; this
-    # is the cheaper net.
-    if "local p8_mx, p8_my, p8_mb = 0, 0, 0" not in shim:
-        FAIL.append("the mouse does not start at 0,0 -- a cart with no pointer "
+    # NO FAKE POINTER, and "no pointer" spelled the only way p8 can spell it:
+    # OFF THE SCREEN. A cart reads a position as a cursor that is THERE --
+    # `dungeons & diagrams` takes `x > 8 and y > 8` for "over the board" and
+    # then re-asserts its board cursor from it every frame, after its own
+    # buttons have moved it -- so a phantom anywhere on the 128x128 stamps over
+    # the d-pad. The corpus gate caught that; this is the cheaper net.
+    if "local P8_MOUSE_AWAY = -8" not in shim:
+        FAIL.append("the shim has no off-screen park for an absent pointer")
+    if "local p8_mx, p8_my, p8_mb = P8_MOUSE_AWAY, P8_MOUSE_AWAY, 0" not in shim:
+        FAIL.append("the mouse does not start away -- a cart with no pointer "
                     "is being handed a phantom one")
+    # ...and it goes back there when the pointer expires, rather than freezing:
+    # a touch console cannot move the finger off the board, so the CONSOLE has
+    # to, or a cart that gates on the cursor never gets its buttons back.
+    body = _lua_body(shim, "p8_mouse_tick").replace("L_", "")
+    if "p8_mx,p8_my,p8_mb=P8_MOUSE_AWAY,P8_MOUSE_AWAY,0" not in body:
+        FAIL.append("an absent pointer freezes the mouse instead of parking it")
 
     # THE MANIFEST HINT (SPEC.md 7.3), off either spelling of asking.
     for src, want in (("function _update() x=stat(32) end", True),
