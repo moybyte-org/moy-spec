@@ -1064,11 +1064,32 @@ local function L_line(x0, y0, x1, y1, c)
   m_line(L_fl(x0), L_fl(y0), L_fl(x1), L_fl(y1), L_shape_col(c))
 end
 
+-- PICO-8's INVERTED fills, transcribed from the shim (p8_lua_port.py): the
+-- mode byte at 0x5f34 arms it and the COLOUR asks with bits 0x1800.0000, and
+-- the verb then paints the complement of the shape.
+local function L_inverts(c)
+  return cpeek(0x5f34) & 2 ~= 0 and c ~= nil and L_fl(c) & 0x1800 == 0x1800
+end
+local function L_inv_span(sx0, sy0, sx1, sy1, col)
+  if sx1 < sx0 or sy1 < sy0 then return end
+  m_rect(sx0 + L_camx, sy0 + L_camy, sx1 - sx0 + 1, sy1 - sy0 + 1, col)
+end
+
 local function L_rectfill(x0, y0, x1, y1, c)
   if L_fill_skip() then return end
   x0 = L_fl(x0) y0 = L_fl(y0) x1 = L_fl(x1) y1 = L_fl(y1)
   if x1 < x0 then x0, x1 = x1, x0 end
   if y1 < y0 then y0, y1 = y1, y0 end
+  if L_inverts(c) then
+    local col = L_shape_col(c)
+    local sx0, sy0 = x0 - L_camx, y0 - L_camy
+    local sx1, sy1 = x1 - L_camx, y1 - L_camy
+    L_inv_span(0, 0, 127, sy0 - 1, col)
+    L_inv_span(0, sy1 + 1, 127, 127, col)
+    L_inv_span(0, sy0, sx0 - 1, sy1, col)
+    L_inv_span(sx1 + 1, sy0, 127, sy1, col)
+    return
+  end
   m_rect(x0, y0, x1 - x0 + 1, y1 - y0 + 1, L_shape_col(c))
 end
 
@@ -1082,7 +1103,23 @@ end
 
 local function L_circfill(x, y, r, c)
   if L_fill_skip() then return end
-  m_circ(L_fl(x), L_fl(y), L_fl(r), L_shape_col(c))
+  local cx, cy, r2 = L_fl(x), L_fl(y), L_fl(r)
+  if L_inverts(c) then
+    local col = L_shape_col(c)
+    for sy = 0, 127 do
+      local dy = sy + L_camy - cy
+      if r2 < 0 or dy < -r2 or dy > r2 then
+        L_inv_span(0, sy, 127, sy, col)
+      else
+        local t, s = r2 * r2 - dy * dy, 0
+        while (s + 1) * (s + 1) <= t do s = s + 1 end
+        L_inv_span(0, sy, cx - s - L_camx - 1, sy, col)
+        L_inv_span(cx + s - L_camx + 1, sy, 127, sy, col)
+      end
+    end
+    return
+  end
+  m_circ(cx, cy, r2, L_shape_col(c))
 end
 
 local function L_circ(x, y, r, c)
@@ -1358,6 +1395,32 @@ local OPS = {
   {"circfill r=-1", function(V) V.circfill(20, 20, -1, 3) end},
   {"circfill oversized", function(V) V.circfill(64, 64, 80, 0x35) end},
   {"circfill negative", function(V) V.circfill(-2.5, -2.5, 20, 3) end},
+  -- INVERTED fills (0x5f34 bit 1 + the colour's 0x1800.0000): the complement
+  -- of the shape, which is how `gift guardian` frames its snow globes. Both
+  -- the arming byte and the opt-in bits are asserted -- one without the other
+  -- must draw the ordinary shape, or a cart that pokes the mode once loses
+  -- every shape it draws afterwards.
+  {"circfill inverted", function(V)
+     cpoke(0x5f34, 2) V.circfill(64, 64, 20, 0x1806) cpoke(0x5f34, 0) end},
+  {"circfill inverted, off centre", function(V)
+     cpoke(0x5f34, 2) V.circfill(30.5, 90.5, 41.9, 0x1803) cpoke(0x5f34, 0) end},
+  {"circfill inverted, r=0", function(V)
+     cpoke(0x5f34, 2) V.circfill(40, 40, 0, 0x1807) cpoke(0x5f34, 0) end},
+  {"circfill inverted, r=-1 covers all", function(V)
+     cpoke(0x5f34, 2) V.circfill(40, 40, -1, 0x1802) cpoke(0x5f34, 0) end},
+  {"circfill inverted under a camera", function(V)
+     cpoke(0x5f34, 2) V.camera(12, -7) V.circfill(70, 50, 18, 0x1809)
+     V.camera(0, 0) cpoke(0x5f34, 0) end},
+  {"circfill NOT inverted without the mode byte", function(V)
+     V.circfill(64, 64, 20, 0x1806) end},
+  {"circfill NOT inverted without the colour bits", function(V)
+     cpoke(0x5f34, 2) V.circfill(64, 64, 20, 6) cpoke(0x5f34, 0) end},
+  {"rectfill inverted", function(V)
+     cpoke(0x5f34, 2) V.rectfill(30, 40, 90, 100, 0x1804) cpoke(0x5f34, 0) end},
+  {"rectfill inverted, off screen", function(V)
+     cpoke(0x5f34, 2) V.rectfill(-20, -30, 10, 12, 0x180e) cpoke(0x5f34, 0) end},
+  {"rectfill NOT inverted without the mode byte", function(V)
+     V.rectfill(30, 40, 90, 100, 0x1804) end},
   {"circ", function(V) V.circ(30.5, 30.5, 12.9, 11) end},
   {"circ with no colour", function(V) V.circ(40, 40, 7) end},
   {"ovalfill", function(V) V.ovalfill(5.5, 6.5, 60.2, 30.7, 4) end},

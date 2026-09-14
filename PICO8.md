@@ -207,6 +207,10 @@ under 16 bits and so fits float32 exactly — could not run either.
 ANSWERING with what it removed, and a nil table a no-op in every one of them,
 which is how `libryinth` deals a hand (`add(e.books, del(E, rnd(E)))`) and
 fills a list it has not created yet — `btn`/`btnp` with PICO-8's auto-repeat,
+the INVERTED fills (`poke(0x5f34, 2)` arms the mode and a colour's
+`0x1800.0000` bits ask for it, and `circfill`/`rectfill` then paint the
+COMPLEMENT of the shape — `gift guardian` frames its snow globes with one, and
+drawn the ordinary way that is a solid disc over the art inside),
 `pal()` in every form including the table form and the **screen palette**
 (`pal(c, d, 1)`, kept across frames as PICO-8 keeps it -- and applied as pixels
 are drawn, not to the finished frame, so a fade over a frame the cart does not
@@ -317,6 +321,7 @@ verdict names them per cart.
 | `cstore` | writes the ROM snapshot in memory; nothing reaches the cart file |
 | `0x5f2c` screen modes | the 64×64 and rotated modes are refused; the normal mode is a no-op |
 | custom fonts (`0x5600`), bitplane masks (`0x5f5e`), sheet/screen remaps (`0x5f54`/`0x5f55`) | remembered, not applied |
+| `ovalfill` with the inversion bits | draws the ordinary oval. `circfill` and `rectfill` invert; `ovalfill` does not, because `moy_ellipse` walks its spans with Bresenham and a second copy of that walk is how the two would drift into a seam. No corpus cart asks for it |
 | 16.16 arithmetic | the bit verbs (`band`, `shr`, `rotl`, …) work on the 32-bit fixed image, and a hex literal spells PICO-8's bit pattern (`0xffff` is −1, `0x0.0001` is 1/65536) — exact whenever the pattern fits float32's 24 bits, which fraction-packed flags and masks do. A data decoder that packs its cache into a full 32-bit word does not run — 31 significant bits do not fit 24; one that reads a byte at a time (the newer px9) does |
 | `cartdata` `dget` `dset` | **real** — they persist through the console's own save memory |
 | `printh` `extcmd` `holdframe` | dropped |
@@ -379,6 +384,22 @@ have sat on a shelf looking broken. Of the thirteen that import, one the
 verdict calls "gaps" still fails — on time, not on a verb — which is the
 honest edge of a static reading. If you convert a cart and play it, the useful
 contribution is a line in this table.
+
+**What a gate that compares us to OURSELVES cannot see (2026-09-14).** The
+owner played `gift guardian` on a board and on real PICO-8 and the two were not
+the same cart: every snow globe was a flat disc here and a glass globe with a
+house, a candy cane or a reindeer inside there. Nothing caught it, and the
+reason is structural — the corpus gate runs a cart under `run_cart`, which is
+*this* importer's player, so a verb we get wrong we get wrong identically in
+both places and the frames agree. Three separate checks that afternoon compared
+a board against `run_cart` and all three said "correct".
+
+The cart draws those globes with `circfill(x, y, r, invert + 6)` after
+`poke(0x5f34, 0x2)`, which is PICO-8's inverted fill: the circle frames the
+globe instead of filling it. We drew the disc. It is implemented now
+(`moy_p8.c`, the shim, both lanes held to one answer in `libmoy/test/p8lib.moy`)
+— but the lesson is the gate's, not the verb's: **a screenshot of real PICO-8 is
+the only reference this repository does not already own.**
 
 **Where the bugs actually were (2026-09-12).** The eighteen carts on PICO-8's
 front page were run through this as a sweep, and twelve booted. Five of the
