@@ -152,6 +152,7 @@ at 16–31, so `pal(c, 128 + i)` lands on the real colour.
 | `0b1010`, `0x1f`, `.5`, `0or` | Lua-legal numbers (PICO-8 has no exponent form, so `0or1` lexes as `0 or 1`) |
 | `[[ long strings ]]` | quoted strings |
 | `// a comment` | `-- a comment`. p8 takes `//` as a line comment and has no `//` operator to confuse it with — integer divide there is `\`. Lua 5.4 has the operator and not the comment, so every one of these used to come out a DIVISION: `x=1 // why` became `x=flr(1/why)` |
+| `\*`, `\#`, `\-`, `\|`, `\+`, `\^` in a string | the P8SCII control byte each stands for, spelled `\001`..`\006`. Lua knows none of these escapes — `"\^c1"` refuses to load — and escaping the BACKSLASH instead made the cart PRINT the command instead of obeying it, which is how `\^c` (clear the screen) and `\#` (solid background) came out as text in nine of the twenty-one corpus carts. Three digits always, because Lua reads up to three: `"\6"` followed by `1` is byte 61 |
 | P8SCII glyph bytes (`\x80`+) | named constants — the six button glyphs keep their identity, so `btn(➡️)` and `btn(⬆️)` stay distinct |
 | a glyph beside a name (`p1➡️`, `❎_down`) | ONE mangled name (`p1_p8g145`, `_p8g151_down`). p8's lexer reads a high byte as a letter, so a glyph touching an identifier is part of it; a glyph standing alone is still the value above |
 | `_init` / `_update` / `_update60` / `_draw` | `p8_*`, paced by the shim |
@@ -234,7 +235,41 @@ including the table form, string indexing, coroutines (`cocreate`, `coresume`,
 `costatus`, `yield`), and the PICO-8 system font at its true 3×5, drawn by the
 console in C where the machine is open — with the P8SCII control codes carts
 print with: wide and tall text, foreground and background colours, outlines
-(`\^o`), cursor nudges, repeat, tab, invert.
+(`\^o`), cursor nudges, repeat, tab, invert, the cell size (`\^x`/`\^y`,
+`0x5f59`), and the RAW MEMORY WRITES — `\^@addrnnnn` and `\^!addr` poke the
+bytes that follow to an address, which is how a one-kilobyte cart carries its
+sprite sheet in a string (`loom valley`).
+
+**A cart's OWN font** (`0x5600`) is drawn, not merely remembered: eight
+attribute bytes (cell width, the width past character 128, height, draw
+offset), 120 bytes of per-character width adjustment and lift, then eight bytes
+a glyph. `poke(0x5f58, 0x81)` turns it on for everything the cart prints and
+`\014`/`\015` switch fonts mid-string, as they do there. `ruby eyes` sets its
+whole game in one.
+
+**`flip()` is a REAL frame boundary.** PICO-8 runs a cart's top level to
+completion and only then starts calling `_update`/`_draw`, so a cart may simply
+loop and present each frame itself — and a cart that does define an update may
+still flip inside it, to type a letter a frame or to sit on `while not btnp(4)
+do flip() end` until the reader presses a button. Neither is cosmetic: with
+`flip()` a no-op the first hangs before the console sees a frame and the second
+never returns. So a cart that flips runs its frame inside a COROUTINE the
+console resumes once a tick, and `flip()` is the yield; a tick that stopped on
+a flip has already presented its frame, and `_draw` is not called for it, as
+PICO-8 does not. The porter reads off the source whether a cart flips at all —
+one that does not never enters the coroutine and pays nothing — and hands a
+looping cart's top level to `__p8_main` rather than running it where it stands.
+`\^1`..`\^9` inside a printed string skips 1,2,4..256 frames and is the same
+yield: `loom valley`'s whole flip-and-clear is `?"\^1\^c"`, IN THAT ORDER, so
+a printer that drew the string and flipped afterwards would present the cleared
+screen.
+
+**`line()` remembers where it stopped**, which is PICO-8's line state: `line(x1,
+y1)` continues a polyline from the end of the last line, `line()` with no
+arguments makes the next call only MARK the end without drawing, and one
+argument is the colour and a reset. Without it every segment of a polyline ran
+back to (0, 0), and `loom valley` — which draws its whole terrain that way —
+came out as noise.
 
 Two things a PICO-8 native should know about colour here: the draw palette is
 four bits, as it is there (VRAM holds a nibble), so `pal(c, 128 + i)` without
@@ -327,17 +362,17 @@ verdict names them per cart.
 | `menuitem` | the pause menu is the console's; entries are not shown |
 | `stat` | clock, CPU and audio counters read 0 |
 | the mouse (`stat(32)`/`(33)`/`(34)`) | **real** — the console's own pointer, which is the glass on a board and a mouse on a desktop or in a browser. Enabled by `poke(0x5f2d, 1)` as it is there, latched once a tick beside the buttons. No wheel (`stat(36)` is 0) and no second or third button. **Where the mouse is when there is none:** p8 has no absent value for a cart to read — the machine always has a mouse somewhere — so "no pointer" is spelled as a position OFF THE SCREEN (−8, −8), which is what PICO-8 reports when the pointer leaves the 128×128 window and what a cart's own bounds guard is already written for. The position holds while there IS a pointer and through a released finger's linger, so a touch panel drags like a mouse; when the linger runs out it parks. A HOVERING source (desktop, browser) never expires and so never parks. That matters on glass, because a finger cannot be moved off the board the way a mouse can: `dungeons & diagrams` re-asserts its board cursor from the mouse every frame, *after* its own buttons have moved it, so a pointer that never leaves is a d-pad that never works again. Driven on a T-Deck 2026-09-12: a screen-centre touch reaches the cart as 66,66 of its own 128×128, the button reads 1 through a drag and 0 on release |
-| `flip` | does nothing; the console calls `_draw()` for you. A cart whose whole loop is `flip()` with no `_update`/`_draw` is refused |
 | the frame cadence | the host's, not the shim's (§5): one tick per PICO-8 period on the host's clock, with the host's catch-up rule (extra ticks only while a tick costs under half the period, PICO-8's own line for two ticks per draw; past it a late frame slows time, as on PICO-8). `_draw` never runs before the first `_update`. A 60 fps cart on a host drawing 30 runs two ticks per draw, PICO-8's degraded mode, not something to improve on |
 | sfx/music memory (`0x3100`–`0x42ff`) | remembered, not played; the imported sounds play |
 | `sfx(n, ch, offset, len)` | the whole sound plays |
 | `cstore` | writes the ROM snapshot in memory; nothing reaches the cart file |
 | `0x5f2c` screen modes | the 64×64 and rotated modes are refused; the normal mode is a no-op |
-| custom fonts (`0x5600`), bitplane masks (`0x5f5e`), sheet/screen remaps (`0x5f54`/`0x5f55`) | remembered, not applied |
+| bitplane masks (`0x5f5e`), sheet/screen remaps (`0x5f54`/`0x5f55`) | remembered, not applied |
 | `ovalfill` with the inversion bits | draws the ordinary oval. `circfill` and `rectfill` invert; `ovalfill` does not, because `moy_ellipse` walks its spans with Bresenham and a second copy of that walk is how the two would drift into a seam. No corpus cart asks for it |
 | 16.16 arithmetic | the bit verbs (`band`, `shr`, `rotl`, …) work on the 32-bit fixed image, and a hex literal spells PICO-8's bit pattern (`0xffff` is −1, `0x0.0001` is 1/65536) — exact whenever the pattern fits float32's 24 bits, which fraction-packed flags and masks do. A data decoder that packs its cache into a full 32-bit word does not run — 31 significant bits do not fit 24; one that reads a byte at a time (the newer px9) does |
 | `cartdata` `dget` `dset` | **real** — they persist through the console's own save memory |
-| `printh` `extcmd` `holdframe` | dropped |
+| `import` `export` `folder` `info` `ls` | PICO-8's console commands are callable from cart code and carts keep the one that built them — `octosnatch` still imports "art.png" from `_init`. There is no editor and no filesystem behind a game here, and the cart's art is already in it, so they do what the BBS player does with them: nothing |
+| `printh` `extcmd` `holdframe` | dropped. `holdframe` asks PICO-8 to hold the next flip until the frame is up, which is what the console's own pacing already does |
 
 ## What cannot come across
 

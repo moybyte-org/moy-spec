@@ -1059,9 +1059,24 @@ local function L_fill_skip() return L_transp and L_pat == 0xffff end
 local function L_pset(x, y, c) m_pix(L_fl(x), L_fl(y), L_pcol(c)) end
 local function L_pget(x, y) return m_pix(L_fl(x), L_fl(y)) end
 
-local function L_line(x0, y0, x1, y1, c)
-  if L_fill_skip() then return end
-  m_line(L_fl(x0), L_fl(y0), L_fl(x1), L_fl(y1), L_shape_col(c))
+-- PICO-8's LINE STATE, transcribed from the shim: the end of the last line is
+-- remembered so LINE(X1, Y1) continues from it, LINE() makes the next call
+-- only mark the end, and LINE(COL) is the colour and a reset.
+local L_line_x, L_line_y, L_line_set = 0, 0, false
+local function L_line(a, b, c1, d, e)
+  if a == nil then L_line_set = false return end
+  if b == nil then L_pen = L_fl(a) & 0x8f L_line_set = false return end
+  local x0, y0, x1, y1, col, draw
+  if d == nil then
+    x1, y1, col = L_fl(a), L_fl(b), c1
+    x0, y0 = L_line_x, L_line_y
+    draw = L_line_set
+  else
+    x0, y0, x1, y1, col = L_fl(a), L_fl(b), L_fl(c1), L_fl(d), e
+    draw = true
+  end
+  L_line_x, L_line_y, L_line_set = x1, y1, true
+  if draw and not L_fill_skip() then m_line(x0, y0, x1, y1, L_shape_col(col)) end
 end
 
 -- PICO-8's INVERTED fills, transcribed from the shim (p8_lua_port.py): the
@@ -1279,6 +1294,25 @@ local function L_sset(x, y, c)
   else cpoke(a, (b & 0xf0) | c) end
 end
 
+-- A four-by-six custom font at 0x5600: the eight attribute bytes, a width
+-- adjustment for character 'B' (one nibble at 0x5608 + (b-16)//2), and a
+-- distinguishable bitmap for 'A' and 'B'. Installed by the cases that need it.
+local function L_font_install()
+  cpoke(0x5600, 4) cpoke(0x5601, 8) cpoke(0x5602, 6)
+  cpoke(0x5603, 0) cpoke(0x5604, 0) cpoke(0x5605, 0)
+  cpoke(0x5606, 0) cpoke(0x5607, 0)
+  for i = 8, 127 do cpoke(0x5600 + i, 0) end
+  -- 'B' (66) is 66-16 = 50 characters in, so its nibble is the LOW half of
+  -- 0x5608 + 25, and 0x9 lifts it a pixel and widens it by one.
+  cpoke(0x5608 + 25, 0x09)
+  local A = {0x06, 0x09, 0x09, 0x0f, 0x09, 0x09, 0x00, 0x00}
+  local B = {0x07, 0x09, 0x07, 0x09, 0x09, 0x07, 0x00, 0x00}
+  for r = 1, 8 do
+    cpoke(0x5600 + 65 * 8 + r - 1, A[r])
+    cpoke(0x5600 + 66 * 8 + r - 1, B[r])
+  end
+end
+
 -- ---- the two lanes ------------------------------------------------------
 local LANE_C = {
   name = "C",
@@ -1316,6 +1350,9 @@ local function reset_draw()
   cpoke(0x5f25, 6) cpoke(0x5f26, 0) cpoke(0x5f27, 0)
   cpoke(0x5f31, 0) cpoke(0x5f32, 0) cpoke(0x5f33, 0)
   L_pen, L_cx, L_cy = 6, 0, 0
+  -- the LINE STATE lives in each lane: LINE() with no arguments is the reset
+  __moy_p8_line()
+  L_line_x, L_line_y, L_line_set = 0, 0, false
   L_pat, L_transp = 0, false
   L_camx, L_camy = 0, 0
   L_spal = {}
@@ -1382,6 +1419,16 @@ local OPS = {
   {"line negative fractional", function(V) V.line(-5.5, -9.5, 20, 20, 3) end},
   {"line one pixel", function(V) V.line(9, 9, 9, 9, 14) end},
   {"line with no arguments", function(V) V.line() end},
+  -- THE LINE STATE, which only two calls in a row can show: the first marks,
+  -- the rest continue from where the last one ended.
+  {"polyline from a reset", function(V)
+     V.line() V.line(10, 10) V.line(40, 20) V.line(20, 50, 11) end},
+  {"polyline continues across a reset colour", function(V)
+     V.line(3) V.line(5, 5) V.line(60, 9) V.line(9, 60) end},
+  {"a full line then a continuation", function(V)
+     V.line(2, 2, 30, 8, 7) V.line(60, 40) end},
+  {"a continuation with no state draws nothing", function(V)
+     V.line() V.line(70, 70) end},
   {"rectfill", function(V) V.rectfill(10.5, 12.5, 40.2, 30.9, 7) end},
   {"rectfill reversed", function(V) V.rectfill(40, 30, 10, 12, 0x27) end},
   {"rectfill with no colour", function(V) V.rectfill(2, 2, 20, 20) end},
@@ -1455,6 +1502,32 @@ local OPS = {
   {"print a boolean", function(V) return V.print(true, 3, 4, 7) end},
   {"print colour 0x27", function(V) return V.print("Ag!", 3, 4, 0x27) end},
   {"print P8SCII", function(V) return V.print(E6 .. "wA" .. E6 .. "tB", 2, 2, 8) end},
+  -- THE CUSTOM FONT (0x5600): eight attribute bytes, then eight bytes a
+  -- character from 16 on. 0x5f58 bit 0 means the byte is meant and bit 7
+  -- turns the font on; \014 and \015 switch it mid-string.
+  {"print in a custom font", function(V)
+     L_font_install() cpoke(0x5f58, 0x81)
+     local r = V.print("AB", 4, 4, 7)
+     cpoke(0x5f58, 0) return r end},
+  {"print switching to the custom font and back", function(V)
+     L_font_install()
+     local r = V.print("A" .. string.char(14) .. "A" .. string.char(15) .. "A", 4, 20, 7)
+     return r end},
+  {"print in a custom font, wide and tall", function(V)
+     L_font_install() cpoke(0x5f58, 0x8d)
+     local r = V.print("AB", 4, 40, 10)
+     cpoke(0x5f58, 0) return r end},
+  {"print with the cell set by 0x5f59", function(V)
+     cpoke(0x5f59, 0x87) local r = V.print("Ag!", 3, 4, 9)
+     cpoke(0x5f59, 0) return r end},
+  {"print with the cell set by \\^x and \\^y", function(V)
+     return V.print(E6 .. "x7" .. E6 .. "y8Ag!", 3, 4, 9) end},
+  -- RAW MEMORY WRITES from a printed string, straight into screen memory so
+  -- the digest sees them.
+  {"print pokes memory with \\^!", function(V)
+     return V.print(E6 .. "!6100" .. string.char(0x12, 0x34, 0x56), 0, 0, 7) end},
+  {"print pokes a counted run with \\^@", function(V)
+     return V.print(E6 .. "@61800002" .. string.char(0x77, 0x88) .. "ab", 0, 90, 7) end},
   {"color", function(V) V.color(9) V.pset(3, 3) end},
   {"color with no argument", function(V) V.color() V.pset(3, 3) end},
   {"color 0x83", function(V) V.color(0x83) V.rectfill(1, 1, 4, 4) end},

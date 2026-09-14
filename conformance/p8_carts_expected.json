@@ -1,6 +1,24 @@
 {
   "_": "What each corpus cart does under libmoy -- the real C console and its LUA_32BITS VM. A RATCHET: a cart that stops running, animating or taking input fails the build; runs/animates also fail if a cart starts, asking for this file to be raised. Recorded as the AND of THREE runs, so a borderline cart is pinned at its weakest observed behaviour -- these are real carts with clocks and randomness, and a gate that flaps gets deleted rather than fixed. The carts are not in this repository (see conformance/p8_carts.py). `verdict` and `reasons` are what the IMPORTER says before writing (PICO8.md, the static verdict) -- goldens too, since the classifier is deterministic. The REASONS are pinned and not just the word: celeste 2 is refused for two things at once, and when one of them stopped firing the word did not move and this gate stayed green.",
   "carts": {
+    "12242": {
+      "animates": true,
+      "note": "runs and animates; takes input",
+      "reasons": [],
+      "responds": true,
+      "runs": true,
+      "verdict": "runs"
+    },
+    "37908": {
+      "animates": true,
+      "note": "runs and animates; takes input",
+      "reasons": [
+        "import() does nothing; the cart's art and sound are already in it and there is no editor behind a game here"
+      ],
+      "responds": true,
+      "runs": true,
+      "verdict": "gaps"
+    },
     "42930": {
       "animates": true,
       "note": "runs and animates; takes input",
@@ -76,11 +94,18 @@
       "runs": true,
       "verdict": "runs"
     },
+    "jetpigadventure-0": {
+      "animates": true,
+      "note": "runs and animates",
+      "reasons": [],
+      "responds": false,
+      "runs": true,
+      "verdict": "runs"
+    },
     "loop-4": {
       "animates": true,
       "note": "runs and animates; takes input",
       "reasons": [
-        "flip() does nothing here; the console draws each frame itself",
         "its pause-menu entries (menuitem) are not shown; the console owns the menu",
         "stat() reads zero: clock, CPU and audio counters are not measured",
         "it reads the mouse: the console's pointer drives stat(32)-(34), but there is no wheel and no second or third button"
@@ -95,6 +120,16 @@
       "reasons": [
         "it shifts numbers by 16 bits, which loses the fixed-point precision PICO-8 has; a hash or a mask may come out wrong",
         "its pause-menu entries (menuitem) are not shown; the console owns the menu"
+      ],
+      "responds": true,
+      "runs": true,
+      "verdict": "gaps"
+    },
+    "lv-2": {
+      "animates": true,
+      "note": "runs and animates; takes input",
+      "reasons": [
+        "it writes sound data into sfx/music memory at runtime; the imported sounds play instead"
       ],
       "responds": true,
       "runs": true,
@@ -151,11 +186,20 @@
       "runs": true,
       "verdict": "refused"
     },
+    "rubyeyes-6": {
+      "animates": true,
+      "note": "runs and animates; takes input",
+      "reasons": [
+        "sfx() with an offset or length plays the whole sound"
+      ],
+      "responds": true,
+      "runs": true,
+      "verdict": "gaps"
+    },
     "terra_1cart-44": {
       "animates": false,
       "note": "HUNG (no frame in 45s)",
       "reasons": [
-        "flip() does nothing here; the console draws each frame itself",
         "its pause-menu entries (menuitem) are not shown; the console owns the menu",
         "stat() reads zero: clock, CPU and audio counters are not measured",
         "it reads the mouse: the console's pointer drives stat(32)-(34), but there is no wheel and no second or third button",

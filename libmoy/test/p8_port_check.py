@@ -252,6 +252,28 @@ def dialect():
     emits("? still ends before a block keyword", 'if a then ?"x",1 end',
           'if a then print("x",1) end')
 
+    # A SEMICOLON ends a statement, so it ends the right-hand side a compound
+    # assignment takes: `jet pig adventure` writes `if (dir>0)x+=aabb.w;` and
+    # the `;` came out INSIDE the parentheses, which does not parse.
+    emits("a compound assignment a semicolon ends", "x+=y;", "x = x + (y) ;")
+    emits("a semicolon in the one-line if", "if (d>0)x+=w;",
+          "if d>0 then x = x + (w) ; end")
+    emits("a semicolon between two of them", "x+=1;y+=2;",
+          "x = x + (1) ;y = y + (2) ;")
+    emits("a semicolon inside a call is not the end", "x+=f(1;2)",
+          "x = x + (f(1;2))")
+
+    # p8's OWN string escapes are P8SCII control BYTES, not characters. Lua
+    # refuses to load `"\^c1"` as an escape at all, and escaping the backslash
+    # instead made the cart print the command rather than obey it. Three
+    # digits, because Lua reads up to three: `"\6" .. "1"` would be byte 61.
+    emits("the flip escape", '?"\\^1"', 'print("\\0061")')
+    emits("the background escape", '?"\\#7 hi"', 'print("\\0027 hi")')
+    emits("the cursor-shift escapes", '?"\\-f\\|h\\+ab"',
+          'print("\\003f\\004h\\005ab")')
+    emits("the repeat escape", '?"\\*3a"', 'print("\\0013a")')
+    emits("a Lua escape is left alone", '?"a\\tb\\nc"', 'print("a\\tb\\nc")')
+
 
 def bitops():
     """`a | b` -> `__p8_bor(a, b)`, and the operand that needs nothing."""
