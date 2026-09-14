@@ -341,7 +341,11 @@ reached a particular dialect bug. They are not in this repository — see
 `conformance/fetch_p8_corpus.py` to cache them. `make -C libmoy p8-carts` runs
 the gate.
 
-**The gate is weak on purpose and you should not read it as "plays".** It
+**The gate is weak on purpose and you should not read it as "plays" — and
+least of all as "plays on a board".** Two of the carts below pass every column
+here and then hang a T-Deck until it is reset over USB, which is why moybyte's
+fleet shelf (`tools/gen_p8_ports.py`) takes a run on glass and not a green row
+as its bar. It
 measures three things by comparing rendered frames: `runs` (no error), `animates`
 (the frame changed between two run lengths) and `responds` (the frame differs
 when a direction is held) — and beside them it records the importer's
@@ -362,9 +366,9 @@ gate.
 | lowmemsky | gaps | yes | yes | yes | **plays**; it reads its buttons as `btn"1"`, the size-coder's string form, which both lanes coerce as PICO-8 does |
 | dank_tomb | gaps | yes | yes | yes | **plays**; its lighting loop is one `__moy_lut_span` |
 | 42930 (*Charge!*) | runs | yes | yes | yes | *(frames only)* — 105 `//` comments, every one of which used to convert to a division |
-| deepdark | runs | yes | yes | yes | *(frames only)* — its torch-lit room scrolls; it keeps that scroll in a global called `camera` |
+| deepdark | runs | yes | yes | yes | *(frames only)* — its torch-lit room scrolls; it keeps that scroll in a global called `camera`. **WEDGES A BOARD**: it passes this gate and then hangs a T-Deck hard enough that the dev channel stops answering (2026-09-14), so it is imported and studied here and is not on the fleet's shelf |
 | giftguardian | runs | yes | yes | no | *(frames only)* — title, iris wipe, then the game; its `?` prints a long string that closes on the next line |
-| loop | gaps | yes | yes | yes | *(frames only)* — reaches its menu; its button tables are named `p1➡️`, `p1⬆️`, one identifier each |
+| loop | gaps | yes | yes | yes | *(frames only)* — reaches its menu; its button tables are named `p1➡️`, `p1⬆️`, one identifier each. **WEDGES A BOARD**, like deepdark and for the same unmeasured reason: the gate asks whether a desktop's frame changed inside 45 s, which is not the question a 60 fps cart on an S3 answers |
 | terra_1cart | gaps | no | no | no | *(not played — generates its world past the harness's 45 s)* |
 | celeste_classic_2 | refused | yes | yes | yes | starts; nothing moves, only the clouds draw — its levels are px9-packed 16.16 |
 | nimudazus | refused | no | no | no | *(not played — errors decoding its bytecode)* |
