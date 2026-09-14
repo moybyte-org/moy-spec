@@ -15,6 +15,7 @@
 #define MOY_MANIFEST_H
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define MOY_SOURCES_MAX 24      /* SPEC.md 4 sets no ceiling; a cart past this
@@ -39,6 +40,44 @@ static inline void moy_manifest_str(const char *text, const char *key,
         const char *s = p + 1, *e = strchr(s, '"');
         if (e && (size_t)(e - s) < n) { memcpy(out, s, (size_t)(e - s)); out[e - s] = 0; }
     }
+}
+
+/* The manifest's `palette` (SPEC.md 2.2/3.1): 64 RGB hex strings replacing the
+ * default table. Fills `out` as 64 RGB triples and returns 1, or leaves it and
+ * returns 0 when the cart ships none.
+ *
+ * The three loaders here resolve an index to a colour themselves, so without
+ * this a cart that ships a palette is drawn in MOY64 -- and every PICO-8 port
+ * ships one, which made `moy play` show a converted cart in colours its author
+ * never chose (green as pink, on `loop`).
+ */
+static inline int moy_manifest_palette(const char *text, unsigned char *out)
+{
+    const char *p = text ? strstr(text, "\"palette\"") : NULL;
+    const char *close;
+    int n = 0;
+    if (!p) return 0;
+    p = strchr(p, '[');
+    if (!p) return 0;
+    close = strchr(p, ']');
+    if (!close) return 0;
+    while (n < 64) {
+        const char *s, *e;
+        int i;
+        p = strchr(p + 1, '"');
+        if (!p || p > close) break;               /* past the array */
+        s = p + 1;
+        e = strchr(s, '"');
+        if (!e || e - s != 6) return 0;           /* not "RRGGBB": refuse */
+        for (i = 0; i < 3; i++) {
+            char b[3];
+            b[0] = s[i * 2]; b[1] = s[i * 2 + 1]; b[2] = 0;
+            out[n * 3 + i] = (unsigned char)strtol(b, NULL, 16);
+        }
+        n++;
+        p = e;
+    }
+    return n == 64;
 }
 
 /* The manifest's `sources` (SPEC.md 4): every script the host loads, in the

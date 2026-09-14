@@ -47,6 +47,12 @@
 #include "moy_audio.h"
 #include "../moy_manifest.h"
 
+/* The cart's own 64-colour table (SPEC.md 2.2), when it ships one: these
+ * loaders resolve an index to a colour themselves, so a cart palette has to
+ * reach the pixel-out path or it may as well not be in the manifest. */
+static unsigned char cart_pal[64 * 3];
+static int cart_pal_ok;
+
 static uint8_t  frame[MOY_W * MOY_H];
 static uint8_t  sheet_pix[MOY_SHEET_W * MOY_SHEET_H];
 static uint8_t  map_cells[MOY_MAP_MAX * MOY_MAP_MAX];
@@ -418,6 +424,7 @@ int main(int argc, char **argv)
     moy_manifest_str(manifest, "main", mainfile, sizeof mainfile);
     moy_manifest_str(manifest, "title", title, sizeof title);
     moy_manifest_str(manifest, "canvas", canvas_s, sizeof canvas_s);
+    cart_pal_ok = moy_manifest_palette(manifest, cart_pal);
     nsrc = moy_manifest_sources(manifest, mainfile, srcname, MOY_SOURCES_MAX);
     /* fps is a number, not a string, so scan it as one. SPEC.md 5: 30 or 60,
      * and anything else falls back to the guaranteed 30. */
@@ -745,7 +752,7 @@ int main(int argc, char **argv)
 
         {   /* pixels out: the one place the console's colours become anyone's.
              * The canvas already holds the frame as shown (SPEC.md 6). */
-            const uint8_t *pal = moy_palette_default;
+            const uint8_t *pal = cart_pal_ok ? cart_pal : moy_palette_default;
             int p;
             for (p = 0; p < cw * ch; p++) {
                 const uint8_t *e = pal + (size_t)frame[p] * 3;

@@ -37,6 +37,12 @@
 
 #include "moy.h"
 #include "../moy_manifest.h"
+
+/* The cart's own 64-colour table (SPEC.md 2.2), when it ships one: these
+ * loaders resolve an index to a colour themselves, so a cart palette has to
+ * reach the pixel-out path or it may as well not be in the manifest. */
+static unsigned char cart_pal[64 * 3];
+static int cart_pal_ok;
 #include "moy_audio.h"
 
 #define KEEP EMSCRIPTEN_KEEPALIVE
@@ -425,6 +431,7 @@ KEEP int moy_web_boot(uint32_t seed)
     }
     /* SPEC.md 4: the whole load order, refused rather than ignored -- a cart
      * run without its prologue fails inside the author's own code. */
+    cart_pal_ok = moy_manifest_palette(manifest, cart_pal);
     nsrc = moy_manifest_sources(manifest, mainfile, srcname, MOY_SOURCES_MAX);
     if (nsrc < 0) {
         snprintf(errmsg, sizeof errmsg,
@@ -558,7 +565,7 @@ KEEP void moy_web_key(int code, int down)
  * running, 1 if it errored (moy_web_error has the message), 2 if it quit. */
 KEEP int moy_web_frame(float dt, double t_ms)
 {
-    const uint8_t *pal = moy_palette_default;
+    const uint8_t *pal = cart_pal_ok ? cart_pal : moy_palette_default;
     int i, n = cw * ch;
 
     if (!running || !L) return running ? 1 : 2;

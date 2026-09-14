@@ -45,7 +45,13 @@ Two scripts, both in this repository:
 | `p8_lua_port.py` | writes the cart. Emits `p8.lua`, the data tables and the PICO-8 compatibility shim; `main.lua`, the cart's own code mechanically converted to Lua 5.4; one more script per PICO-8 **tab** past the first — plus the assets and a manifest listing them all in `sources` (SPEC.md 4). |
 
 The output is an ordinary `"runtime": "lua"` cart declaring a `128x128` canvas,
-so it draws real PICO-8 pixels 1:1 and the host does all scaling.
+so it draws real PICO-8 pixels 1:1 and the host does all scaling. It also ships
+its own 64-colour table (SPEC.md 2.2) — PICO-8's sixteen, the secret sixteen at
+16–31, and the duplicates a `pal()` reaches — so a host that resolves indices
+itself has to read `palette` from the manifest. The three loaders here do
+(`moy_manifest_palette`); one that does not draws every converted cart in the
+console's own colours, which looks like the cart's art is wrong rather than the
+player.
 
 **The generated half is its own file, because `main.lua` should be the cart.**
 Line 1 of `main.lua` is the author's line 1, so a crash names a line they can
