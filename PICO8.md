@@ -215,7 +215,14 @@ drawn the ordinary way that is a solid disc over the art inside),
 (`pal(c, d, 1)`, kept across frames as PICO-8 keeps it -- and applied as pixels
 are drawn, not to the finished frame, so a fade over a frame the cart does not
 redraw stays put; SPEC.md 12.1), `palt()` as real
-transparency state (so `palt(0, false)` draws black), `fillp()` with its
+transparency state (so `palt(0, false)` draws black) -- and the DRAW palette
+and its transparency persist across frames as PICO-8's do, which they did not
+until 2026-09-14: the console resets a canvas's draw state after every cart
+frame and only the screen palette was being put back, so a cart that set either
+once in `_init` had it for exactly one frame. `gift guardian` marks pink
+transparent with `palt(14, true)` and drew a pink block behind every snow globe
+from the second frame on, in PLAY, where its title screen looked right --
+`fillp()` with its
 two-nibble colours and its transparency bit, `oval`/`ovalfill`, `rnd()`
 including the table form, string indexing, coroutines (`cocreate`, `coresume`,
 `costatus`, `yield`), and the PICO-8 system font at its true 3×5, drawn by the

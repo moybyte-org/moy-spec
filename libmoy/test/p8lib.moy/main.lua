@@ -1573,6 +1573,30 @@ function draw_checks()
   __moy_p8_frame()
   check("the frame verb re-applies it", cpeek(0x5f13) == 0x8c)
   reset_draw()
+
+  -- ...and so do the DRAW palette and its transparency, for the same reason:
+  -- PICO-8 keeps both across frames, a cart sets them once in _init, and the
+  -- console resets a canvas's draw state after every cart frame. Neither
+  -- survived until 2026-09-14, so `gift guardian`'s `palt(14, true)` lasted
+  -- exactly one frame and its sprite key drew as a pink block from the second
+  -- one on -- in play, where the title screen looked right.
+  reset_draw()
+  __moy_p8_palt(14, true)
+  __moy_p8_palt(0, false)
+  __moy_p8_pal(3, 9)
+  check("palt(c, t) is in 0x5f00", cpeek(0x5f0e) & 0x10 ~= 0)
+  check("palt(0, false) clears colour 0", cpeek(0x5f00) & 0x10 == 0)
+  check("pal(c, d) is in 0x5f00", cpeek(0x5f03) & 15 == 9)
+  m_pal()                                     -- the console's per-frame reset
+  m_palt()
+  __moy_p8_frame()
+  check("the frame verb re-applies palt", cpeek(0x5f0e) & 0x10 ~= 0)
+  check("...including the colour 0 a cart turned OFF",
+        cpeek(0x5f00) & 0x10 == 0)
+  check("...and the draw palette with it", cpeek(0x5f03) & 15 == 9)
+  reset_draw()
+  check("a reset puts p8's default back", cpeek(0x5f00) & 0x10 ~= 0
+        and cpeek(0x5f0e) & 0x10 == 0 and cpeek(0x5f03) & 15 == 3)
 end
 
 function _init()
