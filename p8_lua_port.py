@@ -4194,7 +4194,7 @@ def _calls_verb(body, name):
 
 
 def _frame_skips(body):
-    """`\^1`..`\^9` in a printed string: the P8SCII spelling of a flip.
+    r"""`\^1`..`\^9` in a printed string: the P8SCII spelling of a flip.
 
     The escape converter has already turned `\^` into the control byte's
     three-digit form (Appendix A), so this reads the CONVERTED body."""
