@@ -2084,7 +2084,12 @@ SHIM = r'''-- ============================================================
 -- fills 600px), and one that presents pixel-for-pixel draws it unscaled. view
 -- is core (SPEC.md 6) and cannot mislead a cart, so no guard -- lossy only at
 -- PRESENTATION.
-local P8_VH = __P8_VH__
+-- The viewport the writer chose, and whether this cart flips: two facts about
+-- THIS cart that the shim needs and cannot read off it. They arrive as globals
+-- emitted just above this chunk rather than as text substituted into it --
+-- SHIM is ~77 KB and a replace() holds it twice, which is the allocation the
+-- browser's MicroPython refuses.
+local P8_VH = __p8_vh
 if P8_VH < 128 then view(128, P8_VH) end
 do
   local m_spr, m_btn, m_btnp = spr, btn, btnp
@@ -3414,7 +3419,9 @@ do
   -- resumes once per tick, and flip() is the yield. A cart that never calls
   -- flip never enters it -- the porter reads that off the source and the
   -- driver below takes the plain path -- so nothing else pays for this.
-  local p8_flips = __P8_FLIPS__         -- does this cart call flip() at all?
+  -- Does this cart call flip() at all? The writer answers it from the source
+  -- and emits the global above this chunk's shim.
+  local p8_flips = __p8_flips
   local p8_co
   local m_cocreate, m_coresume, m_costatus, m_yield, m_corunning =
         coroutine.create, coroutine.resume, coroutine.status,
@@ -4771,9 +4778,8 @@ def port_sections(sections, out_dir, title, crop=(0, 0)):
         # only crop a native-res port can ask for is 8 rows or none.
         raise SystemExit("--zoom: the view crop is 8 rows (128x120) or nothing"
                          " -- T+B must be 8 or 0, got %d,%d" % tuple(crop))
-    flips = _own_loop(body) or bool(_call_sites(body, "flip")) or _frame_skips(body)
-    shim = (SHIM.replace("__P8_VH__", str(vh))
-                .replace("__P8_FLIPS__", "true" if flips else "false"))
+    flips = _own_loop(body) or _calls_verb(body, "flip") or _frame_skips(body)
+    shim = SHIM
     want_sheet = _calls_verb(body, "sget") or _calls_verb(body, "sset")
     want_map_raw = any(_calls_verb(body, v) for v in
                        ("peek", "peek2", "peek4", "memcpy", "reload"))
@@ -4788,7 +4794,8 @@ def port_sections(sections, out_dir, title, crop=(0, 0)):
     # writer, and not by re-reading a whole file afterwards.
     _write(out_dir, "p8.lua",
            [p8_header, data_tables_lua(sections, want_sheet, want_map_raw), "\n",
-            shim])
+            "__p8_vh = %d\n__p8_flips = %s\n"
+            % (vh, "true" if flips else "false"), shim])
     written.append("p8.lua")
     # THE CART'S TABS, one file each (tab_files says when they cannot be).
     # The localization block is emitted into EVERY one of them: its `local`s
