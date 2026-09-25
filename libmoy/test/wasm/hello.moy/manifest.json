@@ -1,0 +1,8 @@
+{
+  "format": "moy-1",
+  "title": "hello wasm",
+  "runtime": "wasm",
+  "main": "main.wasm",
+  "memory": 3,
+  "input": ["buttons"]
+}

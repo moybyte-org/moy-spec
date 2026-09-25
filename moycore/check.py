@@ -17,10 +17,15 @@ Findings are (level, code, message):
   info   worth knowing
 """
 
+import json
+
 from . import budget
 from . import palette as _palette
-from .cart import FORMAT, VALID_FPS, INPUT_KINDS, ICON_MAX_TILES
-from .sheet import MAP_MAX, TILE_COUNT
+from . import wasm as _wasm
+from .cart import (FORMAT, VALID_FPS, INPUT_KINDS, ICON_MAX_TILES, CANVAS_SIZES,
+                   MANIFEST, SPRITES, MAP, FLAGS, SOUNDS, SOURCES, parse_flags,
+                   _text)
+from .sheet import MAP_MAX, TILE_COUNT, SpriteSheet, TileMap, SheetError
 
 # SPEC.md 4.1: the available Lua standard library is EXACTLY base (minus these),
 # math, string, table. "This is a maximum, not a suggestion."
@@ -127,7 +132,12 @@ def check_manifest(manifest, findings):
         findings.append(("error", "manifest.fps",
                          "fps is %r; SPEC.md 5 allows 30 or 60 only" % (fps,)))
     rt = manifest.get("runtime")
-    if rt is not None and rt != "lua":
+    if rt == "wasm":
+        findings.append(("warn", "manifest.runtime",
+                         'runtime is "wasm", which tracks proposals/wasm-runtime.md '
+                         "and is not core: a console that does not implement it "
+                         "refuses this cart cleanly (SPEC.md 15)"))
+    elif rt is not None and rt != "lua":
         findings.append(("warn", "manifest.runtime",
                          'runtime is "%s"; Lua is core\'s only binding, so this cart is '
                          "non-portable by construction and every other console will "
@@ -248,30 +258,7 @@ def check_cart(cart, files=None, findings=None):
     check_source("\n".join(text for _, text in cart.sources), cart.manifest,
                  findings)
 
-    tm = cart.tilemap
-    if tm.w > MAP_MAX or tm.h > MAP_MAX:
-        findings.append(("error", "map.size",
-                         "map is %dx%d; SPEC.md 3.3 caps each dimension at %d and a host "
-                         "MUST reject a larger one rather than allocate past its budget"
-                         % (tm.w, tm.h, MAP_MAX)))
-    elif not budget.fits(tm.w, tm.h):
-        findings.append(("error", "map.size",
-                         "map is %dx%d = %s, past the %s the host reserved (SPEC.md 1.1)"
-                         % (tm.w, tm.h, budget.human(tm.w * tm.h),
-                            budget.human(budget.TILEMAP_EXACT))))
-
-    # A map cell naming a tile the sheet does not carry draws blank. Legal
-    # (SPEC.md 3.2: a short sheet leaves the rest blank) but almost always a
-    # mistake, so it is worth saying.
-    if not cart.sheet.is_blank():
-        highest = -1
-        for c in tm.cells:
-            if c - 1 > highest:
-                highest = c - 1
-        if highest >= cart.sheet.count:
-            findings.append(("warn", "map.tiles",
-                             "the map places tile %d but the sheet holds %d; those cells "
-                             "draw blank" % (highest, cart.sheet.count)))
+    check_assets(cart.sheet, cart.tilemap, findings)
 
     if files:
         total = 0
@@ -289,9 +276,93 @@ def check_cart(cart, files=None, findings=None):
                          "cart heap %s is runtime and not decidable from here"
                          % (budget.human(cw * ch),
                             budget.human(budget.SPRITE_SHEET),
-                            budget.human(budget.tilemap_bytes(tm)),
+                            budget.human(budget.tilemap_bytes(cart.tilemap)),
                             budget.human(budget.TILEMAP),
                             budget.human(budget.CART_HEAP))))
+    return findings
+
+
+def check_assets(sheet, tm, findings):
+    """The sheet and map checks every runtime's cart shares."""
+    if tm.w > MAP_MAX or tm.h > MAP_MAX:
+        findings.append(("error", "map.size",
+                         "map is %dx%d; SPEC.md 3.3 caps each dimension at %d and a host "
+                         "MUST reject a larger one rather than allocate past its budget"
+                         % (tm.w, tm.h, MAP_MAX)))
+    elif not budget.fits(tm.w, tm.h):
+        findings.append(("error", "map.size",
+                         "map is %dx%d = %s, past the %s the host reserved (SPEC.md 1.1)"
+                         % (tm.w, tm.h, budget.human(tm.w * tm.h),
+                            budget.human(budget.TILEMAP_EXACT))))
+
+    # A map cell naming a tile the sheet does not carry draws blank. Legal
+    # (SPEC.md 3.2: a short sheet leaves the rest blank) but almost always a
+    # mistake, so it is worth saying.
+    if not sheet.is_blank():
+        highest = -1
+        for c in tm.cells:
+            if c - 1 > highest:
+                highest = c - 1
+        if highest >= sheet.count:
+            findings.append(("warn", "map.tiles",
+                             "the map places tile %d but the sheet holds %d; those cells "
+                             "draw blank" % (highest, sheet.count)))
+    return findings
+
+
+def check_wasm_files(files, findings=None):
+    """Every static check of a `"runtime": "wasm"` cart, from its raw
+    {name: bytes} (proposals/wasm-runtime.md). A module cannot be loaded into
+    a Cart -- its main is not text -- so this reads the manifest and the
+    assets itself, and hands the module to moycore.wasm."""
+    findings = [] if findings is None else findings
+    try:
+        manifest = json.loads(_text(files[MANIFEST]))
+    except (KeyError, ValueError) as exc:
+        findings.append(("error", "manifest", "no readable %s: %s" % (MANIFEST, exc)))
+        return findings
+    if not isinstance(manifest, dict):
+        findings.append(("error", "manifest", "%s must be a JSON object" % MANIFEST))
+        return findings
+    check_manifest(manifest, findings)
+
+    cv = manifest.get("canvas")
+    if cv is not None and cv not in CANVAS_SIZES:
+        findings.append(("error", "manifest.canvas",
+                         "canvas %r is not one of %s (SPEC.md 1)"
+                         % (cv, ", ".join(CANVAS_SIZES))))
+    if SOURCES in manifest:
+        findings.append(("error", "manifest.sources",
+                         'a wasm cart is one module, so "sources" does not apply; '
+                         "remove it"))
+
+    main = manifest.get("main") or "main.wasm"
+    if main not in files:
+        findings.append(("error", "manifest.main",
+                         "main %r is not in the cart" % main))
+    else:
+        _wasm.check_module(files[main], manifest, findings)
+
+    sheet, tm = SpriteSheet(), TileMap()
+    try:
+        if SPRITES in files:
+            sheet = SpriteSheet.from_hex(_text(files[SPRITES]))
+        if MAP in files:
+            tm = TileMap.from_hex(_text(files[MAP]))
+        if FLAGS in files:
+            parse_flags(_text(files[FLAGS]))
+        if SOUNDS in files:
+            json.loads(_text(files[SOUNDS]))
+    except (SheetError, ValueError) as exc:
+        findings.append(("error", "assets", str(exc)))
+    check_assets(sheet, tm, findings)
+
+    total = 0
+    for name in files:
+        total += len(files[name])
+    findings.append(("info", "size", "cart is %s across %d files (module %s)"
+                     % (budget.human(total), len(files),
+                        budget.human(len(files.get(main, b""))))))
     return findings
 
 

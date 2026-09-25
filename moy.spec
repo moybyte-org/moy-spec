@@ -5,7 +5,8 @@
 #
 # The datas are everything moy.py reaches on disk: the web player it serves
 # (`run`/`export`), the editor stubs `new` copies, the two normative data
-# files moycore reads beside SPEC.md, and the conformance suite's carts,
+# files moycore reads beside SPEC.md, the wasm import table `check` reads
+# beside its proposal, and the conformance suite's carts,
 # goldens and traces so `moy conform` can judge a third-party player from the
 # frozen binary alone. Paths inside the bundle mirror the checkout, so no
 # module needed a frozen-specific search path. The one thing frozen changes is
@@ -22,6 +23,7 @@ a = Analysis(
         ("moy-api.lua", "."),
         ("palette.json", "."),
         ("font.bin", "."),
+        ("proposals/wasm-imports.json", "proposals"),
         ("conformance/carts", "conformance/carts"),
         ("conformance/golden", "conformance/golden"),
         ("conformance/traces", "conformance/traces"),

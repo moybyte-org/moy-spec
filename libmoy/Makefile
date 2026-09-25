@@ -35,7 +35,7 @@ LUA_OBJ  := $(LUA_SRC:.c=.o)
 LUA_CFLAGS := -std=c99 -O2 -w -I$(LUA_DIR)
 RUNCART  := build/run_cart
 
-.PHONY: all clean data conform conform-lua test lua play audio-test p8-carts float-fold sources-test
+.PHONY: all clean data conform conform-lua test lua play audio-test p8-carts float-fold sources-test wasm-check
 
 all: $(LIB) $(REPLAY)
 
@@ -214,7 +214,14 @@ p8-test: $(RUNCART) $(FLOATFOLD)
 	python3 test/p8_first_draw.py
 	python3 test/p8_port_check.py
 
-test: conform conform-lua ext-test sources-test audio-test lowres spr-sweep p8-test p8-carts
+# `moy check` on compiled carts (proposals/wasm-runtime.md): the fixtures in
+# test/wasm/ are WAT source, assembled by tools/wat.py with nothing but
+# Python, and each is refused -- or, for hello.moy, passed -- through the real
+# CLI. No WAMR and no compiler: this is the half every checkout can run.
+wasm-check:
+	python3 test/wasm_check_test.py
+
+test: conform conform-lua ext-test sources-test audio-test lowres spr-sweep p8-test p8-carts wasm-check
 
 clean:
 	rm -f $(OBJ) $(LUA_OBJ) src/moy_lua.o src/moy_p8.o $(LIB)

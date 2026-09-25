@@ -38,7 +38,10 @@ Before you ship, and to work with the art tools you already own:
                                  manifest, sandbox ceiling, undeclared
                                  extensions, the SPEC.md 1.1 budget. Findable
                                  from a laptop instead of from a handheld you
-                                 do not own
+                                 do not own. A "runtime": "wasm" cart has its
+                                 module checked against the import table,
+                                 exports and memory proposals/wasm-runtime.md
+                                 pins
     moy.py pack <cart.moy>       the folder -> ONE file you can attach, link or
                                  list. Deterministic: same folder, same bytes
     moy.py unpack <cart.moyc>    ... and back to a folder
@@ -500,23 +503,32 @@ def cmd_check(args):
     # manifest declares so SPEC.md 10's capability gate never fires here -- a
     # cart no host can run is a FINDING, with a line to change, and refusing to
     # load it would hide that behind "FAILS TO LOAD".
-    declared = []
+    declared, manifest = [], {}
     try:
-        ext = json.loads(files["manifest.json"]).get("extensions")
+        manifest = json.loads(files["manifest.json"])
+        ext = manifest.get("extensions")
         if isinstance(ext, (list, tuple)):
             declared = [e for e in ext if isinstance(e, str)]
     except (KeyError, ValueError, AttributeError):
         pass
 
-    try:
-        cart = moycore.Cart.from_files(files, supported_extensions=tuple(declared))
-    except moycore.CartError as exc:
-        print("%s: FAILS TO LOAD" % src)
-        print("  error  %s" % exc)
-        sys.exit(1)
-
-    findings = _check.check_cart(cart, files)
-    print("%s -- %s" % (src, cart.title))
+    if isinstance(manifest, dict) and manifest.get("runtime") == "wasm":
+        # A compiled cart's main is a module, not a script, so it never
+        # becomes a Cart: its checks read the module's own sections against
+        # proposals/wasm-runtime.md and its import table.
+        findings = _check.check_wasm_files(files)
+        title = manifest.get("title")
+    else:
+        try:
+            cart = moycore.Cart.from_files(files,
+                                           supported_extensions=tuple(declared))
+        except moycore.CartError as exc:
+            print("%s: FAILS TO LOAD" % src)
+            print("  error  %s" % exc)
+            sys.exit(1)
+        findings = _check.check_cart(cart, files)
+        title = cart.title
+    print("%s -- %s" % (src, title))
     print("  id     %s" % _pack.content_id(files))
     for level, code, msg in findings:
         print("  %-6s %s: %s" % (level, code, msg))

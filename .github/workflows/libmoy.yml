@@ -125,6 +125,14 @@ jobs:
         run: make p8-test
         working-directory: libmoy
 
+      # proposals/wasm-runtime.md's module rules, through `moy check`: a
+      # conforming compiled cart passes and each refusal fixture is refused
+      # with the finding its name promises. Python only -- the fixtures are
+      # WAT source that tools/wat.py assembles.
+      - name: moy check knows compiled carts
+        run: make wasm-check
+        working-directory: libmoy
+
       - name: The desktop port still builds
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq libsdl2-dev
