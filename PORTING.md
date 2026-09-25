@@ -314,6 +314,18 @@ one was retired, and PURR OS is currently the only implementation outside this
 repository that could replace it. **If you are writing Route B, your agreement is
 evidence nobody here can generate.**
 
+## Compiled carts: `"runtime": "wasm"`
+
+A cart can carry a WebAssembly module in place of its Lua. That binding is
+[`proposals/wasm-runtime.md`](proposals/wasm-runtime.md), a candidate the
+reference console implements as a vendor runtime (§15), so refusing such a cart
+cleanly is all a conforming host owes it. A host that takes it on implements the
+proposal's import table, and `libmoy/src/moy_wasm.c` is that table already
+written, in C over WAMR, compiled only when you define `MOY_WASM`. `moy check`
+tells an author and a host alike whether a cart's module keeps to the
+proposal's shape. How your host executes the module is yours to choose and is
+nowhere in the contract.
+
 ## Extensions: adding your own without forking core
 
 Consoles will do more than core, and that is expected — a shell, a radio, an
