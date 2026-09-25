@@ -341,8 +341,9 @@ from this spec.
    alternative is pushing every port onto `blit565`, which item 7 measured as the
    slow route on the floor board. Proposal: 256 entries, 768 bytes of RGB. Decide
    before item 5.
-10. **A ported engine needs a clock and a file read.** Doom wanted milliseconds
-    since start and reads from a 4 MB WAD; neither is in the import table, and the
-    sprite sheet cannot carry an engine's assets. Item 6's answer (moybyte#108) is
-    on this tier's critical path, not orthogonal to it; the clock is a one-line
-    import. Decide both with item 3.
+10. **A ported engine needs to read its own assets.** Doom reads from a 4 MB
+    WAD, and the sprite sheet cannot carry an engine's assets. The clock it also
+    wanted is already §9's `time()` and needs no import; the read is the gap.
+    Pin a read-only asset read scoped to the cart's own folder now — item 6's
+    user files (moybyte#108) can widen it later, but the cart-local read is on
+    this tier's critical path, not orthogonal to it. Decide with item 3.
