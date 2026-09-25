@@ -49,6 +49,7 @@ step() {                        # step "name" cmd...
 step "build"                 make -C libmoy CFLAGS="${CFLAGS_CI}"
 step "docs agree"            python3 tools/check_docs.py
 step "libmoy suite"          make -C libmoy test
+step "wasm binding (WAMR)"   make -C libmoy wasm-test CFLAGS="${CFLAGS_CI}"
 
 # The artifact checks. `moy.py player` is the cheap one and catches the whole
 # class on its own -- it compares the committed bundle's stamp against a hash of

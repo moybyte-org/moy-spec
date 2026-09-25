@@ -56,16 +56,18 @@ start here.
 every SPEC.md §6 verb, camera / clip / pal / palt, sprites with flips, scales
 and colorkeys, `sspr`, the tilemap, the 8×8 font, the 64-entry palette,
 RGB888/RGB565 resolution at flush time, the Lua binding with SPEC.md §4.1's
-sandbox, and — as a separate, optional module — the whole of SPEC.md §8's
+sandbox, the wasm binding behind a build flag (below), and — as a separate,
+optional module — the whole of SPEC.md §8's
 synthesizer (`include/moy_audio.h`: eight waveforms, seven effects, the sfx step
 sequencer and the music row sequencer with its channel-claiming rules).
 
 **Not here, on purpose:** a VM, a frame loop, a filesystem, a launcher. libmoy
 binds to whatever `lua_State` you hand it — `vendor/lua` is a convenience, not a
 dependency — and the loop belongs to your platform. The verb table is the narrow
-waist, and the Lua binding is the evidence: `src/moy_lua.c` is ~400 lines, which
-is what a WASM import table or a native binding would also cost. If binding a
-language took a thousand lines the "narrow waist" claim would be false.
+waist, and the two bindings are the evidence: `src/moy_lua.c` and
+`src/moy_wasm.c` are each a few hundred lines of glue over the same verbs, which
+is what a native binding would also cost. If binding a language took thousands
+of lines the "narrow waist" claim would be false.
 
 `moy_canvas` is a plain struct you place yourself. Nothing here calls `malloc`,
 and since the raster is integer-only it does not need libm either.
@@ -163,6 +165,36 @@ the binding opens only `base`, `math`, `string`, `table` and `coroutine` by hand
 rather than calling `luaL_openlibs` (which would pull all of them in
 and leave the sandbox depending on nil-ing them out afterwards). A cart
 reaching for any of them fails, as SPEC.md 11 requires of every conforming host.
+
+## The wasm binding — built only when asked
+
+`src/moy_wasm.c` is the import table of
+[`proposals/wasm-runtime.md`](../proposals/wasm-runtime.md) as C: a WAMR
+`NativeSymbol` array a host registers under module `"moy"`, bound to a
+`moy_console` the way `moy_lua_open` binds a `lua_State`, with the palette
+`blit`, `blit565`, `target` for layers, and `read` routed to a callback the host
+supplies. It tracks the proposal, so it is not core, and it costs nobody who
+does not ask for it: the file compiles to nothing unless `MOY_WASM` is defined,
+and it is the only file here that includes WAMR's `wasm_export.h`, from an
+include path the host provides. WAMR is not vendored in libmoy. The binding
+needs the direct-colour build (`MOY_PIXEL_RGB565`), because a palette blit's
+256 colours do not fit an indexed canvas. `include/moy_wasm.h` says how a host
+calls it; how the host loads a module — interpreter or compiled, from where,
+with what stack — stays the host's.
+
+```
+make wasm-check     # moy check refuses the refusal fixtures and passes hello
+make wasm-test      # the binding under WAMR on Linux (fetches WAMR; test-only)
+```
+
+`make wasm-test` is the one target here that fetches anything. It clones the
+WAMR fork the reference console pins, `moybyte-org/wasm-micro-runtime` at the
+commit in the Makefile's `WAMR_PIN`, into `build/wamr/` (gitignored), builds
+its interpreter for Linux with no WASI and no builtin libc, and runs the
+fixtures in `test/wasm/`. Those are WAT source, never binaries, assembled by
+`tools/wat.py` with nothing but Python: a conforming cart whose frame is held
+against moycore's own rendering of it, the carts a host must refuse, and
+modules that must trap or quit. Needs `git`, `cmake` and a C compiler.
 
 ## Status
 

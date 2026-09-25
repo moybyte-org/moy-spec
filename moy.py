@@ -709,7 +709,10 @@ def cmd_map(args):
 # over prose is a check people learn to skip.
 WASM_INPUTS = ("libmoy/src/*.c", "libmoy/include/*.h",
                "libmoy/port/wasm/*.c", "libmoy/port/wasm/build.sh",
-               "libmoy/vendor/lua/*.c", "libmoy/vendor/lua/*.h")
+               "libmoy/vendor/lua/*.c", "libmoy/vendor/lua/*.h",
+               # the wasm cart binding: never compiled into the player
+               ":(exclude)libmoy/src/moy_wasm.c",
+               ":(exclude)libmoy/include/moy_wasm.h")
 
 
 # Files build.sh COPIES into runner/ verbatim. These need no toolchain to check

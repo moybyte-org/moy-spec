@@ -133,6 +133,15 @@ jobs:
         run: make wasm-check
         working-directory: libmoy
 
+      # The binding behind that table (src/moy_wasm.c) under WAMR: the one
+      # step that fetches a dependency, the fork the reference console pins,
+      # at the pin -- libmoy does not vendor it. The conforming cart's frame is
+      # held against moycore's rendering; the refusal carts, the traps and
+      # quit() behave as the proposal says.
+      - name: The wasm binding runs under WAMR
+        run: make wasm-test CFLAGS="-std=c99 -O2 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wstrict-prototypes -Werror -Iinclude"
+        working-directory: libmoy
+
       - name: The desktop port still builds
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq libsdl2-dev

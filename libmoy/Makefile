@@ -35,7 +35,7 @@ LUA_OBJ  := $(LUA_SRC:.c=.o)
 LUA_CFLAGS := -std=c99 -O2 -w -I$(LUA_DIR)
 RUNCART  := build/run_cart
 
-.PHONY: all clean data conform conform-lua test lua play audio-test p8-carts float-fold sources-test wasm-check
+.PHONY: all clean data conform conform-lua test lua play audio-test p8-carts float-fold sources-test wasm-check wasm-test
 
 all: $(LIB) $(REPLAY)
 
@@ -213,6 +213,51 @@ p8-test: $(RUNCART) $(FLOATFOLD)
 	python3 test/p8_font_check.py
 	python3 test/p8_first_draw.py
 	python3 test/p8_port_check.py
+
+# The wasm binding (src/moy_wasm.c, proposals/wasm-runtime.md) under WAMR, on
+# Linux. TEST-ONLY, and the one target here that fetches anything: WAMR is not
+# a libmoy dependency and is not vendored, so this clones the fork the
+# reference console pins, AT THE PIN, into build/wamr/ (gitignored, like all of
+# build/) and builds its interpreter with no WASI and no builtin libc --
+# imports from "moy" are the only ones a cart has. The binding needs the
+# direct-colour build, so libmoy compiles again with MOY_PIXEL_RGB565 beside
+# MOY_WASM. The fixtures are WAT, assembled by tools/wat.py; the harness runs
+# them and test/wasm_frame.py holds the frame against moycore's rendering.
+WAMR_REPO  ?= https://github.com/moybyte-org/wasm-micro-runtime.git
+WAMR_PIN   ?= 47cb969c448e5853b92a10e8cef86e3ca04be3ce
+WAMR_SRC   := build/wamr/src
+WAMR_BUILD := build/wamr/linux
+WAMR_LIB   := $(WAMR_BUILD)/libiwasm.a
+WASMT      := build/wasm_test
+
+$(WAMR_SRC)/.pin-$(WAMR_PIN):
+	rm -rf $(WAMR_SRC) && mkdir -p $(WAMR_SRC)
+	git -C $(WAMR_SRC) init -q
+	git -C $(WAMR_SRC) fetch -q --depth 1 $(WAMR_REPO) $(WAMR_PIN)
+	git -C $(WAMR_SRC) checkout -q FETCH_HEAD
+	test "$$(git -C $(WAMR_SRC) rev-parse HEAD)" = "$(WAMR_PIN)"
+	touch $@
+
+$(WAMR_LIB): $(WAMR_SRC)/.pin-$(WAMR_PIN)
+	cmake -S $(WAMR_SRC)/product-mini/platforms/linux -B $(WAMR_BUILD) \
+	  -DCMAKE_BUILD_TYPE=Release -DWAMR_BUILD_INTERP=1 -DWAMR_BUILD_AOT=0 \
+	  -DWAMR_BUILD_JIT=0 -DWAMR_BUILD_FAST_JIT=0 -DWAMR_BUILD_LIBC_BUILTIN=0 \
+	  -DWAMR_BUILD_LIBC_WASI=0 -DWAMR_BUILD_SIMD=0 > build/wamr/cmake.log
+	cmake --build $(WAMR_BUILD) --target vmlib -j4 > build/wamr/build.log
+
+$(WASMT): test/wasm_test.c src/moy_wasm.c include/moy_wasm.h $(SRC) include/moy.h $(WAMR_LIB)
+	$(CC) $(CFLAGS) -DMOY_PIXEL_RGB565 -DMOY_WASM \
+	  -isystem $(WAMR_SRC)/core/iwasm/include \
+	  test/wasm_test.c src/moy_wasm.c $(SRC) $(WAMR_LIB) -lm -lpthread -ldl -o $@
+
+wasm-test: $(WASMT)
+	rm -rf build/wasm && mkdir -p build/wasm
+	for d in test/wasm/*.moy; do \
+	  python3 ../tools/wat.py --cart $$d build/wasm/$$(basename $$d) || exit 1; done
+	for f in test/wasm/*.wat; do \
+	  python3 ../tools/wat.py $$f build/wasm/$$(basename $$f .wat).wasm || exit 1; done
+	./$(WASMT) build/wasm build/wasm/hello.bin
+	python3 test/wasm_frame.py build/wasm/hello.bin
 
 # `moy check` on compiled carts (proposals/wasm-runtime.md): the fixtures in
 # test/wasm/ are WAT source, assembled by tools/wat.py with nothing but

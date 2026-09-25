@@ -36,12 +36,21 @@ PATTERNS = (
     "libmoy/port/wasm/build.sh",
 )
 
+# Matched by the globs above and compiled by nothing build.sh runs: the wasm
+# cart binding builds only under MOY_WASM, against WAMR, which this player
+# never links, and no file that reaches emcc includes its header.
+NOT_INPUTS = (
+    "libmoy/src/moy_wasm.c",
+    "libmoy/include/moy_wasm.h",
+)
+
 
 def files(root):
     out = []
+    skip = set(os.path.join(root, p) for p in NOT_INPUTS)
     for pat in PATTERNS:
         out.extend(sorted(glob.glob(os.path.join(root, pat))))
-    return [f for f in out if os.path.isfile(f)]
+    return [f for f in out if os.path.isfile(f) and f not in skip]
 
 
 def digest(root):
