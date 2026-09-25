@@ -333,7 +333,12 @@ from this spec.
 8. **Size the compiled tier's memory floor.** §1.1's ≈400 KB is tier 1's and
    stays there. This tier needs its own number, and `blit565`'s 153,600-byte
    framebuffer is most of the reason. Wants one integrated cart (item 3) to
-   measure against rather than a derivation.
+   measure against rather than a derivation. The reference implementation's
+   answer to *which* number (2026-09-25): its floor board's share of the
+   cart-runtime reserve, so that one compiled cart runs on every board of the
+   lineup and a cart that needs more is a demo, not a cart — the same
+   no-fragmentation rule §1.1's floor enforces for scripts. The figure lands
+   here once that reserve share is measured with the runtime resident.
 9. **The `blit` palette is too small for the first real port.** Doom's palette is
    256 entries and a frame uses well over 64 of them, so the first engine that
    showed up does not fit the indexed path as drafted. The argument above — a
