@@ -133,6 +133,12 @@ jobs:
         run: make wasm-check
         working-directory: libmoy
 
+      # The import table is the verb table: the Lua binding's globals plus the
+      # wasm binding's four, and moy_wasm.c's NativeSymbol rows are the table's.
+      - name: The wasm import table is the verb table
+        run: make wasm-table
+        working-directory: libmoy
+
       # The binding behind that table (src/moy_wasm.c) under WAMR: the one
       # step that fetches a dependency, the fork the reference console pins,
       # at the pin -- libmoy does not vendor it. The conforming cart's frame is

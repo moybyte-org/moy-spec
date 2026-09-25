@@ -35,7 +35,7 @@ LUA_OBJ  := $(LUA_SRC:.c=.o)
 LUA_CFLAGS := -std=c99 -O2 -w -I$(LUA_DIR)
 RUNCART  := build/run_cart
 
-.PHONY: all clean data conform conform-lua test lua play audio-test p8-carts float-fold sources-test wasm-check wasm-test
+.PHONY: all clean data conform conform-lua test lua play audio-test p8-carts float-fold sources-test wasm-check wasm-test wasm-table
 
 all: $(LIB) $(REPLAY)
 
@@ -266,7 +266,14 @@ wasm-test: $(WASMT)
 wasm-check:
 	python3 test/wasm_check_test.py
 
-test: conform conform-lua ext-test sources-test audio-test lowres spr-sweep p8-test p8-carts wasm-check
+# The wasm import table (proposals/wasm-imports.json) is the verb table the Lua
+# binding installs plus the wasm binding's own four, and src/moy_wasm.c
+# registers exactly its rows at its signatures. Parsed, not compiled, so it
+# needs no WAMR.
+wasm-table:
+	python3 test/wasm_table_check.py
+
+test: conform conform-lua ext-test sources-test audio-test lowres spr-sweep p8-test p8-carts wasm-check wasm-table
 
 clean:
 	rm -f $(OBJ) $(LUA_OBJ) src/moy_lua.o src/moy_p8.o $(LIB)
