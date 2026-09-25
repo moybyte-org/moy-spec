@@ -346,6 +346,8 @@ static void traps(const char *name, int want_where, const char *want_msg)
     if (where == want_where) printf("  ok   %s traps: %s\n", name, err);
 }
 
+static NativeSymbol *natives;   /* WAMR sorts it in place and keeps it */
+
 int main(int argc, char **argv)
 {
     static const char *const REFUSED[] = {
@@ -365,7 +367,10 @@ int main(int argc, char **argv)
         return 1;
     }
     wasm_runtime_set_log_level(WASM_LOG_LEVEL_FATAL);
-    if (moy_wasm_register()) {
+    uint32_t rows;
+    moy_wasm_natives(&rows);
+    natives = calloc(rows, sizeof *natives);
+    if (!natives || moy_wasm_register(natives)) {
         fprintf(stderr, "wasm_test: the import table did not register\n");
         return 1;
     }

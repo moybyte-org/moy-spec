@@ -67,7 +67,7 @@ def lua_block(src, opener):
 
 
 def c_natives(src):
-    block = lua_block(src, "static NativeSymbol NATIVES[] = {")
+    block = lua_block(src, "static const NativeSymbol NATIVES[] = {")
     return re.findall(r'\{"(\w+)",\s*FN\(w_(\w+)\),\s*"([^"]*)",\s*NULL\}', block)
 
 
