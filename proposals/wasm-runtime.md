@@ -4,7 +4,8 @@
 document is the ABI it points at. Every number in it is measured, not estimated —
 the evidence run is a 6502 interpreter core, line-faithful in Lua and C with
 identical cycle counts out of every runtime, on the reference console's RISC-V
-board at its shipping clock (moybyte#158, `experiments/wasm_aot`, 2026-07-27).
+board at its shipping clock (moybyte#158, `experiments/wasm_aot`, 2026-07-27), and
+since 2026-09-24 on the Xtensa floor board as well (same issue, same core).
 Nothing here is normative until the open items at the end are closed.
 
 ## Why a second binding, and why this one
@@ -215,8 +216,8 @@ external memory for its framebuffer, which is exactly where the 3.3× above
 comes from. §1.1's ≈400 KB is a **tier-1 floor**: it exists so
 the script tier stays implementable on modest hardware, and it is stated in
 terms of a host that owns every pixel. This tier owns none of that — a host
-implementing it already carries a WASM runtime, an AOT toolchain, and on the
-reference RISC-V board a dedicated XIP flash partition. Nothing that can do
+implementing it already carries a WASM runtime, an AOT toolchain, and the
+external RAM the module and its linear memory load into. Nothing that can do
 those things is short of RAM. **The compiled tier therefore declares its own
 floor** rather than bending tier 1's, and `blit565`'s framebuffer is the reason
 the number has to move. Sizing it is open item 8.
@@ -262,22 +263,30 @@ is (§1.1). The measured realities, recorded so ports plan for them:
   browser is the fastest tier. A future web runner instantiates the cart as a
   sibling module with imports bound to the console's verbs — never a WASM
   interpreter nested inside a WASM console.
-- **Reference RISC-V board:** zero exec-capable heap — AOT text must be XIP-mapped
-  from its own flash partition. Installing a compiled cart writes that partition
-  (flash wear, per-install). The measured 16× *is* this slower XIP mode; plain
-  AOT would be faster and cannot load there at all.
-- **Xtensa board:** untested. It may have exec heap and skip XIP entirely — the
-  first open item below.
+- **Reference RISC-V board:** external RAM carries no PMP entry, so a plain AOT
+  module loads from a file straight into PSRAM and runs there, the caches synced
+  after the loader writes the text — no flash partition, no per-install wear. The
+  measured 16× *is* the slower XIP mode; plain AOT measured faster still
+  (moybyte#158, 2026-09-24). XIP from a partition stays an option for a host that
+  wants the text out of RAM.
+- **Xtensa floor board:** loads the same way, from a file into PSRAM, through the
+  chip's instruction-bus alias of external RAM. That alias is fetch-only, so the
+  module is compiled without literal pools (`wamrc --size-level=0`). Doom runs on
+  its glass from that path (moybyte#158).
 - **Store fan-out:** a store may serve pre-compiled `.aot` variants per
-  architecture alongside the canonical `.wasm`. `wamrc` ships prebuilt; runtime
-  and compiler versions must match (the evidence run pins WAMR 2.4.5).
+  architecture alongside the canonical `.wasm`. `wamrc` ships prebuilt for x86-64 and RISC-V
+  targets; the Xtensa backend is not in that binary and needs a build against
+  Espressif's LLVM fork, which a store does once. Runtime and compiler versions
+  must match (the evidence runs pin WAMR 2.4.5).
 
 Integration frictions already catalogued by the evidence run, so the next
 implementer inherits them: WAMR's `LIBC_WASI` defaults on and fails riscv32
 builds; `REF_TYPES` defaults differ between its linux and esp-idf paths; a
 `br_table`-heavy module loads on linux and is rejected by the esp-idf build
 (dispatch through a function-pointer table instead); WAMR must run on a real
-pthread under ESP-IDF.
+pthread under ESP-IDF; and its esp-idf platform layer needed fixes on both
+boards (the S3's dual-bus mirror, executable PSRAM on the P4), which the
+reference implementation carries in its pinned fork of WAMR.
 
 ## What Lua carts get from this: nothing, deliberately
 
@@ -296,9 +305,10 @@ from this spec.
 
 ## Open items — in order, none skippable
 
-1. **Xtensa AOT on the floor board** — same prebuilt `wamrc`,
-   `--target=xtensa`. Decides whether the slower board is in scope and whether it
-   skips the XIP install entirely.
+1. ~~**Xtensa AOT on the floor board.**~~ **Measured 2026-09-24:** in scope, and it
+   skips the install entirely — on both boards the module loads from a file into
+   PSRAM. The floor board runs the same core at well under half the RISC-V
+   board's rate, and Doom runs on its glass; numbers in moybyte#158.
 2. **Build `blit`** and measure the real full-frame cost through the console's
    frame loop, not a bare harness. `blit565` rides the same item — the two
    differ only in whether the host resolves a palette or copies.
@@ -324,3 +334,15 @@ from this spec.
    stays there. This tier needs its own number, and `blit565`'s 153,600-byte
    framebuffer is most of the reason. Wants one integrated cart (item 3) to
    measure against rather than a derivation.
+9. **The `blit` palette is too small for the first real port.** Doom's palette is
+   256 entries and a frame uses well over 64 of them, so the first engine that
+   showed up does not fit the indexed path as drafted. The argument above — a
+   per-frame LUT rebuild is noise — holds at 256 at no extra cost, and the
+   alternative is pushing every port onto `blit565`, which item 7 measured as the
+   slow route on the floor board. Proposal: 256 entries, 768 bytes of RGB. Decide
+   before item 5.
+10. **A ported engine needs a clock and a file read.** Doom wanted milliseconds
+    since start and reads from a 4 MB WAD; neither is in the import table, and the
+    sprite sheet cannot carry an engine's assets. Item 6's answer (moybyte#108) is
+    on this tier's critical path, not orthogonal to it; the clock is a one-line
+    import. Decide both with item 3.
