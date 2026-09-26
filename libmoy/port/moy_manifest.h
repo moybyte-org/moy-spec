@@ -42,6 +42,24 @@ static inline void moy_manifest_str(const char *text, const char *key,
     }
 }
 
+/* A manifest number field, as a non-negative whole number: `dflt` when the key
+ * is absent or its value is not one. */
+static inline long moy_manifest_uint(const char *text, const char *key, long dflt)
+{
+    char pat[64];
+    const char *p;
+    char *end;
+    long v;
+    snprintf(pat, sizeof pat, "\"%s\"", key);
+    p = text ? strstr(text, pat) : NULL;
+    if (!p || (p = strchr(p + strlen(pat), ':')) == NULL) return dflt;
+    p++;
+    while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') p++;
+    if (*p < '0' || *p > '9') return dflt;
+    v = strtol(p, &end, 10);
+    return (*end == '.' || *end == 'e' || *end == 'E' || v < 0) ? dflt : v;
+}
+
 /* The manifest's `palette` (SPEC.md 2.2/3.1): 64 RGB hex strings replacing the
  * default table. Fills `out` as 64 RGB triples and returns 1, or leaves it and
  * returns 0 when the cart ships none.

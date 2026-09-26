@@ -1,6 +1,7 @@
 /* make wasm-test: libmoy's wasm binding under WAMR, on Linux.
  *
  *   build/wasm_test <built fixtures dir> <frame out>
+ *   build/wasm_test play <cart> <out> [--frames N] [--limit MIB]
  *
  * The fixtures are test/wasm/, assembled by tools/wat.py into the directory
  * given. This drives them the way a console would:
@@ -11,11 +12,21 @@
  *     test/wasm_frame.py to hold against moycore's own rendering;
  *   - each refusal cart must fail moy_wasm_check -- except start_function,
  *     whose start function must instead trap at instantiation, since no
- *     binding exists before moy_wasm_open;
+ *     binding exists before moy_wasm_open -- and moy_wasm_check_bytes, the
+ *     check an engine without WAMR's loader runs, must refuse every one of
+ *     them and pass hello;
  *   - each trap module must end with a non-zero return and a message, and
  *     quit.wat with a zero return and the host's quit hook called.
  *
  * Exits non-zero on the first failure.
+ *
+ * `play` is the same binding as a conformance player for compiled carts
+ * (conformance/wasm_run.py): it runs a cart's ticks with the clock stopped
+ * and writes the last frame it presented, RGB565 little-endian. Exit 0 when
+ * the cart ran; 1 when it trapped, with the last whole frame written if there
+ * was one; 2 when it was refused, with nothing written. A cart whose load
+ * footprint -- its declared memory, its module and the interpreter's stack --
+ * is over the limit (1024 MiB unless --limit says) is refused before it loads.
  */
 
 #include <stdio.h>
@@ -251,6 +262,9 @@ static void hello(const char *frame_out)
     CHECK(moy_wasm_check(l.module, l.copy, l.size, manifest_pages(cart), err,
                          sizeof err) == 0,
           "hello: check: %s", err);
+    CHECK(moy_wasm_check_bytes(l.copy, l.size, manifest_pages(cart), err,
+                               sizeof err) == 0,
+          "hello: check from its bytes: %s", err);
     if (instantiate(&l, err, sizeof err)) {
         CHECK(0, "hello: instantiate: %s", err);
         unload(&l);
@@ -292,6 +306,16 @@ static void refused(const char *name)
     loaded l;
     snprintf(cart, sizeof cart, "%s/%s.moy", dir, name);
     snprintf(path, sizeof path, "%s/main.wasm", cart);
+    err[0] = 0;
+    {
+        uint32_t n = 0;
+        uint8_t *bytes = slurp(path, &n);
+        CHECK(bytes && moy_wasm_check_bytes(bytes, n, manifest_pages(cart), err,
+                                            sizeof err) != 0,
+              "%s: moy_wasm_check_bytes passed it", name);
+        if (bytes) printf("  ok   %s refused from its bytes: %s\n", name, err);
+        free(bytes);
+    }
     if (load(path, &l, err, sizeof err)) {
         printf("  ok   %s refused at load: %s\n", name, err);
         unload(&l);
@@ -346,6 +370,142 @@ static void traps(const char *name, int want_where, const char *want_msg)
     if (where == want_where) printf("  ok   %s traps: %s\n", name, err);
 }
 
+/* -- play: the conformance player ------------------------------------------ */
+
+#define PLAY_STACK (256 * 1024)
+
+static moy_pixel play_px[MOY_W * MOY_H];
+static uint8_t play_sheet[MOY_SHEET_W * MOY_SHEET_H];
+static uint8_t play_cells[MOY_MAP_MAX * MOY_MAP_MAX];
+
+static uint32_t h_clock(void *u) { (void)u; return 0; }
+
+static moy_pixel *h_layer_alloc(void *u, int w, int h)
+{
+    (void)u;
+    return (moy_pixel *)calloc((size_t)w * (size_t)h, sizeof(moy_pixel));
+}
+
+static void h_layer_release(void *u, moy_pixel *p) { (void)u; free(p); }
+
+static int write_frame(const char *out, const uint8_t *frame, size_t n)
+{
+    FILE *f = fopen(out, "wb");
+    if (!f) return 0;
+    fwrite(frame, 1, n, f);
+    fclose(f);
+    return 1;
+}
+
+static int play(int argc, char **argv)
+{
+    char path[1024], err[256];
+    const char *out;
+    int i, frames = 2, shown = 0;
+    uint32_t pages;
+    uint64_t limit = 1024u * 1024u * 1024u, footprint;
+    uint8_t *frame;
+    moy_canvas cv;
+    moy_sheet sheet;
+    moy_map map;
+    loaded l;
+    moy_wasm w;
+    size_t n;
+
+    if (argc < 4) {
+        fprintf(stderr, "usage: wasm_test play <cart> <out> [--frames N] [--limit MIB]\n");
+        return 2;
+    }
+    snprintf(cart, sizeof cart, "%s", argv[2]);
+    out = argv[3];
+    for (i = 4; i + 1 < argc; i++) {
+        if (!strcmp(argv[i], "--frames")) frames = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--limit")) limit = (uint64_t)atoi(argv[++i]) * 1024u * 1024u;
+    }
+
+    snprintf(path, sizeof path, "%s/main.wasm", cart);
+    pages = manifest_pages(cart);
+    {
+        FILE *f = fopen(path, "rb");
+        long size = -1;
+        if (f) {
+            fseek(f, 0, SEEK_END);
+            size = ftell(f);
+            fclose(f);
+        }
+        if (size < 0) {
+            fprintf(stderr, "wasm_test: no module at %s\n", path);
+            return 2;
+        }
+        footprint = (uint64_t)pages * 65536u + (uint64_t)size + PLAY_STACK;
+    }
+    if (footprint > limit) {
+        fprintf(stderr, "wasm_test: this cart needs %llu KiB to load and this "
+                "player gives a cart %llu KiB\n",
+                (unsigned long long)(footprint / 1024u), (unsigned long long)(limit / 1024u));
+        return 2;
+    }
+
+    moy_canvas_init(&cv, play_px, MOY_W, MOY_H);
+    moy_sheet_init(&sheet, play_sheet);
+    moy_map_init(&map, play_cells, 20, 15);
+    moy_console_init(&con, &cv, &sheet, &map);
+    memset(flags, 0, sizeof flags);
+    memset(pmem, 0, sizeof pmem);
+    con.flags = flags;
+    con.host.time_ms = h_clock;
+    con.host.pmem_get = h_pmem_get;
+    con.host.pmem_set = h_pmem_set;
+    con.host.layer_new = h_layer_alloc;
+    con.host.layer_free = h_layer_release;
+    con.host.quit = h_quit;
+    moy_srand(&con, 0);
+
+    if (load(path, &l, err, sizeof err)
+        || moy_wasm_check(l.module, l.copy, l.size, pages, err, sizeof err)
+        || instantiate(&l, err, sizeof err)) {
+        fprintf(stderr, "wasm_test: refused: %s\n", err);
+        unload(&l);
+        return 2;
+    }
+    memset(&w, 0, sizeof w);
+    w.read = h_read;
+    if (moy_wasm_open(&w, &con, l.env)) {
+        fprintf(stderr, "wasm_test: refused: a hook is missing\n");
+        unload(&l);
+        return 2;
+    }
+
+    n = (size_t)MOY_W * MOY_H;
+    frame = (uint8_t *)malloc(n * 2);
+    if (moy_wasm_init(&w, err, sizeof err)) goto trapped;
+    for (i = 0; i < frames && !w.quitting; i++) {
+        size_t k;
+        moy_reset_state(&cv);
+        if (moy_wasm_update(&w, 1.0f / 30.0f, err, sizeof err)) goto trapped;
+        if (w.quitting) break;
+        if (moy_wasm_draw(&w, err, sizeof err)) goto trapped;
+        for (k = 0; k < n; k++) {
+            frame[k * 2] = (uint8_t)(play_px[k] & 0xFFu);
+            frame[k * 2 + 1] = (uint8_t)(play_px[k] >> 8);
+        }
+        shown = 1;
+    }
+    if (shown) write_frame(out, frame, n * 2);
+    moy_wasm_close(&w);
+    unload(&l);
+    free(frame);
+    return 0;
+
+trapped:
+    fprintf(stderr, "wasm_test: the cart trapped: %s\n", err);
+    if (shown) write_frame(out, frame, n * 2);
+    moy_wasm_close(&w);
+    unload(&l);
+    free(frame);
+    return 1;
+}
+
 static NativeSymbol *natives;   /* WAMR sorts it in place and keeps it */
 
 int main(int argc, char **argv)
@@ -356,12 +516,14 @@ int main(int argc, char **argv)
     };
     char err[256] = "";
     size_t i;
+    int playing = argc >= 2 && !strcmp(argv[1], "play");
 
-    if (argc != 3) {
-        fprintf(stderr, "usage: wasm_test <built fixtures dir> <frame out>\n");
+    if (argc != 3 && !playing) {
+        fprintf(stderr, "usage: wasm_test <built fixtures dir> <frame out>\n"
+                        "       wasm_test play <cart> <out> [--frames N] [--limit MIB]\n");
         return 2;
     }
-    snprintf(dir, sizeof dir, "%s", argv[1]);
+    if (!playing) snprintf(dir, sizeof dir, "%s", argv[1]);
     if (!wasm_runtime_init()) {
         fprintf(stderr, "wasm_test: WAMR did not initialise\n");
         return 1;
@@ -373,6 +535,11 @@ int main(int argc, char **argv)
     if (!natives || moy_wasm_register(natives)) {
         fprintf(stderr, "wasm_test: the import table did not register\n");
         return 1;
+    }
+    if (playing) {
+        int r = play(argc, argv);
+        wasm_runtime_destroy();
+        return r;
     }
 
     printf("wasm test: the conforming cart, one tick\n");

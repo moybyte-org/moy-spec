@@ -35,7 +35,7 @@ LUA_OBJ  := $(LUA_SRC:.c=.o)
 LUA_CFLAGS := -std=c99 -O2 -w -I$(LUA_DIR)
 RUNCART  := build/run_cart
 
-.PHONY: all clean data conform conform-lua test lua play audio-test p8-carts float-fold sources-test wasm-check wasm-test wasm-table
+.PHONY: all clean data conform conform-lua test lua play audio-test p8-carts float-fold sources-test wasm-check wasm-test wasm-table wamr
 
 all: $(LIB) $(REPLAY)
 
@@ -67,22 +67,6 @@ src/moy_p8.o: src/moy_p8.c include/moy.h src/moy_pixel.h
 $(RUNCART): test/run_cart.c src/moy_lua.o src/moy_p8.o $(LUA_OBJ) $(LIB)
 	@mkdir -p build
 	$(CC) $(CFLAGS) -DMOY_WITH_LUA -I$(LUA_DIR) $^ $(LDLIBS) -o $@
-
-# The desktop port: a playable console in ~250 lines of SDL2, and the worked
-# example of what a platform actually owes libmoy. Built only on request, so the
-# library itself keeps its no-dependencies claim -- SDL2 is never needed to build
-# libmoy.a, run conformance, or ship this repository's CI.
-#
-# Assigned HERE, above the rule, and not further down: make expands variables in
-# a target line as it READS the file, so a `$(PLAY):` rule above this assignment
-# expands to an empty target and is silently dropped. `make play` then fails with
-# "no rule to make target", which is how this was found.
-PLAY := build/moy-play
-
-$(PLAY): port/sdl2/main.c src/moy_lua.o src/moy_p8.o $(LUA_OBJ) $(LIB)
-	@mkdir -p build
-	$(CC) $(CFLAGS) -DMOY_WITH_LUA -I$(LUA_DIR) $^ \
-	  $(shell pkg-config --cflags --libs sdl2) $(LDLIBS) -o $@
 
 # The palette and font are the spec's, not ours (SPEC.md 2 and 6 make both data
 # rather than prose so implementations cannot drift). Regenerated, never typed
@@ -130,8 +114,6 @@ conform-lua: $(RUNCART)
 # redistributed. Point MOY_P8_CORPUS at a directory of .p8 / .p8.png files.
 p8-carts: $(RUNCART)
 	cd $(SPEC) && python3 conformance/p8_carts.py
-
-play: $(PLAY)
 
 # SPEC.md 8's semantics, asserted numerically (8.3 exempts audio from pixel
 # conformance, so this is its whole test story: pitch by zero crossings,
@@ -226,8 +208,21 @@ p8-test: $(RUNCART) $(FLOATFOLD)
 WAMR_REPO  ?= https://github.com/moybyte-org/wasm-micro-runtime.git
 WAMR_PIN   ?= 88631c5fd2dd30a3fe9cf40549d82d156ae5c0a3
 WAMR_SRC   := build/wamr/src
-WAMR_BUILD := build/wamr/linux
-WAMR_LIB   := $(WAMR_BUILD)/libiwasm.a
+# WAMR's own platform directory for this machine, or for a cross build the
+# caller names with WAMR_PLATFORM=windows and a toolchain in WAMR_CMAKE_FLAGS.
+WAMR_PLATFORM ?= $(if $(filter Darwin,$(shell uname -s)),darwin,linux)
+WAMR_CMAKE_FLAGS ?=
+WAMR_BUILD := build/wamr/$(WAMR_PLATFORM)
+# On Windows WAMR's hardware bound check is MSVC's structured exceptions, which
+# a MinGW build has not; the interpreter checks every access in software.
+WAMR_PLATFORM_FLAGS := $(if $(filter windows,$(WAMR_PLATFORM)),-DWAMR_DISABLE_HW_BOUND_CHECK=1)
+WAMR_LIB   := $(WAMR_BUILD)/$(if $(filter windows,$(WAMR_PLATFORM)),liblibiwasm.a,libiwasm.a)
+# What libiwasm.a needs from the system. On Windows its clock is MinGW's
+# winpthreads, linked in statically so the player ships with SDL2.dll alone.
+WAMR_LIBS_linux   := -lpthread -ldl
+WAMR_LIBS_darwin  := -lpthread
+WAMR_LIBS_windows := -lws2_32 -lntdll -Wl,-Bstatic -lwinpthread -Wl,-Bdynamic
+WAMR_LIBS  := $(WAMR_LIBS_$(WAMR_PLATFORM))
 WASMT      := build/wasm_test
 
 $(WAMR_SRC)/.pin-$(WAMR_PIN):
@@ -239,16 +234,19 @@ $(WAMR_SRC)/.pin-$(WAMR_PIN):
 	touch $@
 
 $(WAMR_LIB): $(WAMR_SRC)/.pin-$(WAMR_PIN)
-	cmake -S $(WAMR_SRC)/product-mini/platforms/linux -B $(WAMR_BUILD) \
+	cmake -S $(WAMR_SRC)/product-mini/platforms/$(WAMR_PLATFORM) -B $(WAMR_BUILD) \
 	  -DCMAKE_BUILD_TYPE=Release -DWAMR_BUILD_INTERP=1 -DWAMR_BUILD_AOT=0 \
 	  -DWAMR_BUILD_JIT=0 -DWAMR_BUILD_FAST_JIT=0 -DWAMR_BUILD_LIBC_BUILTIN=0 \
-	  -DWAMR_BUILD_LIBC_WASI=0 -DWAMR_BUILD_SIMD=0 > build/wamr/cmake.log
-	cmake --build $(WAMR_BUILD) --target vmlib -j4 > build/wamr/build.log
+	  -DWAMR_BUILD_LIBC_WASI=0 -DWAMR_BUILD_SIMD=0 $(WAMR_PLATFORM_FLAGS) $(WAMR_CMAKE_FLAGS) \
+	  > build/wamr/cmake-$(WAMR_PLATFORM).log
+	cmake --build $(WAMR_BUILD) --target vmlib -j4 > build/wamr/build-$(WAMR_PLATFORM).log
+
+wamr: $(WAMR_LIB)
 
 $(WASMT): test/wasm_test.c src/moy_wasm.c include/moy_wasm.h $(SRC) include/moy.h $(WAMR_LIB)
 	$(CC) $(CFLAGS) -DMOY_PIXEL_RGB565 -DMOY_WASM \
 	  -isystem $(WAMR_SRC)/core/iwasm/include \
-	  test/wasm_test.c src/moy_wasm.c $(SRC) $(WAMR_LIB) -lm -lpthread -ldl -o $@
+	  test/wasm_test.c src/moy_wasm.c $(SRC) $(WAMR_LIB) -lm $(WAMR_LIBS) -o $@
 
 wasm-test: $(WASMT)
 	rm -rf build/wasm && mkdir -p build/wasm
@@ -258,6 +256,55 @@ wasm-test: $(WASMT)
 	  python3 ../tools/wat.py $$f build/wasm/$$(basename $$f .wat).wasm || exit 1; done
 	./$(WASMT) build/wasm build/wasm/hello.bin
 	python3 test/wasm_frame.py build/wasm/hello.bin
+
+# The desktop port: a playable console in a few hundred lines of SDL2, and the
+# worked example of what a platform actually owes libmoy. Built only on
+# request, so the library itself keeps its no-dependencies claim -- SDL2 is
+# never needed to build libmoy.a, run conformance, or ship this repository's CI.
+#
+# It runs compiled carts too (port/sdl2/wasm_cart.c): libmoy's wasm binding
+# over WAMR's interpreter, which is why this rule sits below the WAMR block and
+# fetches the pinned fork like wasm-test does. The binding needs the
+# direct-colour raster and the Lua carts keep the index one, so the raster is
+# compiled a second time under its moy565_ names (port/moy565.h) and both
+# link. PLAY_WASM=0 builds a player without it, which refuses a compiled cart
+# as SPEC.md 3.1 says. SDL_FLAGS and PLAY name a cross build's SDL and binary.
+#
+# Assigned HERE, above the rule: make expands variables in a target line as it
+# READS the file, so a `$(PLAY):` rule above this assignment expands to an
+# empty target and is silently dropped. `make play` then fails with "no rule
+# to make target", which is how this was found.
+PLAY      := build/moy-play
+PLAY_WASM ?= 1
+SDL_FLAGS ?= $(shell pkg-config --cflags --libs sdl2)
+P565      := build/play565
+P565_CFLAGS = $(CFLAGS) -DMOY_PIXEL_RGB565 -DMOY_WASM -include port/moy565.h \
+              -isystem $(WAMR_SRC)/core/iwasm/include
+ifeq ($(PLAY_WASM),1)
+PLAY_WASM_OBJ  := $(P565)/moy_canvas.o $(P565)/moy_sprite.o $(P565)/moy_wasm.o \
+                  $(P565)/wasm_cart.o
+PLAY_WASM_LINK := $(WAMR_LIB) $(WAMR_LIBS)
+PLAY_WASM_DEF  := -DMOY_PLAY_WASM
+endif
+
+$(P565)/%.o: src/%.c include/moy.h include/moy_wasm.h src/moy_pixel.h port/moy565.h \
+             $(WAMR_SRC)/.pin-$(WAMR_PIN)
+	@mkdir -p $(P565)
+	$(CC) $(P565_CFLAGS) -c $< -o $@
+
+$(P565)/wasm_cart.o: port/sdl2/wasm_cart.c port/sdl2/wasm_cart.h include/moy.h \
+                     include/moy_wasm.h port/moy565.h $(WAMR_SRC)/.pin-$(WAMR_PIN)
+	@mkdir -p $(P565)
+	$(CC) $(P565_CFLAGS) -c $< -o $@
+
+$(PLAY): port/sdl2/main.c port/sdl2/wasm_cart.h port/moy_manifest.h src/moy_lua.o \
+         src/moy_p8.o $(LUA_OBJ) $(LIB) $(PLAY_WASM_OBJ) $(if $(PLAY_WASM_OBJ),$(WAMR_LIB))
+	@mkdir -p build
+	$(CC) $(CFLAGS) -DMOY_WITH_LUA $(PLAY_WASM_DEF) -I$(LUA_DIR) \
+	  port/sdl2/main.c src/moy_lua.o src/moy_p8.o $(LUA_OBJ) $(PLAY_WASM_OBJ) $(LIB) \
+	  $(PLAY_WASM_LINK) $(SDL_FLAGS) $(LDLIBS) -o $@
+
+play: $(PLAY)
 
 # `moy check` on compiled carts (proposals/wasm-runtime.md): the fixtures in
 # test/wasm/ are WAT source, assembled by tools/wat.py with nothing but

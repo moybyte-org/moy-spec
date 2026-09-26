@@ -148,11 +148,21 @@ jobs:
         run: make wasm-test CFLAGS="-std=c99 -O2 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wstrict-prototypes -Werror -Iinclude"
         working-directory: libmoy
 
+      # The desktop player runs both runtimes: Lua carts on the index raster,
+      # compiled carts on libmoy's wasm binding over WAMR, at the same pin
+      # wasm-test fetched above.
       - name: The desktop port still builds
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq libsdl2-dev
           make play
+          test "$(./build/moy-play --runtimes)" = "lua wasm"
         working-directory: libmoy
+
+      # --dump is the player with no window: the same cart path, the clock
+      # stopped, the last finished frame written out. So the desktop player
+      # answers the SPEC.md 11 suite like every other implementation here.
+      - name: Conformance (the desktop player)
+        run: python3 conformance/run.py --player "libmoy/build/moy-play {cart} --dump {out}"
 
       # runner/ is a build artifact that is CHECKED IN, so `moy.py web` needs
       # only Python and a browser. A checked-in artifact drifts from its source
@@ -236,23 +246,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # `make play` with MinGW for every compiler, WAMR included: its Windows
+      # platform builds under MinGW (the Makefile turns off the one part that
+      # is MSVC's), and CMake needs a C++ compiler to configure it even though
+      # this build compiles no C++.
       - name: Cross-compile
         run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq gcc-mingw-w64-x86-64
+          sudo apt-get update -qq && sudo apt-get install -y -qq \
+            gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64 cmake
           # -f, or a 404 is saved AS sdl.tar.gz and the failure surfaces two
           # lines later as "gzip: stdin: not in gzip format" -- which is how a
           # transient blip read as a corrupt tarball on 2026-09-10.
           curl -fsSL --retry 3 --retry-delay 5 -o sdl.tar.gz https://github.com/libsdl-org/SDL/releases/download/release-2.30.11/SDL2-devel-2.30.11-mingw.tar.gz
           tar xf sdl.tar.gz
           SDL=$PWD/SDL2-2.30.11/x86_64-w64-mingw32
+          make play CC=x86_64-w64-mingw32-gcc AR=x86_64-w64-mingw32-ar \
+            PLAY=build/moy-play.exe WAMR_PLATFORM=windows \
+            WAMR_CMAKE_FLAGS="-DCMAKE_SYSTEM_NAME=Windows -DCMAKE_SYSTEM_PROCESSOR=x86_64 -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++ -DCMAKE_ASM_COMPILER=x86_64-w64-mingw32-gcc" \
+            SDL_FLAGS="-I$SDL/include -I$SDL/include/SDL2 -L$SDL/lib -lmingw32 -lSDL2main -lSDL2"
           mkdir -p dist-win
-          x86_64-w64-mingw32-gcc -std=c99 -O2 -DMOY_WITH_LUA -Iinclude -Ivendor/lua \
-            -I$SDL/include -I$SDL/include/SDL2 \
-            port/sdl2/main.c src/moy_canvas.c src/moy_sprite.c src/moy_data.c src/moy_audio.c src/moy_lua.c src/moy_p8.c \
-            vendor/lua/*.c \
-            -L$SDL/lib -lmingw32 -lSDL2main -lSDL2 -lm \
-            -o dist-win/moy-play.exe
-          cp $SDL/bin/SDL2.dll dist-win/
+          cp build/moy-play.exe $SDL/bin/SDL2.dll dist-win/
           python3 ../tools/release_readme.py windows-player > dist-win/README.txt
         working-directory: libmoy
 
@@ -267,11 +280,16 @@ jobs:
       - name: It runs, not just links (Wine)
         run: |
           sudo apt-get install -y -qq wine64
+          python3 ../tools/wat.py --cart test/wasm/hello.moy build/hello.moy
           cd dist-win
           WINEDLLOVERRIDES="mscoree,mshtml=d" WINEDEBUG=-all \
             SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy SDL_RENDER_VSYNC=0 \
             timeout 120 wine ./moy-play.exe ../test/smoke.moy
           echo "the Windows player ran the all-verbs cart and exited cleanly"
+          WINEDLLOVERRIDES="mscoree,mshtml=d" WINEDEBUG=-all \
+            timeout 120 wine ./moy-play.exe ../build/hello.moy --dump ../build/hello.bin
+          python3 ../test/wasm_frame.py ../build/hello.bin
+          echo "...and drew a compiled cart's frame byte for byte"
         working-directory: libmoy
 
       - uses: actions/upload-artifact@v4
@@ -333,6 +351,7 @@ jobs:
         working-directory: libmoy
         run: |
           if [ "$RUNNER_OS" = Linux ]; then
+            # cmake builds WAMR for the player's compiled carts.
             # Debian 11 is EOL: deb.debian.org no longer carries its pool
             # (404 on every .deb) and its Release file has expired. Point at
             # the archive, DROP the security and updates suites (the archive
@@ -345,7 +364,7 @@ jobs:
             sed -i -e '/bullseye-security/d' -e '/bullseye-updates/d' \
                    -e 's|deb.debian.org|archive.debian.org|g' /etc/apt/sources.list
             apt-get -o Acquire::Check-Valid-Until=false update -qq
-            apt-get install -y -qq libx11-dev libxext-dev libxrandr-dev libxi-dev \
+            apt-get install -y -qq cmake libx11-dev libxext-dev libxrandr-dev libxi-dev \
               libxcursor-dev libxfixes-dev libxss-dev libgl1-mesa-dev \
               libasound2-dev libpulse-dev libwayland-dev wayland-protocols libxkbcommon-dev
           fi
@@ -357,11 +376,10 @@ jobs:
           (cd SDL2-2.30.11 && ./configure --disable-shared --enable-static \
              --prefix=$PWD/prefix >/dev/null && make -j"$(getconf _NPROCESSORS_ONLN)" >/dev/null && make install >/dev/null)
           SDLC=SDL2-2.30.11/prefix/bin/sdl2-config
-          cc -std=c99 -O2 -DMOY_WITH_LUA -Iinclude -Ivendor/lua \
-            -ISDL2-2.30.11/prefix/include $($SDLC --cflags) \
-            port/sdl2/main.c src/moy_canvas.c src/moy_sprite.c src/moy_data.c src/moy_audio.c src/moy_lua.c src/moy_p8.c \
-            vendor/lua/*.c $($SDLC --static-libs) \
-            -o ../dist/moy-play
+          # `make play`, WAMR and all (the runner's cmake builds it, at the
+          # Makefile's pin), linked against the static SDL above.
+          make play SDL_FLAGS="-ISDL2-2.30.11/prefix/include $($SDLC --cflags) $($SDLC --static-libs)"
+          cp build/moy-play ../dist/moy-play
 
       # Same bar as the Windows player's Wine gate: the binary that ships must
       # RUN a cart and exit cleanly, not just link. test/smoke.moy calls every
@@ -375,6 +393,10 @@ jobs:
           SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy SDL_RENDER_VSYNC=0 \
             ./dist/moy-play libmoy/test/smoke.moy
           echo "the native player ran the all-verbs cart and exited cleanly"
+          python3 tools/wat.py --cart libmoy/test/wasm/hello.moy /tmp/hello.moy
+          ./dist/moy-play /tmp/hello.moy --dump /tmp/hello.bin
+          python3 libmoy/test/wasm_frame.py /tmp/hello.bin
+          echo "...and drew a compiled cart's frame byte for byte"
 
       - name: Smoke every command
         shell: bash

@@ -2,6 +2,8 @@
  * worked example.
  *
  *   moy-play <cart.moy> [--scale N] [--fullscreen] [--watch]
+ *   moy-play <cart.moy> --dump <out> [--frames N]      (no window)
+ *   moy-play --runtimes
  *
  * READ TO THE "hot reload" COMMENT AND STOP. Everything above it -- under
  * three hundred lines -- is the whole of what this platform owes the console,
@@ -31,6 +33,16 @@
  * opens a device and pumps the render call. A host that skips those lines is
  * still conforming, just mute. Everything else -- the raster, the palette, the
  * font, the sheet, the map, the verb table, the sandbox -- is libmoy's.
+ *
+ * A "runtime": "wasm" cart (proposals/wasm-runtime.md) runs through the same
+ * hooks on libmoy's wasm binding, in wasm_cart.c, when the player is built
+ * with MOY_PLAY_WASM; without it such a cart is refused cleanly (SPEC.md
+ * 3.1). --memory-limit MIB caps what a compiled cart may take to load.
+ *
+ * --dump is the conformance player (SPEC.md 11, conformance/wasm_run.py): no
+ * window, no audio, the clock stopped and rnd() seeded 0, and after the ticks
+ * the last frame the cart finished is written to <out> -- palette indices for
+ * a Lua cart, RGB565 little-endian for a compiled one.
  */
 
 #include <stdio.h>
@@ -46,6 +58,9 @@
 #include "moy.h"
 #include "moy_audio.h"
 #include "../moy_manifest.h"
+#ifdef MOY_PLAY_WASM
+#include "wasm_cart.h"
+#endif
 
 /* The cart's own 64-colour table (SPEC.md 2.2), when it ships one: these
  * loaders resolve an index to a colour themselves, so a cart palette has to
@@ -67,6 +82,7 @@ typedef struct {
     uint8_t held[MOY_BTN_COUNT];
     uint8_t prev[MOY_BTN_COUNT];
     uint32_t t0;
+    int frozen;                 /* --dump: time() stands at 0 */
     int running;
     /* SPEC.md 6 view/background state. view_w = 0 means the cart has not
      * declared a region, so the whole canvas presents. */
@@ -132,7 +148,11 @@ static void h_background(void *u, int col)
 }
 
 static int      h_players(void *u) { (void)u; return 1; }
-static uint32_t h_time(void *u)    { return SDL_GetTicks() - ((host_state *)u)->t0; }
+static uint32_t h_time(void *u)
+{
+    host_state *h = (host_state *)u;
+    return h->frozen ? 0 : SDL_GetTicks() - h->t0;
+}
 static int32_t  h_pmem_get(void *u, int s) { (void)u; return pmem_slots[s]; }
 
 static void h_pmem_set(void *u, int s, int32_t v)
@@ -385,6 +405,185 @@ static uint64_t cart_stamp(const char *dir, char src[][MOY_NAME_MAX], int nsrc)
     return h;
 }
 
+/* -- the cart's runtime ---------------------------------------------------
+ *
+ * A Lua cart runs on vm and the index canvas; a compiled one on wc and its own
+ * direct-colour screen. Everything from here down calls these and does not
+ * care which. */
+
+static lua_State *vm;
+static int is_wasm;
+#ifdef MOY_PLAY_WASM
+static wasm_cart *wc;
+#endif
+
+static int cart_init(char *err, size_t n)
+{
+#ifdef MOY_PLAY_WASM
+    if (is_wasm) return wasm_cart_init(wc, err, n);
+#endif
+    return moy_lua_init(vm, err, n);
+}
+
+static void cart_reset_state(moy_canvas *canvas)
+{
+#ifdef MOY_PLAY_WASM
+    if (is_wasm) { wasm_cart_reset_state(wc); return; }
+#endif
+    moy_reset_state(canvas);
+}
+
+static int cart_update(float dt, char *err, size_t n)
+{
+#ifdef MOY_PLAY_WASM
+    if (is_wasm) return wasm_cart_update(wc, dt, err, n);
+#endif
+    return moy_lua_update(vm, dt, err, n);
+}
+
+/* SPEC.md 6: background(x) declares a backdrop the host repaints before each
+ * _draw, so a cart that has one need not cls() itself. The wasm binding
+ * repaints its own screen; the Lua one leaves it to the host. */
+static int cart_draw(moy_canvas *canvas, const host_state *hs, char *err, size_t n)
+{
+#ifdef MOY_PLAY_WASM
+    if (is_wasm) return wasm_cart_draw(wc, err, n);
+#endif
+    if (hs->has_bg) moy_cls(canvas, hs->bg);
+    return moy_lua_draw(vm, err, n);
+}
+
+/* pixels out: the one place the console's colours become anyone's. The
+ * canvas already holds the frame as shown (SPEC.md 6); a compiled cart's
+ * screen holds RGB565, widened here by repeating each channel's high bits. */
+static void present(int cw, int ch)
+{
+    int p;
+#ifdef MOY_PLAY_WASM
+    if (is_wasm) {
+        const uint16_t *px = wasm_cart_frame(wc);
+        for (p = 0; p < cw * ch; p++) {
+            uint32_t v = px[p], r = v >> 11, g = (v >> 5) & 63u, b = v & 31u;
+            pixels[p] = 0xFF000000u | (((r << 3) | (r >> 2)) << 16)
+                      | (((g << 2) | (g >> 4)) << 8) | ((b << 3) | (b >> 2));
+        }
+        return;
+    }
+#endif
+    {
+        const uint8_t *pal = cart_pal_ok ? cart_pal : moy_palette_default;
+        for (p = 0; p < cw * ch; p++) {
+            const uint8_t *e = pal + (size_t)frame[p] * 3;
+            pixels[p] = 0xFF000000u | ((uint32_t)e[0] << 16) | ((uint32_t)e[1] << 8) | e[2];
+        }
+    }
+}
+
+/* Boot the cart in `cart`: its scripts on a fresh vm, or its module in a fresh
+ * wc. Nothing already running is touched until the new one has loaded, which
+ * is what lets a failed reload leave the previous cart where it was. 0, or 1
+ * with the reason in `err`. */
+static int cart_boot(const char *cart, const char *mainfile,
+                     char src[][MOY_NAME_MAX], int nsrc, long pages, int cw, int ch,
+                     moy_console *con, uint32_t seed, uint64_t limit,
+                     char *err, size_t n)
+{
+#ifdef MOY_PLAY_WASM
+    if (is_wasm) {
+        wasm_cart_config cfg;
+        wasm_cart *next;
+        memset(&cfg, 0, sizeof cfg);
+        cfg.dir = cart;
+        cfg.main = mainfile;
+        cfg.pages = (uint32_t)pages;
+        cfg.w = cw;
+        cfg.h = ch;
+        cfg.palette = cart_pal_ok ? cart_pal : NULL;
+        cfg.sheet = sheet_pix;
+        cfg.cells = con->map->cells;
+        cfg.map_w = con->map->w;
+        cfg.map_h = con->map->h;
+        cfg.flags = flag_bytes;
+        cfg.host = &con->host;
+        cfg.seed = seed;
+        cfg.limit = limit;
+        next = wasm_cart_open(&cfg, err, n);
+        if (!next) return 1;
+        if (wc) wasm_cart_close(wc);
+        wc = next;
+        return 0;
+    }
+#else
+    (void)mainfile; (void)pages; (void)cw; (void)ch; (void)seed; (void)limit;
+#endif
+    {
+        lua_State *nl = luaL_newstate();
+        moy_lua_open(nl, con);
+        moy_p8_open(nl, con, &p8, p8_mem, p8_rom);   /* the PICO-8 machine, for ports */
+        if (load_sources(nl, cart, src, nsrc, err, n)) {
+            lua_close(nl);
+            return 1;
+        }
+        if (vm) lua_close(vm);
+        vm = nl;
+        return 0;
+    }
+}
+
+/* --dump: the ticks with no window, then the last frame the cart finished --
+ * the one a player would be looking at -- written to `out`. 0 when the cart
+ * ran, 1 when it failed. */
+static int dump_run(const char *out, int frames, moy_canvas *canvas,
+                    host_state *hs, int cw, int ch)
+{
+    static uint8_t shown[MOY_W * MOY_H * 2];
+    size_t nbytes = 0;
+    char err[512];
+    int i, rc = 0;
+
+    if (cart_init(err, sizeof err)) {
+        fprintf(stderr, "moy-play: _init: %s\n", err);
+        return 1;
+    }
+    for (i = 0; i < frames && hs->running; i++) {
+        cart_reset_state(canvas);
+        if (cart_update(1.0f / 30.0f, err, sizeof err)) {
+            fprintf(stderr, "moy-play: _update: %s\n", err);
+            rc = 1;
+            break;
+        }
+        if (!hs->running) break;
+        if (cart_draw(canvas, hs, err, sizeof err)) {
+            fprintf(stderr, "moy-play: _draw: %s\n", err);
+            rc = 1;
+            break;
+        }
+#ifdef MOY_PLAY_WASM
+        if (is_wasm) {
+            const uint16_t *px = wasm_cart_frame(wc);
+            size_t k, npx = (size_t)cw * (size_t)ch;
+            for (k = 0; k < npx; k++) {
+                shown[k * 2] = (uint8_t)(px[k] & 0xFFu);
+                shown[k * 2 + 1] = (uint8_t)(px[k] >> 8);
+            }
+            nbytes = npx * 2;
+            continue;
+        }
+#endif
+        memcpy(shown, frame, (size_t)cw * (size_t)ch);
+        nbytes = (size_t)cw * (size_t)ch;
+    }
+    if (nbytes) {
+        FILE *f = fopen(out, "wb");
+        if (!f || fwrite(shown, 1, nbytes, f) != nbytes) {
+            fprintf(stderr, "moy-play: cannot write %s\n", out);
+            rc = 1;
+        }
+        if (f) fclose(f);
+    }
+    return rc;
+}
+
 int main(int argc, char **argv)
 {
     moy_canvas canvas;
@@ -392,18 +591,19 @@ int main(int argc, char **argv)
     moy_map map;
     moy_console con;
     host_state host;
-    lua_State *L;
     SDL_Window *win;
     SDL_Renderer *ren;
     SDL_Texture *tex;
     char path[1024], mainfile[MOY_NAME_MAX] = "main.lua", title[256] = "moy";
-    char fps_s[16] = "30", canvas_s[16] = "320x240", err[512];
+    char fps_s[16] = "30", canvas_s[16] = "320x240", runtime_s[16] = "lua", err[512];
     char srcname[MOY_SOURCES_MAX][MOY_NAME_MAX];
     char *manifest;
-    const char *cart = NULL;
-    int i, scale = 0, fullscreen = 0, fps, frame_ms, cw, ch, nsrc;
+    const char *cart = NULL, *dump = NULL;
+    int i, scale = 0, fullscreen = 0, fps, frame_ms, cw, ch, nsrc, frames = 2;
     int watch = 0, live = 1, arate = 0;
     int lw, lh;              /* the renderer's logical size, as last set */
+    long pages = 0;
+    uint64_t limit = (uint64_t)1024 * 1024 * 1024;
     uint64_t stamp;
     uint32_t last, checked;
 
@@ -411,21 +611,52 @@ int main(int argc, char **argv)
         if (!strcmp(argv[i], "--scale") && i + 1 < argc) scale = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--fullscreen")) fullscreen = 1;
         else if (!strcmp(argv[i], "--watch")) watch = 1;
+        else if (!strcmp(argv[i], "--dump") && i + 1 < argc) dump = argv[++i];
+        else if (!strcmp(argv[i], "--frames") && i + 1 < argc) frames = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--memory-limit") && i + 1 < argc)
+            limit = (uint64_t)strtoul(argv[++i], NULL, 10) * 1024u * 1024u;
+        else if (!strcmp(argv[i], "--runtimes")) {
+#ifdef MOY_PLAY_WASM
+            puts("lua wasm");
+#else
+            puts("lua");
+#endif
+            return 0;
+        }
         else cart = argv[i];
     }
     if (!cart) {
         fprintf(stderr, "usage: moy-play <cart.moy> [--scale N] [--fullscreen]"
-                        " [--watch]\n");
+                        " [--watch] [--memory-limit MIB]\n"
+                        "       moy-play <cart.moy> --dump <out> [--frames N]\n"
+                        "       moy-play --runtimes\n");
         return 2;
     }
 
     snprintf(path, sizeof path, "%s/manifest.json", cart);
     manifest = slurp(path, NULL);
+    moy_manifest_str(manifest, "runtime", runtime_s, sizeof runtime_s);
+    /* SPEC.md 3.1: a runtime this player lacks is refused, never guessed at. */
+    is_wasm = !strcmp(runtime_s, "wasm");
+    if (strcmp(runtime_s, "lua") != 0 && !is_wasm) {
+        fprintf(stderr, "moy-play: this cart declares runtime \"%s\"; this player "
+                        "runs lua and wasm (SPEC.md 3.1)\n", runtime_s);
+        return 2;
+    }
+#ifndef MOY_PLAY_WASM
+    if (is_wasm) {
+        fprintf(stderr, "moy-play: this cart declares runtime \"wasm\", and this "
+                        "player was built without it; it runs lua (SPEC.md 3.1)\n");
+        return 2;
+    }
+#endif
+    if (is_wasm) snprintf(mainfile, sizeof mainfile, "main.wasm");
     moy_manifest_str(manifest, "main", mainfile, sizeof mainfile);
     moy_manifest_str(manifest, "title", title, sizeof title);
     moy_manifest_str(manifest, "canvas", canvas_s, sizeof canvas_s);
     cart_pal_ok = moy_manifest_palette(manifest, cart_pal);
     nsrc = moy_manifest_sources(manifest, mainfile, srcname, MOY_SOURCES_MAX);
+    pages = moy_manifest_uint(manifest, "memory", 0);
     /* fps is a number, not a string, so scan it as one. SPEC.md 5: 30 or 60,
      * and anything else falls back to the guaranteed 30. */
     if (manifest) {
@@ -435,6 +666,9 @@ int main(int argc, char **argv)
     fps = atoi(fps_s);
     if (fps != 60) fps = 30;
     frame_ms = 1000 / fps;
+    /* A compiled cart is one module: `sources` does not apply, and a
+     * manifest that lists it is refused (proposals/wasm-runtime.md). */
+    if (is_wasm && manifest && strstr(manifest, "\"sources\"")) nsrc = -1;
     free(manifest);
 
     /* SPEC.md 4: `sources` is refused, never ignored -- a cart run without its
@@ -473,12 +707,17 @@ int main(int argc, char **argv)
         free(sounds);
     }
 
-    snprintf(pmem_path, sizeof pmem_path, "%s/.pmem", cart);
-    { FILE *f = fopen(pmem_path, "rb");
-      if (f) { if (fread(pmem_slots, sizeof pmem_slots, 1, f) != 1) memset(pmem_slots, 0, sizeof pmem_slots); fclose(f); } }
+    /* --dump keeps its hands off the cart folder: no save is read or written,
+     * so a conformance run leaves the tree as it found it. */
+    if (!dump) {
+        snprintf(pmem_path, sizeof pmem_path, "%s/.pmem", cart);
+        { FILE *f = fopen(pmem_path, "rb");
+          if (f) { if (fread(pmem_slots, sizeof pmem_slots, 1, f) != 1) memset(pmem_slots, 0, sizeof pmem_slots); fclose(f); } }
+    }
 
     memset(&host, 0, sizeof host);
     host.running = 1;
+    host.frozen = dump != NULL;
     moy_console_init(&con, &canvas, &sheet, &map);
     con.flags = flag_bytes;
     con.host.user = &host;
@@ -496,45 +735,66 @@ int main(int argc, char **argv)
     con.host.layer_free = h_layer_free;
     con.host.view = h_view;
     con.host.background = h_background;
-    moy_srand(&con, (uint32_t)time(NULL));
+    {
+        uint32_t seed = dump ? 0u : (uint32_t)time(NULL);
+        moy_srand(&con, seed);
 
-    L = luaL_newstate();
-    moy_lua_open(L, &con);
-    moy_p8_open(L, &con, &p8, p8_mem, p8_rom);   /* the PICO-8 machine, for ports */
-    if (load_sources(L, cart, srcname, nsrc, err, sizeof err)) {
-        /* SPEC.md 4.3: report it with the line number and return to where the
-         * cart was launched from. Never leave it running, never swallow it. */
-        fprintf(stderr, "moy-play: %s\n", err);
-        return 1;
-    }
+        if (dump) {
+            int rc;
+            if (cart_boot(cart, mainfile, srcname, nsrc, pages, cw, ch, &con, seed,
+                          limit, err, sizeof err)) {
+                fprintf(stderr, "moy-play: %s\n", err);
+                return 2;
+            }
+            rc = dump_run(dump, frames, &canvas, &host, cw, ch);
+#ifdef MOY_PLAY_WASM
+            if (wc) wasm_cart_close(wc);
+#endif
+            if (vm) lua_close(vm);
+            return rc;
+        }
 
-    if (SDL_Init(SDL_INIT_VIDEO) != 0) { fprintf(stderr, "SDL: %s\n", SDL_GetError()); return 2; }
+        /* SDL, and with it the audio hooks, before the cart boots: a compiled
+         * cart copies the host's hooks as it loads. */
+        if (SDL_Init(SDL_INIT_VIDEO) != 0) { fprintf(stderr, "SDL: %s\n", SDL_GetError()); return 2; }
 
-    /* Audio is its own subsystem and its own failure domain: a machine with
-     * no output device still plays the game, silently, which is exactly what
-     * SPEC.md 8.3 says a host without audio hardware is. The hooks are wired
-     * only when a device actually opened -- unwired hooks are NULL and the
-     * verbs no-op. */
-    if (SDL_InitSubSystem(SDL_INIT_AUDIO) == 0) {
-        SDL_AudioSpec want, have;
-        memset(&want, 0, sizeof want);
-        want.freq = 44100;
-        want.format = AUDIO_S16SYS;
-        want.channels = 1;
-        want.samples = 512;
-        want.callback = audio_cb;
-        adev = SDL_OpenAudioDevice(NULL, 0, &want, &have,
-                                   SDL_AUDIO_ALLOW_FREQUENCY_CHANGE);
-        if (adev) {
-            arate = have.freq;
-            moy_audio_init(&audio, &bank, arate);
-            con.host.sfx        = h_sfx;
-            con.host.beep       = h_beep;
-            con.host.music      = h_music;
-            con.host.music_stop = h_music_stop;
-            con.host.sound_stop = h_sound_stop;
-            con.host.volume     = h_volume;
-            SDL_PauseAudioDevice(adev, 0);
+        /* Audio is its own subsystem and its own failure domain: a machine with
+         * no output device still plays the game, silently, which is exactly what
+         * SPEC.md 8.3 says a host without audio hardware is. The hooks are wired
+         * only when a device actually opened -- unwired hooks are NULL and the
+         * verbs no-op. */
+        if (SDL_InitSubSystem(SDL_INIT_AUDIO) == 0) {
+            SDL_AudioSpec want, have;
+            memset(&want, 0, sizeof want);
+            want.freq = 44100;
+            want.format = AUDIO_S16SYS;
+            want.channels = 1;
+            want.samples = 512;
+            want.callback = audio_cb;
+            adev = SDL_OpenAudioDevice(NULL, 0, &want, &have,
+                                       SDL_AUDIO_ALLOW_FREQUENCY_CHANGE);
+            if (adev) {
+                arate = have.freq;
+                moy_audio_init(&audio, &bank, arate);
+                con.host.sfx        = h_sfx;
+                con.host.beep       = h_beep;
+                con.host.music      = h_music;
+                con.host.music_stop = h_music_stop;
+                con.host.sound_stop = h_sound_stop;
+                con.host.volume     = h_volume;
+                SDL_PauseAudioDevice(adev, 0);
+            }
+        }
+
+        if (cart_boot(cart, mainfile, srcname, nsrc, pages, cw, ch, &con, seed,
+                      limit, err, sizeof err)) {
+            /* SPEC.md 4.3: report it with the line number and return to where
+             * the cart was launched from. Never leave it running, never
+             * swallow it. A compiled cart this player cannot fit ends here
+             * too, with the plain sentence wasm_cart_open wrote. */
+            fprintf(stderr, "moy-play: %s\n", err);
+            SDL_Quit();
+            return 1;
         }
     }
 
@@ -579,7 +839,7 @@ int main(int argc, char **argv)
                             SDL_TEXTUREACCESS_STREAMING, cw, ch);
 
     host.t0 = SDL_GetTicks();
-    if (moy_lua_init(L, err, sizeof err)) { fprintf(stderr, "moy-play: _init: %s\n", err); return 1; }
+    if (cart_init(err, sizeof err)) { fprintf(stderr, "moy-play: _init: %s\n", err); return 1; }
     last = checked = SDL_GetTicks();
     stamp = watch ? cart_stamp(cart, srcname, nsrc) : 0;
     if (watch)
@@ -589,7 +849,7 @@ int main(int argc, char **argv)
         SDL_Event ev;
         uint32_t now;
         float dt;
-        int b;
+        int b, drew = 0;
 
         while (SDL_PollEvent(&ev)) {
             if (ev.type == SDL_QUIT) host.running = 0;
@@ -608,6 +868,7 @@ int main(int argc, char **argv)
                 char nmain[MOY_NAME_MAX], ntitle[256], ncanvas[16];
                 char nsrcname[MOY_SOURCES_MAX][MOY_NAME_MAX];
                 int ncw, nch, nnsrc;
+                long npages = pages;
 
                 stamp = now_stamp;
                 memcpy(nmain, mainfile, sizeof nmain);
@@ -617,7 +878,9 @@ int main(int argc, char **argv)
                 snprintf(ncanvas, sizeof ncanvas, "%dx%d", cw, ch);
 
                 /* the manifest moves too -- a new title, fps, canvas, main,
-                 * or a different set of scripts */
+                 * memory, or a different set of scripts. Not the runtime: a
+                 * cart that changes language is a different cart, and runs
+                 * from a fresh start. */
                 snprintf(path, sizeof path, "%s/manifest.json", cart);
                 manifest = slurp(path, NULL);
                 if (manifest) {
@@ -627,6 +890,8 @@ int main(int argc, char **argv)
                     moy_manifest_str(manifest, "canvas", ncanvas, sizeof ncanvas);
                     nnsrc = moy_manifest_sources(manifest, nmain, nsrcname,
                                                  MOY_SOURCES_MAX);
+                    if (is_wasm && strstr(manifest, "\"sources\"")) nnsrc = -1;
+                    npages = moy_manifest_uint(manifest, "memory", 0);
                     fp = strstr(manifest, "\"fps\"");
                     if (fp && (fp = strchr(fp, ':')) != NULL)
                         frame_ms = 1000 / (atoi(fp + 1) == 60 ? 60 : 30);
@@ -645,40 +910,38 @@ int main(int argc, char **argv)
                                     "order this player can follow (SPEC.md 4)\n");
                     live = 0;
                 } else {
-                    lua_State *nl = luaL_newstate();
-                    moy_lua_open(nl, &con);
-                    moy_p8_open(nl, &con, &p8, p8_mem, p8_rom);
-                    if (load_sources(nl, cart, nsrcname, nnsrc, err, sizeof err)) {
+                    /* The assets first: a compiled cart binds to them as it
+                     * loads, and a Lua cart reads them from its first line. */
+                    memset(sheet_pix, 0, sizeof sheet_pix);
+                    load_sheet(cart);
+                    memset(map_cells, 0, sizeof map_cells);
+                    moy_map_init(&map, map_cells, 20, 15);
+                    load_map(cart, &map);
+                    load_flags(cart);
+                    if (ncw != cw || nch != ch) {
+                        cw = ncw; ch = nch;
+                        moy_canvas_init(&canvas, frame, cw, ch);
+                        SDL_DestroyTexture(tex);
+                        tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888,
+                                                SDL_TEXTUREACCESS_STREAMING, cw, ch);
+                        lw = cw; lh = ch;
+                        SDL_RenderSetLogicalSize(ren, lw, lh);
+                    }
+                    if (cart_boot(cart, nmain, nsrcname, nnsrc, npages, cw, ch, &con,
+                                  (uint32_t)time(NULL), limit, err, sizeof err)) {
                         /* the common case: a syntax error mid-edit. Say it and
-                         * wait; nothing has been torn down yet. */
+                         * wait; what was running has not been torn down. */
                         fprintf(stderr, "moy-play: reload: %s\n", err);
-                        lua_close(nl);
                         live = 0;
                     } else {
-                        lua_close(L);           /* committed from here */
-                        L = nl;
                         memcpy(mainfile, nmain, sizeof mainfile);
                         memcpy(srcname, nsrcname, sizeof srcname);
                         nsrc = nnsrc;
+                        pages = npages;
                         if (strcmp(title, ntitle)) {
                             memcpy(title, ntitle, sizeof title);
                             SDL_SetWindowTitle(win, title);
                         }
-                        if (ncw != cw || nch != ch) {
-                            cw = ncw; ch = nch;
-                            moy_canvas_init(&canvas, frame, cw, ch);
-                            SDL_DestroyTexture(tex);
-                            tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888,
-                                                    SDL_TEXTUREACCESS_STREAMING, cw, ch);
-                            lw = cw; lh = ch;
-                            SDL_RenderSetLogicalSize(ren, lw, lh);
-                        }
-                        memset(sheet_pix, 0, sizeof sheet_pix);
-                        load_sheet(cart);
-                        memset(map_cells, 0, sizeof map_cells);
-                        moy_map_init(&map, map_cells, 20, 15);
-                        load_map(cart, &map);
-                        load_flags(cart);
                         {   char *snd;
                             snprintf(path, sizeof path, "%s/sounds.json", cart);
                             snd = slurp(path, NULL);
@@ -700,7 +963,7 @@ int main(int argc, char **argv)
                         host.has_bg = 0;
                         host.t0 = SDL_GetTicks();
                         moy_reset_state(&canvas);
-                        live = !moy_lua_init(L, err, sizeof err);
+                        live = !cart_init(err, sizeof err);
                         if (!live)
                             fprintf(stderr, "moy-play: reload: _init: %s\n", err);
                         else
@@ -728,37 +991,31 @@ int main(int argc, char **argv)
         /* SPEC.md 4.3: a Lua error terminates the CART. Whether the window
          * goes with it is the player's business, not the spec's -- when we are
          * watching, the cart stops and the next save restarts it, because
-         * closing the window on a typo is the opposite of a dev loop. */
+         * closing the window on a typo is the opposite of a dev loop. A trap
+         * ends a compiled cart the same way. */
         if (live) {
-            moy_reset_state(&canvas);
-            if (moy_lua_update(L, dt, err, sizeof err)) {
+            cart_reset_state(&canvas);
+            if (cart_update(dt, err, sizeof err)) {
                 fprintf(stderr, "moy-play: _update: %s\n", err);
                 live = 0;
                 if (!watch) break;
             }
-            /* SPEC.md 6: background(x) declares a backdrop the host
-             * repaints automatically each frame, so a cart that has one need not
-             * cls() itself. Between _update and _draw, which is where the cart
-             * would have done it. */
-            if (live && host.has_bg) moy_cls(&canvas, host.bg);
-            if (live && moy_lua_draw(L, err, sizeof err)) {
-                fprintf(stderr, "moy-play: _draw: %s\n", err);
-                live = 0;
-                if (!watch) break;
+            if (live && host.running) {
+                if (cart_draw(&canvas, &host, err, sizeof err)) {
+                    fprintf(stderr, "moy-play: _draw: %s\n", err);
+                    live = 0;
+                    if (!watch) break;
+                } else {
+                    drew = 1;
+                }
             }
             if (!live && watch)
                 fprintf(stderr, "moy-play: cart stopped -- fix it and save\n");
         }
 
-        {   /* pixels out: the one place the console's colours become anyone's.
-             * The canvas already holds the frame as shown (SPEC.md 6). */
-            const uint8_t *pal = cart_pal_ok ? cart_pal : moy_palette_default;
-            int p;
-            for (p = 0; p < cw * ch; p++) {
-                const uint8_t *e = pal + (size_t)frame[p] * 3;
-                pixels[p] = 0xFF000000u | ((uint32_t)e[0] << 16) | ((uint32_t)e[1] << 8) | e[2];
-            }
-        }
+        /* Only a frame the cart finished is shown: one its _draw died in the
+         * middle of is partial, and the window keeps the last whole one. */
+        if (drew) present(cw, ch);
         SDL_UpdateTexture(tex, NULL, pixels, cw * 4);
         SDL_RenderClear(ren);
         if (host.view_w > 0 && host.view_h > 0
@@ -803,7 +1060,10 @@ int main(int argc, char **argv)
         }
     }
 
-    lua_close(L);
+#ifdef MOY_PLAY_WASM
+    if (wc) wasm_cart_close(wc);
+#endif
+    if (vm) lua_close(vm);
     if (adev) SDL_CloseAudioDevice(adev);
     SDL_DestroyTexture(tex);
     SDL_DestroyRenderer(ren);
