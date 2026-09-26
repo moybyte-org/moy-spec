@@ -14,18 +14,18 @@
       "sha256": "eb3de2a355879fec11828b26012e81f038d5acfc0d82536878969105b24a9805"
     },
     "moy.wasm": {
-      "bytes": 357983,
-      "sha256": "8954fe8c5888869a6314ecad908a3bc3242bc8091c5e0b7cf6c50ba33bb8f3a1"
+      "bytes": 357886,
+      "sha256": "b0e8012bd198fd10e83c8905276e023e89791059057a3fe0c6e0b950f048affc"
     },
     "player.js": {
       "bytes": 28920,
       "sha256": "2dd568ef2649a3ef8ec0ad322769386cb652c280fa3caffe027489e8b9734216"
     }
   },
-  "inputs_sha256": "18b366bb59d6d16105fe40128ab7d97fc7528e5417dba9c8a8311255818aeb5e",
+  "inputs_sha256": "e1bb93bc2cce9a9a706da0d370758d3b677eef49d4559284a2ca38479da52d66",
   "source": {
     "branch": "main",
-    "commit": "c0d0cf664cc9e6b7608b83a49937eb53ab119f8d",
+    "commit": "83da736b5b3a0ab4a39345d4f33d90bfbda4caf8",
     "dirty": false
   },
   "toolchain": "emscripten 6.0.7"
