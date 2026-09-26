@@ -525,8 +525,15 @@ numbering the issues cite keeps meaning.
    1's and stays there, and which number this tier uses is decided (Memory): the
    floor board's share of the cart-runtime reserve, measured with the runtime
    resident, against one integrated cart (item 3) rather than a derivation.
-   `blit565`'s 153,600-byte framebuffer is most of why it has to move. The figure
-   lands in the Memory section and in `moy check`'s constant together.
+   `blit565`'s 153,600-byte framebuffer is most of why it has to move. What the
+   floor bounds is the cart's whole footprint while it loads, not `"memory"`
+   alone: the declared linear memory, the compiled module's code, and the
+   engine's working pool are all resident at once, and on the reference
+   console the code and pool of the first real port were over a megabyte of
+   its load peak (moybyte#158). A check that bounds `"memory"` against the
+   floor therefore has to leave that margin, and the figure lands in the
+   Memory section and in `moy check`'s constant together, with the margin
+   stated beside it.
 9. ~~**The `blit` palette is too small for the first real port.**~~ **Decided
    2026-09-25:** 256 entries, 768 bytes of RGB. Doom's palette is 256 entries and
    a frame uses well over 64 of them; the per-frame LUT stays noise at 256, and
