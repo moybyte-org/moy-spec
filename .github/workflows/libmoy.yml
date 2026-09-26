@@ -139,11 +139,11 @@ jobs:
         run: make wasm-table
         working-directory: libmoy
 
-      # The binding behind that table (src/moy_wasm.c) under WAMR: the one
-      # step that fetches a dependency, the fork the reference console pins,
-      # at the pin -- libmoy does not vendor it. The conforming cart's frame is
-      # held against moycore's rendering; the refusal carts, the traps and
-      # quit() behave as the proposal says.
+      # The binding behind that table (src/moy_wasm.c) under WAMR, fetched
+      # here from the fork the reference console pins, at the pin -- libmoy
+      # does not vendor it. The conforming cart's frame is held against
+      # moycore's rendering; the refusal carts, the traps and quit() behave as
+      # the proposal says.
       - name: The wasm binding runs under WAMR
         run: make wasm-test CFLAGS="-std=c99 -O2 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wstrict-prototypes -Werror -Iinclude"
         working-directory: libmoy

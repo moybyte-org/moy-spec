@@ -196,12 +196,12 @@ p8-test: $(RUNCART) $(FLOATFOLD)
 	python3 test/p8_first_draw.py
 	python3 test/p8_port_check.py
 
-# The wasm binding (src/moy_wasm.c, proposals/wasm-runtime.md) under WAMR, on
-# Linux. TEST-ONLY, and the one target here that fetches anything: WAMR is not
-# a libmoy dependency and is not vendored, so this clones the fork the
-# reference console pins, AT THE PIN, into build/wamr/ (gitignored, like all of
-# build/) and builds its interpreter with no WASI and no builtin libc --
-# imports from "moy" are the only ones a cart has. The binding needs the
+# The wasm binding (src/moy_wasm.c, proposals/wasm-runtime.md) under WAMR.
+# WAMR is the one thing here fetched from the network, by this target and by
+# `play`: it is not a libmoy dependency and is not vendored, so this clones the
+# fork the reference console pins, AT THE PIN, into build/wamr/ (gitignored,
+# like all of build/) and builds its interpreter with no WASI and no builtin
+# libc -- imports from "moy" are the only ones a cart has. The binding needs the
 # direct-colour build, so libmoy compiles again with MOY_PIXEL_RGB565 beside
 # MOY_WASM. The fixtures are WAT, assembled by tools/wat.py; the harness runs
 # them and test/wasm_frame.py holds the frame against moycore's rendering.

@@ -19,8 +19,8 @@ contract sit beside it, each tested against the others:
   its WAMR signature string, the SPEC.md section of its verb, and the notes that
   say how the verb's Lua forms become one wasm function. The prose below is the
   table's argument; the JSON is the table.
-- **`libmoy/src/moy_wasm.c`** — the table as C, over WAMR, built only when asked
-  for (libmoy's README says how).
+- **`libmoy/src/moy_wasm.c`** — the table as C, built only when asked for, over
+  WAMR or under a JavaScript embedder's own engine (libmoy's README says how).
 - **`moy check`** — a wasm cart's module against the table, its manifest and the
   rules below.
 
@@ -450,10 +450,11 @@ and a `blit565` frame is already in the golden's form.
 How a host executes the `.wasm` is its own business, exactly as PSRAM placement
 is (§1.1). The measured realities, recorded so ports plan for them:
 
-- **Browser, desktop:** JIT the `.wasm` directly. No install step, and the
-  browser is the fastest tier. A future web runner instantiates the cart as a
-  sibling module with imports bound to the console's verbs — never a WASM
-  interpreter nested inside a WASM console.
+- **Browser, desktop:** run the `.wasm` directly. No install step, and the
+  browser is the fastest tier. This repository's web player instantiates the
+  cart as a sibling module whose imports are adapters over the console's verbs —
+  never a WASM interpreter nested inside a WASM console — and its desktop player
+  runs the module on WAMR's interpreter, which a desktop has the speed for.
 - **Reference RISC-V board:** external RAM carries no PMP entry, so a plain AOT
   module loads from a file straight into PSRAM and runs there, the caches synced
   after the loader writes the text — no flash partition, no per-install wear. The

@@ -120,7 +120,7 @@ somebody else's tree overrides it: `make data SPEC=/path/to/moy-spec`.)
 ```
 make lua            # build/run_cart -- runs a .moy cart through libmoy + Lua
 make conform-lua    # the suite again, but through REAL carts rather than traces
-make play           # build/moy-play -- a desktop console (SDL2)
+make play           # build/moy-play -- a desktop console (SDL2), compiled carts too
 make audio-test     # SPEC.md 8's semantics, asserted numerically
 make lowres         # a declared 160x120 canvas really is 19,200 bytes
 make test           # all of the above that does not need SDL2
@@ -132,7 +132,9 @@ porting layer as a worked example rather than a description. Everything past
 that comment is dev-loop convenience: `moy-play --watch mygame.moy` rebuilds
 the Lua state whenever the cart's bytes change, which is what `moy play` runs.
 It is opt-in, so the default is still a console -- and a platform owes the
-console none of it. What a platform owes libmoy is four things:
+console none of it. `moy-play mygame.moy --dump out.bin` is the same console
+with no window: the clock stopped, the last finished frame written, which is how
+CI runs SPEC.md 11 through it. What a platform owes libmoy is four things:
 
 | | |
 |---|---|
@@ -153,7 +155,8 @@ about what has and has not been run on hardware.
 
 `port/wasm/` is the third one, and it is the spec's own web player: libmoy plus
 Lua through emscripten, under 450 KB of static files, built into `runner/` and
-served by `moy.py web`. It replaced a MicroPython-WASM build of the reference console that
+served by `moy.py web`. A compiled cart runs beside it as a sibling module (its
+README says how). It replaced a MicroPython-WASM build of the reference console that
 was three times the size and had to carry a second raster in JavaScript, because
 a Python VM cannot fill 76,800 pixels a frame and this can.
 
@@ -169,32 +172,50 @@ reaching for any of them fails, as SPEC.md 11 requires of every conforming host.
 ## The wasm binding — built only when asked
 
 `src/moy_wasm.c` is the import table of
-[`proposals/wasm-runtime.md`](../proposals/wasm-runtime.md) as C: a WAMR
-`NativeSymbol` array a host registers under module `"moy"`, bound to a
-`moy_console` the way `moy_lua_open` binds a `lua_State`, with the palette
-`blit`, `blit565`, `target` for layers, and `read` routed to a callback the host
-supplies. It tracks the proposal, so it is not core, and it costs nobody who
-does not ask for it: the file compiles to nothing unless `MOY_WASM` is defined,
-and it is the only file here that includes WAMR's `wasm_export.h`, from an
-include path the host provides. WAMR is not vendored in libmoy. The binding
-needs the direct-colour build (`MOY_PIXEL_RGB565`), because a palette blit's
-256 colours do not fit an indexed canvas. `include/moy_wasm.h` says how a host
-calls it; how the host loads a module — interpreter or compiled, from where,
-with what stack — stays the host's.
+[`proposals/wasm-runtime.md`](../proposals/wasm-runtime.md) as C: a
+`NativeSymbol` array of the verbs, bound to a `moy_console` the way
+`moy_lua_open` binds a `lua_State`, with the palette `blit`, `blit565`, `target`
+for layers, and `read` routed to a callback the host supplies. It tracks the
+proposal, so it is not core, and it costs nobody who does not ask for it: the
+file compiles to nothing unless an engine is named. `MOY_WASM` builds it over
+WAMR, which registers the array under module `"moy"`; it is then the only file
+here that includes WAMR's `wasm_export.h`, from an include path the host
+provides, and WAMR is not vendored in libmoy. `MOY_WASM_JS` builds it for a host
+whose JavaScript engine runs the cart as a module of its own: the host adapts
+each import onto the array's functions and supplies the two that copy to and
+from the cart's memory. The verbs, the marshalling and the traps are one body of
+C either way, and `moy_wasm_check_bytes` checks a module's shape from its bytes
+for an engine that has no loader to ask. The binding needs the direct-colour
+build (`MOY_PIXEL_RGB565`), because a palette blit's 256 colours do not fit an
+indexed canvas; a program that also runs Lua carts on the index build links the
+raster twice, the second copy under the `moy565_` names `port/moy565.h` gives
+it. `include/moy_wasm.h` says how a host calls it; how the host loads a module —
+interpreter or compiled, from where, with what stack — stays the host's.
+
+Three hosts here run it: the harness below, the desktop player
+(`port/sdl2/wasm_cart.c`, WAMR's interpreter) and the web player
+(`port/wasm/cart.c` and `page/cart.js`, the cart a sibling module on the
+browser's engine). `conformance/wasm_run.py` holds all three to the same RGB565
+frames.
 
 ```
 make wasm-check     # moy check refuses the refusal fixtures and passes hello
-make wasm-test      # the binding under WAMR on Linux (fetches WAMR; test-only)
+make wasm-test      # the binding under WAMR on Linux (fetches WAMR)
+make play           # the desktop player, WAMR linked in (fetches WAMR)
 ```
 
-`make wasm-test` is the one target here that fetches anything. It clones the
-WAMR fork the reference console pins, `moybyte-org/wasm-micro-runtime` at the
-commit in the Makefile's `WAMR_PIN`, into `build/wamr/` (gitignored), builds
-its interpreter for Linux with no WASI and no builtin libc, and runs the
-fixtures in `test/wasm/`. Those are WAT source, never binaries, assembled by
-`tools/wat.py` with nothing but Python: a conforming cart whose frame is held
-against moycore's own rendering of it, the carts a host must refuse, and
-modules that must trap or quit. Needs `git`, `cmake` and a C compiler.
+WAMR is the one thing here fetched from the network, by `wasm-test` and `play`.
+The Makefile clones the WAMR fork the reference console pins,
+`moybyte-org/wasm-micro-runtime` at the commit in its `WAMR_PIN`, into
+`build/wamr/` (gitignored), and builds its interpreter with no WASI and no
+builtin libc for the platform it runs on, or the one `WAMR_PLATFORM` names for a
+cross build (the release's Windows player is MinGW's). `make wasm-test` then
+runs the fixtures in `test/wasm/`. Those are WAT source, never binaries,
+assembled by `tools/wat.py` with nothing but Python: a conforming cart whose
+frame is held against moycore's own rendering of it, the carts a host must
+refuse, and modules that must trap or quit. Needs `git`, `cmake` and a C
+compiler. `make play PLAY_WASM=0` builds a player without WAMR, which refuses a
+compiled cart as SPEC.md 3.1 says.
 
 ## Status
 

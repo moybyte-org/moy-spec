@@ -1255,5 +1255,6 @@ boundary moves, and it never exposes the **host's**.
 `proposals/wasm-runtime.md` is the rest of it, and the only copy: the measured
 numbers and the doctrine they force, the module shape, the import table, the
 framebuffer contract, the determinism profile, distribution, and the open items.
-Not part of 0.3. Until that proposal is promoted, `"wasm"` is the reference
-console's vendor runtime, and every other host refuses it as §3.1 says.
+Not part of 0.3. Until that proposal is promoted, `"wasm"` is a vendor runtime —
+the reference console and this repository's own players run it — and a host that
+does not implement it refuses it as §3.1 says.

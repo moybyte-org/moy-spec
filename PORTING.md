@@ -318,13 +318,34 @@ evidence nobody here can generate.**
 
 A cart can carry a WebAssembly module in place of its Lua. That binding is
 [`proposals/wasm-runtime.md`](proposals/wasm-runtime.md), a candidate the
-reference console implements as a vendor runtime (§15), so refusing such a cart
-cleanly is all a conforming host owes it. A host that takes it on implements the
-proposal's import table, and `libmoy/src/moy_wasm.c` is that table already
-written, in C over WAMR, compiled only when you define `MOY_WASM`. `moy check`
-tells an author and a host alike whether a cart's module keeps to the
-proposal's shape. How your host executes the module is yours to choose and is
-nowhere in the contract.
+reference console and this repository's players implement as a vendor runtime
+(§15), so refusing such a cart cleanly is all a conforming host owes it. A host
+that takes it on implements the proposal's import table, and
+`libmoy/src/moy_wasm.c` is that table already written in C, compiled only when
+you ask for it: over WAMR with `MOY_WASM`, or with `MOY_WASM_JS` for a host whose
+own JavaScript engine runs the cart. `moy check` tells an author and a host alike
+whether a cart's module keeps to the proposal's shape. How your host executes
+the module is yours to choose and is nowhere in the contract.
+
+Three hosts in this repository take the binding on, and between them they show
+the whole of the job:
+
+- **libmoy's harness** (`libmoy/test/wasm_test.c`) is the smallest: WAMR, the
+  table registered, the module checked before its memory exists, the three
+  hooks called. Start there.
+- **The desktop player** (`libmoy/port/sdl2/wasm_cart.c`) is the same over
+  WAMR's interpreter inside a real frame loop, with the part the proposal leaves
+  to a host: the cart's footprint checked against what the player gives a cart,
+  and a trapped frame never shown. A Lua cart and a compiled one share the
+  player because the raster is linked twice, the direct-colour copy under
+  `moy565_` names (`libmoy/port/moy565.h`).
+- **The web player** runs the cart as a sibling module on the browser's engine,
+  never an engine inside the console: each import is a JavaScript adapter over
+  the same C (`libmoy/port/wasm/cart.c`, `libmoy/port/wasm/page/cart.js`), and a
+  pointer into the cart's memory crosses as a copy.
+
+`conformance/wasm_run.py` holds a host to the compiled-cart scenes' RGB565
+goldens and to the refusals, by the same kind of player protocol as SPEC.md 11's.
 
 ## Extensions: adding your own without forking core
 

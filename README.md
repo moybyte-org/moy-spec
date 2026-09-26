@@ -28,6 +28,10 @@ Status: **draft 0.3, unstable.** Names and values will still move.
   same pair, `moy` and `moy-play`. The macOS build is Apple Silicon and
   unsigned — first run is right-click → Open.
 
+`moy-play` and the browser player also run compiled carts
+([`proposals/wasm-runtime.md`](proposals/wasm-runtime.md)), a draft on top of
+core.
+
 No Python, no install. From a checkout of this repository, every command below
 also runs as `python3 moy.py …` — Python 3.8+ and nothing else.
 
