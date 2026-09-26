@@ -23,34 +23,27 @@ import hashlib
 import os
 import sys
 
-# Every file that reaches emcc (see build.sh's SRC and the two page copies),
-# plus build.sh itself -- change the flags and the output changes too.
+# Every file that reaches emcc (see build.sh's SRC, its compiled-cart half and
+# the page copies), plus build.sh itself -- change the flags and the output
+# changes too.
 PATTERNS = (
     "libmoy/src/*.c",
     "libmoy/include/*.h",
     "libmoy/vendor/lua/*.c",
     "libmoy/vendor/lua/*.h",
-    "libmoy/port/wasm/main.c",
-    "libmoy/port/*.h",              # the manifest scanner the three ports share
+    "libmoy/port/wasm/*.c",         # main.c, and cart.c for compiled carts
+    "libmoy/port/wasm/*.h",
+    "libmoy/port/*.h",              # the manifest scanner, the moy565_ names
     "libmoy/port/wasm/page/*",
     "libmoy/port/wasm/build.sh",
-)
-
-# Matched by the globs above and compiled by nothing build.sh runs: the wasm
-# cart binding builds only under MOY_WASM, against WAMR, which this player
-# never links, and no file that reaches emcc includes its header.
-NOT_INPUTS = (
-    "libmoy/src/moy_wasm.c",
-    "libmoy/include/moy_wasm.h",
 )
 
 
 def files(root):
     out = []
-    skip = set(os.path.join(root, p) for p in NOT_INPUTS)
     for pat in PATTERNS:
         out.extend(sorted(glob.glob(os.path.join(root, pat))))
-    return [f for f in out if os.path.isfile(f) and f not in skip]
+    return [f for f in out if os.path.isfile(f)]
 
 
 def digest(root):

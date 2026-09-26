@@ -50,7 +50,7 @@ jobs:
                    style.css palette.json font.bin \
                    play/index.html play/carts.json \
                    verbs/index.html verbs/carts.json \
-                   play/moy.mjs play/moy.wasm play/player.js \
+                   play/moy.mjs play/moy.wasm play/player.js play/cart.js \
                    play/LICENSE.txt verbs/LICENSE.txt; do
             test -s "_site/$f" || { echo "missing or empty: $f"; exit 1; }
           done

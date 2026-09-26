@@ -20,6 +20,13 @@
  *   loop worth keeping on this side of the boundary; the page just uploads the
  *   RGBA the console hands it.
  *
+ *   A compiled cart ("runtime": "wasm") is a SIBLING module. The page
+ *   instantiates its main.wasm with the browser's engine and adapts its
+ *   imports onto libmoy's wasm binding (cart.c, page/cart.js), and the page
+ *   calls its hooks, because only the page holds the instance. This file
+ *   boots it like any cart and brackets each frame (moy_web_wasm_tick and
+ *   moy_web_wasm_present).
+ *
  * WHAT IS NOT DIFFERENT is the important part: the raster, the font, the
  * palette, the sheet, the map, the verb table and the sandbox are libmoy's,
  * identical to the ones an ESP32 links. The browser is a platform like any
@@ -37,6 +44,7 @@
 
 #include "moy.h"
 #include "../moy_manifest.h"
+#include "cart.h"
 
 /* The cart's own 64-colour table (SPEC.md 2.2), when it ships one: these
  * loaders resolve an index to a colour themselves, so a cart palette has to
@@ -53,6 +61,8 @@ static int cart_pal_ok;
 #define AUDIO_RATE 44100
 /* One second of headroom. The page asks for what it is short of, never more. */
 #define AUDIO_MAX  AUDIO_RATE
+/* The most a compiled cart may take to load: its memory and its module. */
+#define WASM_LIMIT ((uint64_t)1024 * 1024 * 1024)
 
 static uint8_t  frame[MOY_W * MOY_H];
 static uint8_t  sheet_pix[MOY_SHEET_W * MOY_SHEET_H];
@@ -75,18 +85,22 @@ static lua_State  *L;
 static int cw = MOY_W, ch = MOY_H;
 static int fps = 30;
 static int running = 0;
+static int is_wasm = 0;
+static void *binding = NULL;             /* the compiled cart's, from cart.c */
+static char module_name[MOY_NAME_MAX];
 static int pmem_dirty = 0;
 static char title[128] = "moy";
 static char errmsg[512];
 
 /* -- the cart, as named blobs -------------------------------------------- */
 /* A page has no filesystem to point at, so it hands the files over one at a
- * time before boot. Small fixed table: a cart is a manifest, a script, and at
- * most a handful of assets (SPEC.md 3). */
+ * time before boot, by their path in the cart's folder. A fixed table: a Lua
+ * cart is a manifest, its scripts and a handful of assets (SPEC.md 3), and a
+ * compiled cart may carry data files its `read` reaches. */
 
-#define MAX_FILES 32
+#define MAX_FILES 256
 
-typedef struct { char name[64]; char *data; long len; } cart_file;
+typedef struct { char name[256]; char *data; long len; } cart_file;
 static cart_file files[MAX_FILES];
 static int nfiles = 0;
 
@@ -124,6 +138,23 @@ KEEP int moy_web_file(const char *name, const char *data, int len)
     f->len = len;
     nfiles++;
     return 0;
+}
+
+/* A compiled cart's `read`: its own files, from the table above. The binding
+ * has already held the name inside the cart's folder. */
+static uint32_t h_read(void *u, const char *name, uint32_t offset,
+                       uint8_t *dst, uint32_t len)
+{
+    long n = 0;
+    const char *data = cart_get(name, &n);
+    uint32_t left;
+    (void)u;
+    if (!data || n <= 0 || (unsigned long)n <= offset) return 0;
+    left = (uint32_t)((unsigned long)n - offset);
+    if (len == 0) return left;
+    if (len > left) len = left;
+    memcpy(dst, data + offset, len);
+    return len;
 }
 
 /* -- asset parsing (SPEC.md 3.2, 3.3) ------------------------------------ */
@@ -354,6 +385,9 @@ KEEP int moy_web_audio_rate(void) { return AUDIO_RATE; }
 KEEP void moy_web_reset(void)
 {
     if (L) { lua_close(L); L = NULL; }
+    web_cart_close();
+    binding = NULL;
+    is_wasm = 0;
     files_clear();
     running = 0;
     errmsg[0] = 0;
@@ -417,22 +451,27 @@ KEEP int moy_web_boot(uint32_t seed)
     int nsrc, i;
 
     errmsg[0] = 0;
+    moy_manifest_str(manifest, "runtime", runtime_s, sizeof runtime_s);
+    is_wasm = !strcmp(runtime_s, "wasm");
+    if (strcmp(runtime_s, "lua") != 0 && !is_wasm) {
+        /* SPEC.md 3.1/10: a host refuses what it cannot run rather than
+         * guessing. */
+        snprintf(errmsg, sizeof errmsg,
+                 "this cart declares runtime \"%s\"; this player runs lua and "
+                 "wasm (SPEC.md 3.1)", runtime_s);
+        return 1;
+    }
+    if (is_wasm) snprintf(mainfile, sizeof mainfile, "main.wasm");
     moy_manifest_str(manifest, "main", mainfile, sizeof mainfile);
     moy_manifest_str(manifest, "title", title, sizeof title);
     moy_manifest_str(manifest, "canvas", canvas_s, sizeof canvas_s);
-    moy_manifest_str(manifest, "runtime", runtime_s, sizeof runtime_s);
-    if (strcmp(runtime_s, "lua") != 0) {
-        /* SPEC.md 3.1/10: a host refuses what it cannot run rather than
-         * guessing. This player has one runtime. */
-        snprintf(errmsg, sizeof errmsg,
-                 "this cart declares runtime \"%s\"; this player runs lua "
-                 "(SPEC.md 3.1)", runtime_s);
-        return 1;
-    }
     /* SPEC.md 4: the whole load order, refused rather than ignored -- a cart
-     * run without its prologue fails inside the author's own code. */
+     * run without its prologue fails inside the author's own code. A compiled
+     * cart is one module, and a manifest that lists `sources` for it is
+     * refused the same way (proposals/wasm-runtime.md). */
     cart_pal_ok = moy_manifest_palette(manifest, cart_pal);
     nsrc = moy_manifest_sources(manifest, mainfile, srcname, MOY_SOURCES_MAX);
+    if (is_wasm && manifest && strstr(manifest, "\"sources\"")) nsrc = -1;
     if (nsrc < 0) {
         snprintf(errmsg, sizeof errmsg,
                  "this cart's \"sources\" is not a load order this player can "
@@ -506,6 +545,39 @@ KEEP int moy_web_boot(uint32_t seed)
     con.host.sound_stop = h_sound_stop;
     con.host.volume = h_volume;
 
+    if (is_wasm) {
+        /* Checked and bound here; instantiated and run by the page, which
+         * then calls _init (page/cart.js). */
+        web_cart_config cfg;
+        long len = 0;
+        const char *module = cart_get(mainfile, &len);
+        if (!module) {
+            snprintf(errmsg, sizeof errmsg, "cannot read %s", mainfile);
+            return 1;
+        }
+        memset(&cfg, 0, sizeof cfg);
+        cfg.module = (const uint8_t *)module;
+        cfg.size = (size_t)len;
+        cfg.pages = (uint32_t)moy_manifest_uint(manifest, "memory", 0);
+        cfg.w = cw;
+        cfg.h = ch;
+        cfg.palette = cart_pal_ok ? cart_pal : NULL;
+        cfg.sheet = sheet_pix;
+        cfg.cells = map.cells;
+        cfg.map_w = map.w;
+        cfg.map_h = map.h;
+        cfg.flags = flag_bytes;
+        cfg.host = &con.host;
+        cfg.read = h_read;
+        cfg.seed = seed;
+        cfg.limit = WASM_LIMIT;
+        binding = web_cart_open(&cfg, errmsg, sizeof errmsg);
+        if (!binding) return 1;
+        snprintf(module_name, sizeof module_name, "%s", mainfile);
+        running = 1;
+        return 0;
+    }
+
     L = luaL_newstate();
     if (!L) { snprintf(errmsg, sizeof errmsg, "no lua_State"); return 1; }
     moy_lua_open(L, &con);
@@ -559,9 +631,20 @@ KEEP void moy_web_key(int code, int down)
     if (down) key_last = code;
 }
 
-/* -- the frame ------------------------------------------------------------
- *
- * One tick: input edges, update, draw, colour. Returns 0 while the cart is
+/* -- the frame ------------------------------------------------------------ */
+
+/* The btnp, key and tap edges are latched for exactly one tick, and cleared
+ * AFTER the cart has seen them -- clearing on the way in would race a press
+ * that arrived between frames and drop it entirely. */
+static void latch(void)
+{
+    int i;
+    for (i = 0; i < MOY_BTN_COUNT; i++) prev[i] = held[i];
+    memset(key_edge, 0, sizeof key_edge);
+    touch_prev = touch_down;
+}
+
+/* One tick: input edges, update, draw, colour. Returns 0 while the cart is
  * running, 1 if it errored (moy_web_error has the message), 2 if it quit. */
 KEEP int moy_web_frame(float dt, double t_ms)
 {
@@ -579,12 +662,7 @@ KEEP int moy_web_frame(float dt, double t_ms)
     if (moy_lua_update(L, dt, errmsg, sizeof errmsg)) { running = 0; return 1; }
     if (moy_lua_draw(L, errmsg, sizeof errmsg))       { running = 0; return 1; }
 
-    /* The btnp, key and tap edges are latched for exactly one tick, and cleared
-     * AFTER the cart has seen them -- clearing on the way in would race a press
-     * that arrived between frames and drop it entirely. */
-    for (i = 0; i < MOY_BTN_COUNT; i++) prev[i] = held[i];
-    memset(key_edge, 0, sizeof key_edge);
-    touch_prev = touch_down;
+    latch();
 
     /* pixels out: the one place the console's colours become anyone else's.
      * The canvas already holds the frame as shown (SPEC.md 6: both palettes
@@ -597,6 +675,45 @@ KEEP int moy_web_frame(float dt, double t_ms)
     if (!running) return 2;
     return 0;
 }
+
+/* -- a compiled cart's frame ----------------------------------------------
+ *
+ * The page calls the hooks between these two (page/cart.js): tick, then
+ * _update and _draw through the binding, then present -- only when _draw
+ * finished, since a frame a trap interrupted is never shown. */
+
+KEEP int moy_web_runtime(void) { return is_wasm; }
+KEEP void *moy_web_binding(void) { return binding; }
+
+/* The compiled cart's module, as the page handed it over. */
+KEEP const char *moy_web_module(long *len)
+{
+    return cart_get(module_name, len);
+}
+
+KEEP void moy_web_wasm_tick(double t_ms)
+{
+    now_ms = t_ms;
+    web_cart_reset_state();                   /* draw state is per-frame (6) */
+}
+
+/* RGB565 widened to the page's RGBA by repeating each channel's high bits;
+ * then the tick's input edges are spent. */
+KEEP void moy_web_wasm_present(void)
+{
+    const uint16_t *px = web_cart_frame();
+    int i, n = cw * ch;
+    if (px)
+        for (i = 0; i < n; i++) {
+            uint32_t v = px[i], r = v >> 11, g = (v >> 5) & 63u, b = v & 31u;
+            rgba[i] = 0xFF000000u | (((b << 3) | (b >> 2)) << 16)
+                    | (((g << 2) | (g >> 4)) << 8) | ((r << 3) | (r >> 2));
+        }
+    latch();
+}
+
+/* The compiled cart's screen as RGB565 words, which is what its golden is. */
+KEEP const uint16_t *moy_web_wasm_frame(void) { return web_cart_frame(); }
 
 /* Emscripten wants an entry point; the loop belongs to the page. */
 int main(void) { return 0; }

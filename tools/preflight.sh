@@ -69,12 +69,13 @@ else
     # the stamp check above is the one that judges it.
     cp runner/index.html /tmp/pf-index.html
     cp runner/player.js  /tmp/pf-player.js
+    cp runner/cart.js    /tmp/pf-cart.js 2>/dev/null || : > /tmp/pf-cart.js
     step "runner/ is what libmoy/port/wasm builds" \
       docker run --rm -v "${SPEC}":/src -w /src -u "$(id -u):$(id -g)" \
         "${EMSDK_IMAGE}" libmoy/port/wasm/build.sh
     step "  ...the committed page is the built page" \
-      bash -c 'diff /tmp/pf-index.html runner/index.html && diff /tmp/pf-player.js runner/player.js'
-    rm -f /tmp/pf-index.html /tmp/pf-player.js
+      bash -c 'diff /tmp/pf-index.html runner/index.html && diff /tmp/pf-player.js runner/player.js && diff /tmp/pf-cart.js runner/cart.js'
+    rm -f /tmp/pf-index.html /tmp/pf-player.js /tmp/pf-cart.js
     if command -v node >/dev/null 2>&1; then
       step "web player conformance" \
         python3 conformance/run.py --player "node libmoy/port/wasm/conform.mjs {cart} {out}"

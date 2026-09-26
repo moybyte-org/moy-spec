@@ -35,8 +35,8 @@ mkdir -p "${OUT}"
 find "${OUT}" -maxdepth 1 -type f \
   ! -name VERSION ! -name BUILD.md ! -name THIRD_PARTY.md ! -name LICENSE.txt -delete
 
-# The exported surface, and nothing else: every name here is called by page.js
-# and each one is in main.c with EMSCRIPTEN_KEEPALIVE beside it.
+# The exported surface, and nothing else: every name here is called by the page
+# and each one is in main.c or cart.c with EMSCRIPTEN_KEEPALIVE beside it.
 EXPORTS='["_main","_malloc","_free"'
 EXPORTS+=',"_moy_web_reset","_moy_web_file","_moy_web_boot","_moy_web_frame"'
 EXPORTS+=',"_moy_web_button","_moy_web_touch","_moy_web_key"'
@@ -44,7 +44,12 @@ EXPORTS+=',"_moy_web_pixels","_moy_web_indices"'
 EXPORTS+=',"_moy_web_width","_moy_web_height","_moy_web_fps"'
 EXPORTS+=',"_moy_web_title","_moy_web_error","_moy_web_running","_moy_web_textmode"'
 EXPORTS+=',"_moy_web_audio","_moy_web_audio_rate","_moy_web_audio_wanted"'
-EXPORTS+=',"_moy_web_pmem","_moy_web_pmem_moved","_moy_web_pmem_clean"]'
+EXPORTS+=',"_moy_web_pmem","_moy_web_pmem_moved","_moy_web_pmem_clean"'
+# ...and page/cart.js's, for a compiled cart: main.c's frame brackets, and
+# cart.c's reach to the import table and the hooks.
+EXPORTS+=',"_moy_web_runtime","_moy_web_binding","_moy_web_module"'
+EXPORTS+=',"_moy_web_wasm_tick","_moy_web_wasm_present","_moy_web_wasm_frame"'
+EXPORTS+=',"_moy_web_natives","_moy_web_begin","_moy_web_end","_moy_web_trapped"]'
 
 # Lua's own warnings are not ours to fix (-w), and it is built from source here
 # for the same reason the desktop port does: the VM is a build choice, and
@@ -61,20 +66,34 @@ SRC=(
 for f in "${LIBMOY}"/vendor/lua/*.c; do SRC+=("$f"); done
 
 echo "== emcc $(emcc -dumpversion 2>/dev/null || true)"
+
+# The compiled-cart half: libmoy's wasm binding over the page's engine
+# (MOY_WASM_JS) and the direct-colour raster it needs, which links beside the
+# index one above under its moy565_ names (port/moy565.h). Compiled apart
+# because its flags differ; linked into the same module.
+OBJ="$(mktemp -d)"
+trap 'rm -rf "${OBJ}"' EXIT
+for f in src/moy_canvas.c src/moy_sprite.c src/moy_wasm.c port/wasm/cart.c; do
+  emcc -O3 -w -std=gnu99 -DMOY_PIXEL_RGB565 -DMOY_WASM_JS \
+    -include "${LIBMOY}/port/moy565.h" -I"${LIBMOY}/include" \
+    -c "${LIBMOY}/${f}" -o "${OBJ}/565_$(basename "${f}" .c).o"
+done
+
 emcc -O3 -w -std=gnu99 \
   -DMOY_WITH_LUA \
   -I"${LIBMOY}/include" -I"${LIBMOY}/vendor/lua" \
-  "${SRC[@]}" \
+  "${SRC[@]}" "${OBJ}"/565_*.o \
   -sMODULARIZE=1 -sEXPORT_NAME=createMoy -sEXPORT_ES6=1 \
   -sENVIRONMENT=web,worker,node \
   -sFILESYSTEM=0 -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=16MB \
   -sEXPORTED_FUNCTIONS="${EXPORTS}" \
-  -sEXPORTED_RUNTIME_METHODS='["ccall","cwrap","UTF8ToString","stringToUTF8","lengthBytesUTF8","HEAPU8","HEAP32","HEAPF32","HEAPU32"]' \
+  -sEXPORTED_RUNTIME_METHODS='["ccall","cwrap","UTF8ToString","stringToUTF8","lengthBytesUTF8","HEAPU8","HEAP32","HEAPF32","HEAPU32","wasmTable"]' \
   --closure 0 \
   -o "${OUT}/moy.mjs"
 
 cp "${HERE}/page/index.html" "${OUT}/index.html"
 cp "${HERE}/page/player.js"  "${OUT}/player.js"
+cp "${HERE}/page/cart.js"    "${OUT}/cart.js"
 
 # The stamp: which build these files are, and a hash per file. `moy.py player`
 # reads it, and a mismatch means someone edited the bundle by hand instead of
@@ -116,4 +135,4 @@ print("== %d files, %d bytes total"
 PY
 
 echo "== built into ${OUT}"
-ls -l "${OUT}"/moy.wasm "${OUT}"/moy.mjs "${OUT}"/index.html "${OUT}"/player.js
+ls -l "${OUT}"/moy.wasm "${OUT}"/moy.mjs "${OUT}"/index.html "${OUT}"/player.js "${OUT}"/cart.js

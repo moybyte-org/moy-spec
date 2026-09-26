@@ -14,8 +14,10 @@ EMSDK=~/emsdk ./build.sh   # if emcc is not on PATH
 | | |
 |---|---|
 | `main.c` | the host: cart loading, the console wiring, the entry points JS calls |
+| `cart.c` | a compiled cart's console: libmoy's wasm binding on the direct-colour raster |
 | `page/index.html` | the page |
 | `page/player.js` | the platform shim — input, audio, persistence, the rAF loop |
+| `page/cart.js` | a compiled cart's module, instantiated beside the console, its imports adapted onto the binding |
 | `conform.mjs` | the SPEC.md §11 player protocol, under node |
 | `shot.mjs` | screenshot the real page in real headless Chrome |
 
@@ -28,12 +30,39 @@ Three things differ from the desktop port, and only three.
 Every entry point in `main.c` exists because of that.
 
 **The cart arrives as bytes.** There is no filesystem — the page fetches
-`carts.json` and hands each file over by name (`moy_web_file`). The parsers are
+`carts.json` and hands each file over by its path in the cart's folder
+(`moy_web_file`), a file that is not text arriving as base64. The parsers are
 otherwise the ones the other ports use.
 
 **Colour resolves in C.** 76,800 palette lookups a frame is the one loop worth
 keeping on the wasm side; the page uploads finished RGBA and never learns what a
 sprite is.
+
+## Compiled carts
+
+A `"runtime": "wasm"` cart is a module of its own, and the page runs it as a
+**sibling** of `moy.wasm` on the browser's engine — never an engine inside the
+console. `moy_web_boot` checks the module's shape from its bytes and its
+footprint against the player's limit before anything of it exists, and binds a
+console to it (`cart.c`: libmoy's wasm binding built with `MOY_WASM_JS`, on the
+direct-colour raster under its `moy565_` names). Then `page/cart.js`
+instantiates it with one import per row of the binding's table, each an adapter
+over that row's C function, generated from the row's signature:
+
+- a scalar passes straight through;
+- a `*~` pair — a pointer and the length it covers — is bounds-checked against
+  the cart's memory (outside it is a trap), copied into the console's memory,
+  passed to C as that copy, and copied back when the call returns, which is how
+  `read` and `cfg` write into the cart;
+- a pointer the table carries as a plain `i32` (`blit`'s frame and palette,
+  `blit565`, `camera`'s and `touch`'s out) is the binding's to reach, and it asks
+  the page for it through `moy_wasm_js_span` and `moy_wasm_js_store`, which copy
+  in and out the same way.
+
+A trap raised by the binding is thrown back through the cart as an exception,
+which unwinds it exactly as a wasm trap does. The page calls the hooks between
+`moy_web_wasm_tick` and `moy_web_wasm_present`, and presents only a frame whose
+`_draw` finished.
 
 ## Checking it
 
@@ -45,7 +74,9 @@ node shot.mjs ../../../examples/brick_siege.moy shot.png --frames 90 --keys Arro
 
 `conform.mjs` runs this exact `moy.wasm` under node and dumps its index
 framebuffer, so conformance judges the shipped player rather than a native build
-that resembles it. It covers the console completely and the **page** not at all.
+that resembles it. A compiled cart runs through the shipped `cart.js` and is
+dumped as its RGB565 frame, which `conformance/wasm_run.py` holds against every
+other host. It covers the console completely and the **page** not at all.
 
 `shot.mjs` is the other half, and the one to reach for on any "it looks wrong"
 report: canvas sizing, rAF pacing, module loading over HTTP, a listener that

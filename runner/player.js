@@ -5,9 +5,14 @@
  * hands over finished RGBA, so this file has no idea what a sprite is. That is
  * the point of the C port, and the reason this file is ~300 lines rather than
  * the ~1500 a draw-command replayer costs.
+ *
+ * A compiled cart ("runtime": "wasm") runs as a sibling module beside the
+ * console; cart.js instantiates it and holds it, and this file ticks it
+ * through cart.frame where a Lua cart ticks through moy_web_frame.
  */
 
 import createMoy from "./moy.mjs";
+import { startCart } from "./cart.js";
 
 const cv = document.getElementById("screen");
 const ctx = cv.getContext("2d", { alpha: false });
@@ -19,6 +24,7 @@ const wrapEl = document.getElementById("wrap");
 const kbin = document.getElementById("kbin");
 
 let M = null;                 // the wasm module
+let cart = null;              // a compiled cart's instance, from cart.js
 let W = 320, H = 240, fps = 30;
 let img = null, running = false, rafId = 0, frames = 0, started = true, boots = 0;
 let last = 0, t0 = 0, acc = 0;
@@ -30,14 +36,23 @@ function say(text, bad) {
 }
 
 /* -- cart loading --------------------------------------------------------- */
-/* carts.json is {"<cart>/<relpath>": text} -- the shape `moy run` serves live
- * and `moy export` writes beside these files. The cart name prefix is stripped
- * here so the C side sees plain names. */
+/* carts.json is {"<cart>/<relpath>": text} -- the shape `moy web` serves live
+ * and `moy export` writes beside these files, with a file that is not text
+ * (a compiled cart's module, its data) as {"base64": ...}. The cart name
+ * prefix is stripped here so the C side sees the path in the cart's folder. */
 
 async function fetchCart() {
   const r = await fetch("carts.json", { cache: "no-store" });
   if (!r.ok) throw new Error("no carts.json (" + r.status + ")");
   return r.json();
+}
+
+function bytesOf(v, enc) {
+  if (typeof v === "string") return enc.encode(v);
+  const bin = atob(v.base64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
 }
 
 function feed(bundle) {
@@ -46,8 +61,7 @@ function feed(bundle) {
     const slash = key.indexOf("/");
     const name = slash < 0 ? key : key.slice(slash + 1);
     if (slash > 0) cartName = key.slice(0, slash);
-    if (name.indexOf("/") >= 0) continue;      // subfolders are not cart files
-    const bytes = enc.encode(bundle[key]);
+    const bytes = bytesOf(bundle[key], enc);
     const p = M._malloc(bytes.length + 1);
     M.HEAPU8.set(bytes, p);
     M.HEAPU8[p + bytes.length] = 0;
@@ -503,8 +517,8 @@ function tick(now) {
   acc = 0;
 
   frames++;
-  const r = M._moy_web_frame(use, now - t0);
-  if (r === 1) { stop(M.UTF8ToString(M._moy_web_error()), true); return; }
+  const r = cart ? cart.frame(use, now - t0) : M._moy_web_frame(use, now - t0);
+  if (r === 1) { stop(cart ? cart.error : M.UTF8ToString(M._moy_web_error()), true); return; }
   if (r === 2) { stop("cart exited"); return; }
 
   const ptr = M._moy_web_pixels();
@@ -522,6 +536,8 @@ function stop(msg, bad) {
 
 async function boot() {
   const bundle = await fetchCart();
+  running = false;
+  cart = null;
   M._moy_web_reset();
   feed(bundle);
   /* SPEC.md 9 defines rnd()'s range but not its sequence, so the seed is
@@ -533,6 +549,16 @@ async function boot() {
   }
   const err = M.UTF8ToString(M._moy_web_error());
   if (err) say(err, true);                     // non-fatal (a bad sound bank)
+  /* A compiled cart was checked and bound by the boot above; here it is
+   * instantiated beside the console and its _init runs. */
+  if (M._moy_web_runtime()) {
+    try {
+      cart = await startCart(M);
+    } catch (e) {
+      say(String(e && e.message || e), true);
+      return;
+    }
+  }
 
   boots++;
   W = M._moy_web_width(); H = M._moy_web_height(); fps = M._moy_web_fps();

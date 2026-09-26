@@ -71,17 +71,23 @@ if (!cart) {
   process.exit(2);
 }
 
-/* carts.json, packed exactly as `moy run` serves it. */
+/* carts.json, packed exactly as `moy web` serves it: a file that is not UTF-8
+ * -- a compiled cart's module, its data -- as {"base64": ...}. */
+const UTF8 = new TextDecoder("utf-8", { fatal: true });
 function pack(dir, base = dir, into = {}) {
   const name = base.replace(/\/$/, "").split("/").pop();
   for (const f of readdirSync(dir)) {
     if (f === "thumbs" || f === "__pycache__" || f === ".git") continue;
     const p = join(dir, f);
     if (statSync(p).isDirectory()) { pack(p, base, into); continue; }
+    if (f === "moy-api.lua" || f === ".pmem") continue;
+    const data = readFileSync(p);
+    const key = name + "/" + relative(base, p).split(sep).join("/");
     try {
-      into[name + "/" + relative(base, p).split(sep).join("/")] =
-        readFileSync(p, "utf8");
-    } catch (e) { /* binary: not a cart file */ }
+      into[key] = UTF8.decode(data);
+    } catch (e) {
+      into[key] = { base64: data.toString("base64") };
+    }
   }
   return into;
 }

@@ -215,9 +215,11 @@ jobs:
         run: |
           cp runner/index.html /tmp/was-index.html
           cp runner/player.js  /tmp/was-player.js
+          cp runner/cart.js    /tmp/was-cart.js
           EMSDK=~/emsdk libmoy/port/wasm/build.sh
           diff /tmp/was-index.html runner/index.html
           diff /tmp/was-player.js  runner/player.js
+          diff /tmp/was-cart.js    runner/cart.js
           echo "the committed page is the built page"
 
       - name: The SPEC.md 4.1 sandbox holds

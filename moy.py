@@ -220,22 +220,32 @@ def cmd_new(args):
 # --- run (the hot-reload dev loop) -------------------------------------------
 
 def pack_cart(src):
-    """The cart folder as the player's carts.json shape {<name>/<rel>: text}."""
+    """The cart folder as the player's carts.json shape {<name>/<rel>: text},
+    where a file that is not UTF-8 text -- a compiled cart's module, the data
+    it reads -- is {"base64": ...} instead."""
+    import base64
     name = os.path.basename(src.rstrip("/"))
     bundle = {}
     for dirpath, dirnames, filenames in os.walk(src):
         dirnames[:] = [d for d in dirnames
                        if d not in ("thumbs", "__pycache__", ".git")]
         for fn in sorted(filenames):
-            if fn == "moy-api.lua":     # editor stubs -- never part of the game
+            # Editor stubs and moy-play's save: never part of the game.
+            if fn in ("moy-api.lua", ".pmem"):
                 continue
             p = os.path.join(dirpath, fn)
             rel = name + "/" + os.path.relpath(p, src).replace(os.sep, "/")
             try:
-                with open(p, encoding="utf-8") as f:
-                    bundle[rel] = f.read()
-            except (UnicodeDecodeError, OSError):
-                pass
+                with open(p, "rb") as f:
+                    data = f.read()
+            except OSError:
+                continue
+            # A string is the file's exact bytes whenever they are UTF-8: the
+            # page encodes it back to the same bytes.
+            try:
+                bundle[rel] = data.decode("utf-8")
+            except UnicodeDecodeError:
+                bundle[rel] = {"base64": base64.b64encode(data).decode("ascii")}
     return bundle
 
 
@@ -707,12 +717,10 @@ def cmd_map(args):
 # Sources and the build script only -- a README living in one of these
 # directories changes nothing about the bytes, and a check that cries stale
 # over prose is a check people learn to skip.
-WASM_INPUTS = ("libmoy/src/*.c", "libmoy/include/*.h",
-               "libmoy/port/wasm/*.c", "libmoy/port/wasm/build.sh",
-               "libmoy/vendor/lua/*.c", "libmoy/vendor/lua/*.h",
-               # the wasm cart binding: never compiled into the player
-               ":(exclude)libmoy/src/moy_wasm.c",
-               ":(exclude)libmoy/include/moy_wasm.h")
+WASM_INPUTS = ("libmoy/src/*.c", "libmoy/include/*.h", "libmoy/port/*.h",
+               "libmoy/port/wasm/*.c", "libmoy/port/wasm/*.h",
+               "libmoy/port/wasm/build.sh",
+               "libmoy/vendor/lua/*.c", "libmoy/vendor/lua/*.h")
 
 
 # Files build.sh COPIES into runner/ verbatim. These need no toolchain to check
@@ -720,7 +728,8 @@ WASM_INPUTS = ("libmoy/src/*.c", "libmoy/include/*.h",
 # runner/ against its own recorded hashes, so editing the source copy without
 # rebuilding leaves both sides self-consistent and both wrong.
 WASM_COPIED = (("libmoy/port/wasm/page/index.html", "index.html"),
-               ("libmoy/port/wasm/page/player.js", "player.js"))
+               ("libmoy/port/wasm/page/player.js", "player.js"),
+               ("libmoy/port/wasm/page/cart.js", "cart.js"))
 
 
 def _player_uncopied():

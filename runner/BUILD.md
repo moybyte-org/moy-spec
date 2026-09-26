@@ -1,18 +1,19 @@
 # The web player build
 
-These four files are the moy web player: **libmoy compiled to WebAssembly** --
+These five files are the moy web player: **libmoy compiled to WebAssembly** --
 the same C console an ESP32 links -- plus Lua 5.4, plus a page that supplies a
 canvas, a keyboard and an AudioContext and nothing else. Fully static; a cart
 bundle beside them is a playable game at a URL.
 
 | | |
 |---|---|
-| `moy.wasm` | the console: raster, font, palette, synth, verb table, sandbox, Lua |
+| `moy.wasm` | the console: raster, font, palette, synth, verb table, sandbox, Lua, and libmoy's wasm binding |
 | `moy.mjs` | emscripten's loader glue |
 | `index.html` | the page |
 | `player.js` | the platform shim -- canvas, input, audio, localStorage |
+| `cart.js` | a compiled cart's host: its module, instantiated beside the console |
 
-`LICENSE.txt` is the fifth file and the only one that is not the player: it ships
+`LICENSE.txt` is the sixth file and the only one that is not the player: it ships
 *with* an export, because moy.wasm has Lua and Emscripten's runtime compiled in
 and MIT requires their notices to accompany every copy. It is not part of the
 build, not in the stamp, and `build.sh` leaves it alone.
@@ -45,12 +46,25 @@ MicroPython cannot fill 76,800 pixels a frame, so the wasm emitted draw
 commands and JS replayed them.
 
 libmoy rasterizes in C at WebAssembly speed, so the page just uploads finished
-RGBA and the replayer is gone. **1,001,728 bytes down to under a third of that**,
+RGBA and the replayer is gone. **1,001,728 bytes down to under half of that**,
 and one raster instead of three. Most of what is left is the wasm; the loader
 glue, the page and the shim have grown since the swap, as the page learned what
 real phones do. The exact byte count per file is in `VERSION`, which is written
 by the build — so it is a number nobody has to maintain, and this paragraph does
 not restate it.
+
+## Compiled carts run beside it, never inside it
+
+A `"runtime": "wasm"` cart (`proposals/wasm-runtime.md`) is a WebAssembly module
+of its own, and the browser already has the fastest engine there is for one. So
+`cart.js` instantiates the cart's `main.wasm` as a SIBLING of `moy.wasm`, and
+every import it declares from `"moy"` is a JavaScript adapter over libmoy's wasm
+binding, which `moy.wasm` carries (`libmoy/src/moy_wasm.c`, built for a
+JavaScript embedder). The verbs, the marshalling, `blit` and `read` and the traps
+are that C, the same the desktop player and the boards run. The two modules'
+memories are separate, so a pointer the cart passes is copied out of its memory
+into the console's for the call and back when the call returns. The console
+checks the module's shape from its bytes before the page instantiates it.
 
 ## It is conformance-checked, like every other implementation
 
@@ -58,7 +72,9 @@ not restate it.
 
 speaks the SPEC.md §11 player protocol and dumps the index framebuffer straight
 out of this same `moy.wasm`, so `conformance/run.py --player` judges the shipped
-player rather than something resembling it. CI runs it on every push.
+player rather than something resembling it. A compiled cart goes through the
+shipped `cart.js` the same way and is judged on its RGB565 frame by
+`conformance/wasm_run.py`. CI runs both on every push.
 
 `node libmoy/port/wasm/shot.mjs <cart.moy>` is the other half: it serves these
 files to real headless Chrome and screenshots the canvas. Reach for that on any

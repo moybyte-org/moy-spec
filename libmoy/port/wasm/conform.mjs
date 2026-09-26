@@ -16,6 +16,12 @@
  * It writes the raw index framebuffer, which is what a golden frame is, so the
  * RGBA the page uploads is never in the loop. A colour bug in the page is a
  * page bug; this checks the console.
+ *
+ * A compiled cart ("runtime": "wasm") runs through the shipped cart.js, as a
+ * sibling module of the player's, and what is written is the last frame it
+ * finished as RGB565 little-endian -- its golden's form
+ * (conformance/wasm_run.py). A trap ends the run non-zero with that last
+ * whole frame written; a refusal ends it non-zero with nothing written.
  */
 
 import { readFileSync, readdirSync, writeFileSync, statSync } from "node:fs";
@@ -43,10 +49,11 @@ const modPath = process.env.MOY_MODULE ||
   join(HERE, "..", "..", "..", "runner", "moy.mjs");
 
 const { default: createMoy } = await import("file://" + modPath);
+const { startCart } = await import("file://" + join(dirname(modPath), "cart.js"));
 const M = await createMoy();
 
 /* The cart, flattened the way the page's carts.json is: names relative to the
- * cart folder, top level only. */
+ * cart folder. */
 function files(dir, base = dir) {
   const out = [];
   for (const name of readdirSync(dir)) {
@@ -59,7 +66,6 @@ function files(dir, base = dir) {
 
 M._moy_web_reset();
 for (const [name, data] of files(cart)) {
-  if (name.includes("/")) continue;
   const p = M._malloc(data.length + 1);
   M.HEAPU8.set(data, p);
   M.HEAPU8[p + data.length] = 0;
@@ -76,6 +82,28 @@ if (M._moy_web_boot(0) !== 0) {
   console.error("conform: " + M.UTF8ToString(M._moy_web_error()));
   process.exit(1);
 }
+
+if (M._moy_web_runtime()) {
+  let compiled;
+  try {
+    compiled = await startCart(M);
+  } catch (e) {
+    console.error("conform: " + (e && e.message || e));
+    process.exit(1);
+  }
+  const bytes = M._moy_web_width() * M._moy_web_height() * 2;
+  let shown = null, rc = 0;
+  for (let i = 0; i < frames; i++) {
+    const r = compiled.frame(1 / 30, 0);
+    if (r === 1) { console.error("conform: " + compiled.error); rc = 1; break; }
+    if (r === 2) break;
+    const fp = M._moy_web_wasm_frame();
+    shown = Buffer.from(M.HEAPU8.slice(fp, fp + bytes));
+  }
+  if (shown) writeFileSync(out, shown);
+  process.exit(rc);
+}
+
 for (let i = 0; i < frames; i++) {
   const r = M._moy_web_frame(1 / 30, 0);
   if (r === 1) { console.error("conform: " + M.UTF8ToString(M._moy_web_error())); process.exit(1); }

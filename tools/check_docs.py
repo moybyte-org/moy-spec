@@ -18,8 +18,8 @@ checks enforce:
     verify. "Ten scenes, eight of them counted" tells you the shape of the suite,
     and `golden/hashes.json` settles it in one line of code. Checked below.
   * Use a BAND when the exact figure tells the reader nothing they need. The web
-    player being "under 350 KB" is the whole point; that it is 315,106 bytes
-    today is not, and quoting it cost four edits the first time the page grew.
+    player being "under 450 KB" is the whole point; its byte count to the byte
+    is not, and quoting one cost four edits the first time the page grew.
     Exact bundle sizes therefore live in `runner/VERSION` (written by the build)
     and nowhere else.
   * A number produced by running a program belongs to that program. Never paste
@@ -169,7 +169,7 @@ def check_no_exact_bundle_size():
         for form in sorted(forms):
             if form in text:
                 fail(rel, "quotes %s, a live byte count from runner/VERSION. "
-                          "Use a band (\"under 350 KB\") -- the exact figure "
+                          "Use a band (\"under 450 KB\") -- the exact figure "
                           "changes whenever the page does." % form)
 
 
