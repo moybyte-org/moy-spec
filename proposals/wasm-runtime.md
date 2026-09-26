@@ -368,20 +368,26 @@ The module's memory minimum and maximum are both N, so `memory.grow` answers -1,
 as wasm specifies, and a cart plans for that rather than trapping on it.
 
 A host checks this **before it allocates anything.** A manifest without
-`memory`, a module whose memory disagrees with it, or an N above the tier's floor
-is refused — §3.1's clean refusal — before the module is instantiated: never
-half-loaded, never grown to fit.
+`memory`, or a module whose memory disagrees with it, is refused — §3.1's clean
+refusal — before the module is instantiated: never half-loaded, never grown to
+fit. So is a cart whose whole load footprint — the declared memory, the module's
+code and the engine's working pool — is more than the host can give it, and that
+refusal is a plain notice to the player naming both figures, never an error
+report or a crash.
 
 **The floor is the floor board's.** The tier's floor is the reference
 implementation's floor board's share of its cart-runtime reserve with the runtime
-resident, so one compiled cart runs on every board of the lineup and a cart that
-needs more is a demo, not a cart — the same no-fragmentation rule §1.1's floor
-enforces for scripts. Like that one it is checkable before any host sees the
-cart: `moy check` and a store refuse a manifest above it. A host that cannot give
-a cart within the floor its pages is short of the floor, and fixing that is the
-host's problem, as §1.1 makes its own floor the implementer's. The figure lands
-here when it is measured (open item 8); until then `moy check` carries it as a
-named constant with no value and refuses nothing on size.
+resident, so a compiled cart within it runs on every board of the lineup — the
+same no-fragmentation rule §1.1's floor enforces for scripts. A cart above it is
+allowed: it runs only on consoles with more memory, and a console that cannot fit
+it refuses it at launch with the notice above. Like §1.1's floor it is checkable
+before any host sees the cart, and what the check says is a warning that names
+the floor, not a refusal: `moy check` reports a manifest above it as running only
+on consoles with more memory. A host that cannot give a cart within the floor its
+pages is short of the floor, and fixing that is the host's problem, as §1.1 makes
+its own floor the implementer's. The figure lands here when it is measured (open
+item 8); until then `moy check` carries it as a named constant with no value and
+warns about nothing on size.
 
 ## Traps
 
@@ -533,7 +539,9 @@ numbering the issues cite keeps meaning.
    its load peak (moybyte#158). A check that bounds `"memory"` against the
    floor therefore has to leave that margin, and the figure lands in the
    Memory section and in `moy check`'s constant together, with the margin
-   stated beside it.
+   stated beside it. What the check does with the figure is decided: a cart
+   above the floor draws a warning that names it, and the console that cannot
+   fit the cart is the one that refuses it (Memory).
 9. ~~**The `blit` palette is too small for the first real port.**~~ **Decided
    2026-09-25:** 256 entries, 768 bytes of RGB. Doom's palette is 256 entries and
    a frame uses well over 64 of them; the per-frame LUT stays noise at 256, and

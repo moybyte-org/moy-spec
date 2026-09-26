@@ -137,8 +137,18 @@ def cases():
     floor = mw.MEMORY_FLOOR_PAGES
     try:
         mw.MEMORY_FLOOR_PAGES = 1
-        expect("a declared memory above the floor", codes(module(ok_mem), m2),
-               "manifest.memory")
+        found = mw.check_module(module(ok_mem), m2, [])
+        warned = [m for lvl, c, m in found
+                  if lvl == "warn" and c == "manifest.memory"]
+        refused = [c for lvl, c, _ in found if lvl == "error"]
+        if refused or not warned or "floor of 1" not in warned[0] \
+                or "runs only on consoles with more memory" not in warned[0]:
+            fail("a declared memory above the floor: want a warning naming the "
+                 "floor and no error, got %s" % (found,))
+        else:
+            print("  ok   a declared memory above the floor is a warning")
+        mw.MEMORY_FLOOR_PAGES = 2
+        expect("a declared memory at the floor", codes(module(ok_mem), m2), None)
     finally:
         mw.MEMORY_FLOOR_PAGES = floor
 

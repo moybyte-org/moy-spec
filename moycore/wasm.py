@@ -22,8 +22,10 @@ TABLE_FILE = "proposals/wasm-imports.json"
 
 # The tier's memory floor in pages: the reference implementation's floor
 # board's share of its cart-runtime reserve, measured with the runtime
-# resident (the proposal's Memory section and open item 8). None until that
-# measurement lands; while it is None no declared size is refused for size.
+# resident (the proposal's Memory section and open item 8). A cart above it is
+# allowed and warned about, never refused: it runs only on consoles with more
+# memory. None until that measurement lands, and while it is None no declared
+# size draws a warning.
 MEMORY_FLOOR_PAGES = None
 
 # name -> (params, results), the proposal's required exports.
@@ -271,9 +273,11 @@ def check_memory(mod, manifest, findings):
                          % (declared,)))
         declared = None
     elif MEMORY_FLOOR_PAGES is not None and declared > MEMORY_FLOOR_PAGES:
-        findings.append(("error", "manifest.memory",
-                         "declares %d pages; the compiled tier's floor is %d, so "
-                         "this is a demo, not a cart" % (declared, MEMORY_FLOOR_PAGES)))
+        findings.append(("warn", "manifest.memory",
+                         "declares %d pages, above the compiled tier's floor of %d: "
+                         "it runs only on consoles with more memory, and one that "
+                         "cannot fit it refuses it at launch"
+                         % (declared, MEMORY_FLOOR_PAGES)))
 
     imported = [d for _, _, k, d in mod["imports"] if k == "memory"]
     own = mod["memories"]
