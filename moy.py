@@ -753,8 +753,8 @@ def _player_stale(pin):
     in libmoy (SPEC.md 6), the checked-in wasm predated it, and the browser
     player went on answering nil -- on the website, in every `moy export`, and
     in the build SPEC.md 11 calls the tiebreaker. Conformance did not catch it
-    because no scene uses a layer, and examples/verbs.moy is looked at rather
-    than diffed, so the one thing that exercised it was a person.
+    because no scene used a layer then, and examples/verbs.moy is looked at
+    rather than diffed, so the one thing that exercised it was a person.
 
     The verdict comes from a DIGEST of the compiled inputs, not from the stamp's
     commit. Two reasons, both of them things that already happened here: the

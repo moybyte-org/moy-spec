@@ -681,7 +681,11 @@ each frame instead of re-rendering it.
 | verb | |
 |---|---|
 | `make_layer(w, h)` | a layer speaking the full drawing API, with its own camera, clip, pal and palt — or **nil** if the host declines |
-| `draw_layer(layer, cx, cy)` | blit the visible window whose top-left is `(cx, cy)`; like `cls`, this composites and so ignores the screen's camera, clip and pal |
+| `draw_layer(layer, cx, cy)` | blit the screen-sized window whose top-left is `(cx, cy)`, clamped into the layer as below; like `cls`, this composites and so ignores the screen's camera, clip and pal |
+
+`draw_layer` clamps its camera on each axis into `[0, max(0, layer − screen)]`, so
+the window never leaves the layer: on an axis where the layer is smaller than the
+screen the camera is 0, and the screen past the layer's edge keeps what it held.
 
 §1.1 reserves one full-screen layer, so `make_layer` succeeds at least once on every
 conforming host. Beyond that a host may decline and return nil, which a cart handles
@@ -1066,8 +1070,8 @@ which, because both palettes compose as pixels are drawn (§6), is also the fram
 shown: what a host flushes and what a golden is.
 
 The suite is a set of carts, each exercising one area — primitives, sprite flips and
-scales, clip and camera interaction, palette remaps, text, map blits, input edges —
-plus golden frames. A runner diffs your output frame by frame.
+scales, clip and camera interaction, palette remaps, text, map blits, layer windows,
+input edges — plus golden frames. A runner diffs your output frame by frame.
 
 **The golden frames are rendered by `moycore`**, the Python raster the suite ships
 with, and every scene is a recorded verb trace of integer arguments — so no float

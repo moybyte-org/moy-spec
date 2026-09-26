@@ -118,7 +118,7 @@ never fire. What is left for an extension is hardware a cart cannot paper over
 | [moycore/](moycore/) | the console as a Python library — stdlib-only: raster, palette, font, cart format, verb table |
 | [libmoy/](libmoy/) | the console as a C99 library — no dependencies, no allocation, §4.1-sandboxed Lua binding, and three ports: SDL2 desktop, ESP-IDF component, WebAssembly |
 | [runner/](runner/) | the web player: libmoy compiled to WebAssembly, under 450 KB of static files, built by `libmoy/port/wasm` |
-| [conformance/](conformance/) | the suite that keeps them honest — one scene per area, each a real cart with a golden frame, and a runner that takes any player. Five builds render every scene pixel-identically, an ESP32-P4 over serial among them — but all five descend from one raster, and its README is candid about what that costs |
+| [conformance/](conformance/) | the suite that keeps them honest — one scene per area, each a real cart with a golden frame, and a runner that takes any player. Every build here renders every scene pixel-identically, and an ESP32-P4 over serial matched every scene it has run — but all of them descend from one raster, and its README is candid about what that costs |
 | [examples/](examples/) | `brick_siege.moy`, a complete game in core only, written to be read; `verbs.moy`, one screen per verb group |
 | [moybyte](https://github.com/moybyte-org/moybyte) | the reference implementation: a PC simulator and two ESP32 handhelds |
 | [PURR OS](https://github.com/PastorCatto/PURR-OS-ESP32) | an ESP32 operating system that runs carts from a hand-written console — its own raster, cart loader and Lua binding, no libmoy. The first host outside this repository, and the only one that shares no code with it |

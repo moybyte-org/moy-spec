@@ -77,9 +77,10 @@ That gives you a checkable rasterizer on day one. The alternative — build
 everything, then find out your `circ` is a pixel wide at r=1 — is how ports go
 badly.
 
-The verbs are §6 (primitives, text, camera, clip, pal, palt), §7.1 (sprites)
-and §7.2 (the map). The scenes are chosen so that each one fails for a distinct
-reason; `conformance/README.md` has the table of what each catches.
+The verbs are §6 (primitives, text, camera, clip, pal, palt, layers), §7.1
+(sprites) and §7.2 (the map); a trace's three layer calls are described at the
+top of `conformance/trace.py`. The scenes are chosen so that each one fails for
+a distinct reason; `conformance/README.md` has the table of what each catches.
 
 Two that catch nearly everyone:
 

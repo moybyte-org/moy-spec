@@ -8,11 +8,12 @@
 
 The scenes are runtime "wasm" carts under conformance/wasm/, one per import
 only this binding has (blit, blit565, read, target) plus `verbs`, the ordinary
-verbs through it, `primitives`, SPEC.md 11's scene of that name as a compiled
-cart, and `trap`, a trap in the second frame. Their goldens are
-RGB565 frames (proposals/wasm-runtime.md, Determinism), rendered by the twins
-in wasm_scenes.py, and stored as PNGs whose channels are each word's bits
-repeated, so the file is a picture and reduces back to the word exactly.
+verbs through it, `primitives` and the five `layer_*` scenes, SPEC.md 11's
+scenes of those names as compiled carts, and `trap`, a trap in the second
+frame. Their goldens are RGB565 frames (proposals/wasm-runtime.md,
+Determinism), rendered by the twins in wasm_scenes.py, and stored as PNGs
+whose channels are each word's bits repeated, so the file is a picture and
+reduces back to the word exactly.
 
 THE PLAYER PROTOCOL is SPEC.md 11's, for a compiled cart. Your player is a
 command with {cart} and {out} in it; for each cart it runs the cart's ticks

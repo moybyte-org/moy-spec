@@ -22,6 +22,13 @@ point: conformance should be reachable early, not only at the end.
 Recorded calls are CART-facing (`spr(n, ...)`, not `spr_tile(sheet, n, ...)`)
 because the cart-facing verb table is what SPEC.md specifies and what a Lua
 cart calls.
+
+Layers (SPEC.md 6) take three calls. `["make_layer", k, w, h]` makes layer k,
+numbered from 1 in the order they are made -- the handle the wasm binding
+would return. `["target", k]` sends the drawing verbs after it to layer k, 0
+being the screen: the wasm binding's own `target`, and in Lua the `Lk:rect(...)`
+method form. `["draw_layer", k, cx, cy]` composites layer k onto the screen
+whatever the target is.
 """
 
 import json
@@ -52,15 +59,29 @@ class RecordingCanvas:
     """Wraps a Canvas: draws for real, and records what a cart would have
     called to produce the same thing."""
 
-    def __init__(self, canvas, sheet=None, tilemap=None, flags=None):
+    def __init__(self, canvas, sheet=None, tilemap=None, flags=None,
+                 _screen=None, _id=0):
         self._c = canvas
         self._sheet = sheet
         self._tilemap = tilemap
         self._flags = flags
-        self.calls = []
+        # A layer's recorder writes into its screen's list, switching the
+        # target first when the last call went somewhere else.
+        self._screen = self if _screen is None else _screen
+        self._id = _id
+        if _screen is None:
+            self.calls = []
+            self._target = 0
+            self._layers = 0
+        else:
+            self.calls = _screen.calls
 
     # Pass-through verbs whose cart signature matches the canvas one exactly.
     def _rec(self, name, *args):
+        screen = self._screen
+        if screen._target != self._id:
+            self.calls.append(["target", self._id])
+            screen._target = self._id
         self.calls.append([name] + [self._plain(a) for a in args])
 
     @staticmethod
@@ -187,6 +208,18 @@ class RecordingCanvas:
         return self._c.map(tilemap, sheet, mx, my, w, h, sx, sy, colorkey, scale,
                            layers, self._flags)
 
+    def new_layer(self, w, h):
+        screen = self._screen
+        screen._layers += 1
+        self.calls.append(["make_layer", screen._layers, int(w), int(h)])
+        return RecordingCanvas(screen._c.new_layer(w, h), self._sheet,
+                               self._tilemap, self._flags, screen,
+                               screen._layers)
+
+    def blit_window_from(self, layer, cam_x=0, cam_y=0):
+        self._screen._rec("draw_layer", layer._id, cam_x, cam_y)
+        return self._screen._c.blit_window_from(layer._c, cam_x, cam_y)
+
     def fset(self, n, b, on=None):
         # A FLAGS write, recorded like a draw call: it changes what the next
         # map(..., layers) draws.
@@ -206,7 +239,17 @@ ARITY = {
     "clip": (0, 4), "pal": (0, 2, 3), "palt": (0, 2), "spr": (6,),
     "map": (8, 9), "fset": (2, 3), "tri": (7,), "trib": (7,), "sspr": (10,), "tline": (9,),
     "fillp": (0, 2), "oval": (5,), "ovalb": (5,), "sset": (3,),
+    "make_layer": (3,), "target": (1,), "draw_layer": (3,),
 }
+
+# The verbs a Lua layer answers as methods (SPEC.md 6: the full drawing API
+# and its draw state). A trace verb outside this set is a global whatever the
+# target -- sset and fset write the sheet and the flags, which no layer owns.
+LAYER_METHODS = frozenset((
+    "cls", "pix", "line", "rect", "rectb", "circ", "circb", "oval", "ovalb",
+    "print", "camera", "clip", "pal", "palt", "fillp", "spr", "map",
+    "tri", "trib", "sspr", "tline",
+))
 
 
 def _fset(flags, n, b, on=None):
@@ -223,10 +266,18 @@ def _fset(flags, n, b, on=None):
 def replay(calls, canvas, sheet=None, tilemap=None, flags=None):
     """Run a trace against a Canvas -- the reference replayer, and the model
     for a port's own."""
+    screen = canvas
+    layers = {}
     for call in calls:
         verb = call[0]
         a = call[1:]
-        if verb == "cls":
+        if verb == "make_layer":
+            layers[a[0]] = screen.new_layer(a[1], a[2])
+        elif verb == "target":
+            canvas = screen if a[0] == 0 else layers[a[0]]
+        elif verb == "draw_layer":
+            screen.blit_window_from(layers[a[0]], a[1], a[2])
+        elif verb == "cls":
             canvas.cls(a[0])
         elif verb == "pix":
             canvas.pix(a[0], a[1], a[2])
@@ -349,10 +400,34 @@ def to_lua(calls, title, note=""):
         for ln in note.strip().split("\n"):
             lines.append("-- " + ln)
     lines.append("")
+    made = [c for c in calls if c[0] == "make_layer"]
+    if made:
+        # Made once, like a real cart's world; drawn into every frame.
+        lines.append("local " + ", ".join("L%d" % c[1] for c in made))
+        lines.append("")
+        lines.append("function _init()")
+        for c in made:
+            lines.append("  L%d = make_layer(%d, %d)" % (c[1], c[2], c[3]))
+        lines.append("end")
+        lines.append("")
     lines.append("function _draw()")
+    target = 0
     for call in calls:
+        verb = call[0]
+        if verb == "make_layer":
+            continue
+        if verb == "target":
+            target = call[1]
+            continue
+        if verb == "draw_layer":
+            args = ", ".join(_lua_value(v) for v in call[2:])
+            lines.append("  draw_layer(L%d, %s)" % (call[1], args))
+            continue
         args = ", ".join(_lua_value(v) for v in call[1:])
-        lines.append("  %s(%s)" % (call[0], args))
+        if target and verb in LAYER_METHODS:
+            lines.append("  L%d:%s(%s)" % (target, verb, args))
+        else:
+            lines.append("  %s(%s)" % (verb, args))
     lines.append("end")
     lines.append("")
     return "\n".join(lines)

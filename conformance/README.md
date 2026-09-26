@@ -3,7 +3,7 @@
 > SPEC.md 11: *An implementation conforms when it runs the conformance suite and
 > produces pixel-identical output.*
 
-This is that suite. Fifteen scenes, thirteen of them counted; each is a real moy cart
+This is that suite. Twenty scenes, every one of them counted; each is a real moy cart
 plus a golden frame.
 
 ```
@@ -94,6 +94,11 @@ wasm/golden/         their RGB565 goldens
 | `oval` | `oval` / `ovalb` at every box shape the walk branches on, the tiny sizes, zero and negative sizes, edges, camera, clip, pal — and the outline over its own fill, which must ring it exactly |
 | `fillp` | holes untouched vs. holes in a second colour, the cell's phase under a moved camera and a clip, all nine shape verbs — and `pix`, `print`, a sprite and a `map` drawn with a pattern live, which must come out solid |
 | `flags` | `map(..., layers)` against tile flags from `flags.moyflags`, an `fset` that changes the next map, a mask nobody carries, under scale and camera |
+| `layer_left` | `draw_layer` asked past the left edge of a layer wider and shorter than the screen: the camera clamps to 0 on both axes, and the rows below the layer keep the backdrop. A host that repeats the edge, wraps, or fills fails here |
+| `layer_right` | past the right edge and above the top, a corner: x clamps to layer − screen, y to 0 |
+| `layer_top` | past the top of a layer taller and narrower than the screen: the columns right of the layer keep the backdrop, and every row lands at the screen's stride, not the layer's |
+| `layer_bottom` | past the bottom and left of the left, a corner: y clamps to layer − screen, x to 0 |
+| `layer_small` | a layer narrower and shorter than the screen, asked for past its far corner, under a screen camera, clip and pal that `draw_layer` must ignore |
 | `screen_pal` | `pal(c0, c1, 1)` composes after the draw palette for pixels drawn from then on, a pixel already drawn does NOT move, `pal()` resets both; a player that applies it as a pass over the finished frame fails here |
 | `sheet` | `sset` then `spr`/`sspr`/`map` of the edited tile, the 0–15 mask, writes off the sheet; the scene restores its own edits first, since a second frame sees the first frame's sheet |
 | `provisional` | SPEC.md 6.1's `tri` / `trib` / `sspr`. Counted since core 0.3; the name is kept because implementers cite it |
@@ -184,8 +189,9 @@ turned up, both in shared code, so the prediction had been that both were on the
 boards too. The board run turned that prediction into a measurement, and
 reflashing closed both.
 
-So five runs agree on every scene: moycore, the reference console's own
-rasterizer, libmoy, libmoy again as the WebAssembly player, and an ESP32-P4.
+So five runs agreed on every scene the suite held before the `layer_*` scenes:
+moycore, the reference console's own rasterizer, libmoy, libmoy again as the
+WebAssembly player, and an ESP32-P4.
 **Five runs, one lineage** — and until 2026-08-07 that was not quite true, which
 is the interesting part. The board ran `moy_gfx`, a hand transcription, the only
 raster in the set that could disagree by accident rather than by inheritance.
@@ -255,6 +261,7 @@ statement.
 | `target` | drawing into a layer and back, a layer's own camera persisting across hooks, `pix` read back from it, and its pixels kept between frames |
 | `verbs` | every ordinary verb through the binding at the import table's arity: the sentinel forms, `camera`'s out pointer, read-backs feeding colours, a sheet and map written with `sset` and `mset`, over a frame blitted through the cart's own palette with indices past 63 |
 | `primitives` | §11's scene of that name as a compiled cart: the same trace, through the binding, held to that scene's golden reduced to RGB565 |
+| `layer_left` … `layer_small` | §11's layer scenes the same way: the layer made in `_init`, drawn into through `target`, composited by `draw_layer` |
 | `trap` | a trap in the second frame: the player shows and writes the first |
 
 Every scene is also held to `moy check`, and the refusal fixtures — libmoy's
@@ -263,9 +270,9 @@ asking for 4 GiB — must be refused by every host.
 
 **Provenance.** The goldens come from the twins in `wasm_scenes.py`: a blit's
 palette and bytes applied by hand from the proposal's rules, and every ordinary
-verb drawn by moycore, the raster the index goldens come from. `verbs` and
-`primitives` are data rather than WAT — `wasm_scenes.VERBS` and
-`traces/primitives.json` — and `--build` writes their modules from it, so the
+verb drawn by moycore, the raster the index goldens come from. `verbs`,
+`primitives` and the layer scenes are data rather than WAT — `wasm_scenes.VERBS`
+and their `traces/*.json` — and `--build` writes their modules from it, so the
 cart and its twin cannot drift.
 
 **The hosts.** Three in this repository run it: libmoy's WAMR harness

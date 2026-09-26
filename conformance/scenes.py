@@ -523,6 +523,91 @@ def screen_pal_scene(c, sheet, tilemap):
     c.pal(1, 2, 1)                       # set AFTER the cls: the background stays 1
     c.rect(8, 160, 300, 30, 1)           # ... and a 1 drawn now lands as 2
 
+def _layer_backdrop(c):
+    """The screen under a layer window: striped in both axes, so the part of
+    the screen a window leaves alone shows, and a host that fills it or runs
+    the layer's edge into it covers something."""
+    c.cls(1)
+    for i in range(16):
+        c.rect(i * 20, 0, 10, 240, 2 + i % 3)
+    for j in range(12):
+        c.rect(0, j * 20 + 5, 320, 4, 5 + j % 2)
+
+
+def _layer_world(lay, w, h):
+    """A layer whose pixels say where they are: a stripe every 16 columns and
+    a rule every 16 rows, each its own colour, the layer's edge in 8, and a
+    diagonal that a shifted window or a wrong row stride bends."""
+    lay.cls(0)
+    for b in range(w // 16):
+        lay.rect(b * 16, 0, 8, h, 16 + b % 32)
+    for r in range(h // 16):
+        lay.rect(0, r * 16 + 12, w, 2, 48 + r % 16)
+    lay.rectb(0, 0, w, h, 8)
+    lay.line(0, 0, w - 1, h - 1, 7)
+    lay.print("%dX%d" % (w, h), 4, 4, 7)
+
+
+# SPEC.md 1.1 guarantees one full-screen layer, so a layer here is at most
+# 320 x 240 pixels: one wider than the screen is shorter than it, and one
+# taller is narrower. A draw_layer writes the screen from its top-left, so one
+# window is all a frame can show -- hence a scene per edge.
+
+def layer_left(c, sheet, tilemap):
+    """draw_layer past the LEFT edge of a layer wider than the screen: the
+    camera clamps to 0. The layer is shorter than the screen, so y is 0 too
+    whatever was asked, and the rows below the layer keep the backdrop."""
+    _layer_backdrop(c)
+    lay = c.new_layer(480, 160)
+    _layer_world(lay, 480, 160)
+    c.blit_window_from(lay, -37, 45)
+
+
+def layer_right(c, sheet, tilemap):
+    """draw_layer past the RIGHT edge (and above the top: a corner): x clamps
+    to layer - screen, 160 here, and y to 0."""
+    _layer_backdrop(c)
+    lay = c.new_layer(480, 160)
+    _layer_world(lay, 480, 160)
+    c.blit_window_from(lay, 999, -21)
+
+
+def layer_top(c, sheet, tilemap):
+    """draw_layer past the TOP edge of a layer taller than the screen: y
+    clamps to 0. The layer is narrower, so x is 0 too, the columns right of it
+    keep the backdrop, and each row lands at the screen's own stride."""
+    _layer_backdrop(c)
+    lay = c.new_layer(240, 320)
+    _layer_world(lay, 240, 320)
+    c.blit_window_from(lay, 50, -60)
+
+
+def layer_bottom(c, sheet, tilemap):
+    """draw_layer past the BOTTOM edge (and left of the left: a corner): y
+    clamps to layer - screen, 80 here, and x to 0."""
+    _layer_backdrop(c)
+    lay = c.new_layer(240, 320)
+    _layer_world(lay, 240, 320)
+    c.blit_window_from(lay, -44, 400)
+
+
+def layer_small(c, sheet, tilemap):
+    """draw_layer of a layer narrower AND shorter than the screen, asked for
+    past its far corner: the camera is 0 on both axes, the layer lands in the
+    top-left, and the rest of the screen keeps the backdrop. The screen's
+    camera, clip and pal are set around it, and draw_layer ignores all three."""
+    _layer_backdrop(c)
+    lay = c.new_layer(200, 120)
+    _layer_world(lay, 200, 120)
+    c.camera(11, 7)
+    c.clip(40, 30, 100, 60)
+    c.pal(16, 8)
+    c.blit_window_from(lay, 500, 300)
+    c.pal()
+    c.clip()
+    c.camera()
+
+
 SCENES = (
     ("primitives", primitives),
     ("edges", edges),
@@ -537,6 +622,11 @@ SCENES = (
     ("sheet", sheet_scene),
     ("screen_pal", screen_pal_scene),
     ("flags", flags_scene),
+    ("layer_left", layer_left),
+    ("layer_right", layer_right),
+    ("layer_top", layer_top),
+    ("layer_bottom", layer_bottom),
+    ("layer_small", layer_small),
     ("provisional", provisional),
     ("provisional_tline", provisional_tline),
 )

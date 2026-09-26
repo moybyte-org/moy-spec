@@ -156,8 +156,8 @@ def tri_spans(x1, y1, x2, y2, x3, y3):
 
 
 class Canvas:
-    """The console raster. Default 320x240 (SPEC.md 1); other sizes exist only
-    for the `layers` extension (SPEC.md 10)."""
+    """The console raster. Default 320x240 (SPEC.md 1); a layer (SPEC.md 6)
+    may be any size."""
 
     def __init__(self, width=WIDTH, height=HEIGHT, pal=None):
         self.w = width
@@ -687,45 +687,36 @@ class Canvas:
                     continue
                 self.spr(img, sx + cx * step, py, scale)
 
-    # -- the `layers` extension (SPEC.md 10) --------------------------------
+    # -- layers (SPEC.md 6) ---------------------------------------------------
 
     def new_layer(self, w, h):
         """An off-screen canvas the cart pre-renders a wide level into once.
-
-        EXTENSION, not core: a cart using this declares `layers` in its
-        manifest and a host without it refuses the cart cleanly. Each
-        full-screen layer costs another 75 KB (SPEC.md 1.1), which is exactly
-        why it is not core."""
+        SPEC.md 1.1's floor reserves one full-screen layer (75 KB)."""
         return Canvas(int(w), int(h), self.palette)
 
     def blit_window_from(self, layer, cam_x=0, cam_y=0):
         """Copy the visible w x h window of `layer` into this canvas.
 
-        Opaque row copy, no transparency -- it is the background, drawn first,
-        and overwriting erases last frame's sprites for free. Clamped to the
-        source bounds. EXTENSION (SPEC.md 10)."""
-        cam_x = max(0, int(cam_x))
-        cam_y = max(0, int(cam_y))
+        Opaque row copy, no transparency, and none of this canvas's camera,
+        clip or pal -- it is the background, drawn first, and overwriting
+        erases last frame's sprites for free. Each axis of the camera is
+        clamped into [0, max(0, layer - canvas)], so the window never leaves
+        the layer; where the layer is smaller, the canvas past its edge keeps
+        what it held."""
+        lw = layer.w
+        lh = layer.h
+        if lw <= 0 or lh <= 0 or self.w <= 0 or self.h <= 0:
+            return
+        cam_x = min(max(int(cam_x), 0), max(0, lw - self.w))
+        cam_y = min(max(int(cam_y), 0), max(0, lh - self.h))
+        w = min(self.w, lw - cam_x)
+        h = min(self.h, lh - cam_y)
         dst = self.buf
         src = layer.buf
-        dw = self.w
-        dh = self.h
-        src_w = layer.w
-        if src_w <= 0 or dw <= 0 or dh <= 0:
-            return
-        if cam_x + dw > src_w:
-            dw = src_w - cam_x
-        if dw <= 0:
-            return
-        src_rows = len(src) // src_w
-        if cam_y + dh > src_rows:
-            dh = src_rows - cam_y
-        if dh <= 0:
-            return
-        for row in range(dh):
+        for row in range(h):
             d0 = row * self.w
-            s0 = (cam_y + row) * src_w + cam_x
-            dst[d0:d0 + dw] = src[s0:s0 + dw]
+            s0 = (cam_y + row) * lw + cam_x
+            dst[d0:d0 + w] = src[s0:s0 + w]
 
     # -- readout ------------------------------------------------------------
 

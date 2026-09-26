@@ -245,9 +245,25 @@ done:
 
 static moy_pixel frame[MOY_W * MOY_H];
 
+/* SPEC.md 6 layers: `make_layer` numbers them from 1 in the order they are
+ * made, `target` picks what the drawing verbs draw into (0 is the screen),
+ * and `draw_layer` composites one onto the screen whatever the target. */
+#define MAX_LAYERS 8
+static moy_canvas layers[MAX_LAYERS];
+static int n_layers;
+
+static moy_canvas *layer_at(int k)
+{
+    if (k < 1 || k > n_layers) {
+        fprintf(stderr, "trace_replay: layer %d was never made\n", k);
+        exit(2);
+    }
+    return &layers[k - 1];
+}
+
 int main(int argc, char **argv)
 {
-    moy_canvas c;
+    moy_canvas c, *t = &c;
     char *blob;
     long size;
     FILE *f;
@@ -306,29 +322,46 @@ int main(int argc, char **argv)
             expect(']');
 
 #define N(i) ((int)a[i].num)
-            if      (!strcmp(verb, "cls"))    moy_cls(&c, N(0));
-            else if (!strcmp(verb, "pix"))    moy_pix(&c, N(0), N(1), N(2));
-            else if (!strcmp(verb, "line"))   moy_line(&c, N(0), N(1), N(2), N(3), N(4));
-            else if (!strcmp(verb, "rect"))   moy_rect(&c, N(0), N(1), N(2), N(3), N(4));
-            else if (!strcmp(verb, "rectb"))  moy_rectb(&c, N(0), N(1), N(2), N(3), N(4));
-            else if (!strcmp(verb, "circ"))   moy_circ(&c, N(0), N(1), N(2), N(3));
-            else if (!strcmp(verb, "circb"))  moy_circb(&c, N(0), N(1), N(2), N(3));
-            else if (!strcmp(verb, "tri"))    moy_tri(&c, N(0), N(1), N(2), N(3), N(4), N(5), N(6));
-            else if (!strcmp(verb, "trib"))   moy_trib(&c, N(0), N(1), N(2), N(3), N(4), N(5), N(6));
-            else if (!strcmp(verb, "print"))  moy_print(&c, a[0].str, a[0].len, N(1), N(2), N(3));
-            else if (!strcmp(verb, "camera")) { if (n) moy_camera(&c, N(0), N(1)); else moy_camera_reset(&c); }
-            else if (!strcmp(verb, "clip"))   { if (n) moy_clip(&c, N(0), N(1), N(2), N(3)); else moy_clip_reset(&c); }
-            else if (!strcmp(verb, "pal"))    { if (n == 3 && N(2) == 1) moy_pal_screen(&c, N(0), N(1)); else if (n) moy_pal(&c, N(0), N(1)); else moy_pal_reset(&c); }
-            else if (!strcmp(verb, "palt"))   { if (n) moy_palt(&c, N(0), N(1)); else moy_palt_reset(&c); }
-            else if (!strcmp(verb, "fillp"))  { if (n) moy_fillp(&c, N(0), N(1)); else moy_fillp_reset(&c); }
-            else if (!strcmp(verb, "oval"))   moy_oval(&c, N(0), N(1), N(2), N(3), N(4));
-            else if (!strcmp(verb, "ovalb"))  moy_ovalb(&c, N(0), N(1), N(2), N(3), N(4));
+            if      (!strcmp(verb, "make_layer")) {
+                moy_pixel *pix;
+                if (n != 3 || N(0) != n_layers + 1 || n_layers >= MAX_LAYERS
+                    || N(1) <= 0 || N(2) <= 0) {
+                    fprintf(stderr, "trace_replay: bad make_layer\n");
+                    return 2;
+                }
+                pix = calloc((size_t)N(1) * (size_t)N(2), sizeof(moy_pixel));
+                if (!pix) { fprintf(stderr, "trace_replay: out of memory\n"); return 2; }
+                moy_canvas_init(&layers[n_layers], pix, N(1), N(2));
+#ifdef MOY_PIXEL_RGB565
+                moy_canvas_wire(&layers[n_layers], c.wire);
+#endif
+                n_layers++;
+            }
+            else if (!strcmp(verb, "target"))     t = N(0) == 0 ? &c : layer_at(N(0));
+            else if (!strcmp(verb, "draw_layer")) moy_blit_window(&c, layer_at(N(0)), N(1), N(2));
+            else if (!strcmp(verb, "cls"))    moy_cls(t, N(0));
+            else if (!strcmp(verb, "pix"))    moy_pix(t, N(0), N(1), N(2));
+            else if (!strcmp(verb, "line"))   moy_line(t, N(0), N(1), N(2), N(3), N(4));
+            else if (!strcmp(verb, "rect"))   moy_rect(t, N(0), N(1), N(2), N(3), N(4));
+            else if (!strcmp(verb, "rectb"))  moy_rectb(t, N(0), N(1), N(2), N(3), N(4));
+            else if (!strcmp(verb, "circ"))   moy_circ(t, N(0), N(1), N(2), N(3));
+            else if (!strcmp(verb, "circb"))  moy_circb(t, N(0), N(1), N(2), N(3));
+            else if (!strcmp(verb, "tri"))    moy_tri(t, N(0), N(1), N(2), N(3), N(4), N(5), N(6));
+            else if (!strcmp(verb, "trib"))   moy_trib(t, N(0), N(1), N(2), N(3), N(4), N(5), N(6));
+            else if (!strcmp(verb, "print"))  moy_print(t, a[0].str, a[0].len, N(1), N(2), N(3));
+            else if (!strcmp(verb, "camera")) { if (n) moy_camera(t, N(0), N(1)); else moy_camera_reset(t); }
+            else if (!strcmp(verb, "clip"))   { if (n) moy_clip(t, N(0), N(1), N(2), N(3)); else moy_clip_reset(t); }
+            else if (!strcmp(verb, "pal"))    { if (n == 3 && N(2) == 1) moy_pal_screen(t, N(0), N(1)); else if (n) moy_pal(t, N(0), N(1)); else moy_pal_reset(t); }
+            else if (!strcmp(verb, "palt"))   { if (n) moy_palt(t, N(0), N(1)); else moy_palt_reset(t); }
+            else if (!strcmp(verb, "fillp"))  { if (n) moy_fillp(t, N(0), N(1)); else moy_fillp_reset(t); }
+            else if (!strcmp(verb, "oval"))   moy_oval(t, N(0), N(1), N(2), N(3), N(4));
+            else if (!strcmp(verb, "ovalb"))  moy_ovalb(t, N(0), N(1), N(2), N(3), N(4));
             else if (!strcmp(verb, "sset"))   moy_sheet_pset(&sheet, N(0), N(1), N(2));
-            else if (!strcmp(verb, "spr"))    moy_spr(&c, &sheet, N(0), N(1), N(2), N(3), N(4), N(5));
-            else if (!strcmp(verb, "sspr"))   moy_sspr(&c, &sheet, N(0), N(1), N(2), N(3), N(4), N(5), N(6), N(7), N(8), N(9));
-            else if (!strcmp(verb, "map"))    moy_map_draw_layers(&c, &map, &sheet, N(0), N(1), N(2), N(3), N(4), N(5), N(6), N(7), n > 8 ? N(8) : 0, flag_bytes);
+            else if (!strcmp(verb, "spr"))    moy_spr(t, &sheet, N(0), N(1), N(2), N(3), N(4), N(5));
+            else if (!strcmp(verb, "sspr"))   moy_sspr(t, &sheet, N(0), N(1), N(2), N(3), N(4), N(5), N(6), N(7), N(8), N(9));
+            else if (!strcmp(verb, "map"))    moy_map_draw_layers(t, &map, &sheet, N(0), N(1), N(2), N(3), N(4), N(5), N(6), N(7), n > 8 ? N(8) : 0, flag_bytes);
             else if (!strcmp(verb, "fset"))   set_flag(N(0), N(1), n > 2, n > 2 ? (int)a[2].num : 0);
-            else if (!strcmp(verb, "tline"))  moy_tline(&c, &sheet, &map, N(0), N(1), N(2), N(3), (int32_t)N(4), (int32_t)N(5), (int32_t)N(6), (int32_t)N(7), N(8));
+            else if (!strcmp(verb, "tline"))  moy_tline(t, &sheet, &map, N(0), N(1), N(2), N(3), (int32_t)N(4), (int32_t)N(5), (int32_t)N(6), (int32_t)N(7), N(8));
             else {
                 /* Never skipped: an unimplemented verb is a failure to report,
                  * not a line to step over on the way to a green result. */

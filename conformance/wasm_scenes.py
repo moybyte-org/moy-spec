@@ -13,12 +13,13 @@ little-endian words, each colour's high bits, so a palette blit's 256 colours
 and a blit565 frame are both representable and a verb's colour is its palette
 entry reduced the same way.
 
-Two scenes are written as data rather than WAT, and module_wat() turns the
-data into the module, so the cart and its twin cannot drift. `verbs` is VERBS,
-a list of calls in the import table's own forms, which verbs() replays through
-moycore. `primitives` is the SPEC.md 11 scene of that name, its recorded trace
-made into a compiled cart: its golden is that scene's golden, every index
-reduced to the word its palette entry is.
+The generated scenes are written as data rather than WAT, and module_wat()
+turns the data into the module, so the cart and its twin cannot drift. `verbs`
+is VERBS, a list of calls in the import table's own forms, which verbs()
+replays through moycore. `primitives` and the five `layer_*` scenes are the
+SPEC.md 11 scenes of those names, each recorded trace made into a compiled
+cart: its golden is that scene's golden, every index reduced to the word its
+palette entry is.
 """
 
 import json
@@ -319,14 +320,53 @@ def verbs():
     return over(words, c)
 
 
-def primitives():
+def trace_golden(name):
+    """SPEC.md 11's golden for scene `name`, reduced to RGB565."""
     from conformance import run as _run
-    return [MOY565[v] for v in _run.load_golden("primitives")]
+    return [MOY565[v] for v in _run.load_golden(name)]
+
+
+def trace_calls(name):
+    """Scene `name`'s trace in the import table's own forms: each short Lua
+    form spelled out with the sentinel proposals/wasm-imports.json gives it."""
+    with open(os.path.join(HERE, "traces", name + ".json")) as f:
+        calls = json.load(f)
+    size = {0: (W, H)}
+    target = 0
+    out = []
+    for c in calls:
+        verb = c[0]
+        a = [int(v) if isinstance(v, bool) else v for v in c[1:]]
+        if verb == "make_layer":
+            size[a[0]] = (a[1], a[2])
+        elif verb == "target":
+            target = a[0]
+        elif verb == "pal":
+            a = a + [0] * (3 - len(a)) if a else [-1, 0, 0]
+        elif verb == "palt":
+            a = a or [-1, 0]
+        elif verb == "clip":
+            a = a or [0, 0, size[target][0], size[target][1]]
+        elif verb == "camera":
+            a = (a or [0, 0]) + [0]
+        elif verb == "fillp":
+            a = a or [0, -1]
+        elif verb == "map" and len(a) == 8:
+            a = a + [0]
+        elif verb == "fset" and len(a) == 2:
+            a = [a[0], -1, a[1]]
+        elif verb == "print" and not isinstance(a[0], str):
+            raise ValueError("%s: a compiled scene's text is ASCII" % name)
+        out.append(tuple([verb] + a))
+    return out
+
+
+def primitives():
+    return trace_golden("primitives")
 
 
 def primitives_calls():
-    with open(os.path.join(HERE, "traces", "primitives.json")) as f:
-        return [tuple(c) for c in json.load(f)]
+    return trace_calls("primitives")
 
 
 VERBS_NOTE = [
@@ -343,6 +383,20 @@ PRIMITIVES_NOTE = [
     "compiled cart: the same calls, through the wasm binding, held to that",
     "scene's golden reduced to RGB565.",
 ]
+
+# SPEC.md 11's layer scenes, each a draw_layer whose window the camera clamp
+# (SPEC.md 6) keeps inside the layer.
+LAYER_SCENES = ("layer_left", "layer_right", "layer_top", "layer_bottom",
+                "layer_small")
+
+
+def layer_note(name):
+    return [
+        "SPEC.md 11's `%s` scene (conformance/traces/%s.json) as a" % (name, name),
+        "compiled cart: its layer made in _init, drawn into through `target`,",
+        "composited with draw_layer, and held to that scene's golden reduced",
+        "to RGB565.",
+    ]
 
 
 def module_wat(calls, source, note, blit_first):
@@ -382,9 +436,22 @@ def module_wat(calls, source, note, blit_first):
                 parts.append(expr(a))
         return "(call %s %s)" % (name_of(c[0]), " ".join(parts))
 
+    init = []
+    target = 0
     for c in calls:
+        if c[0] == "make_layer":
+            # A trace numbers its layers as the binding hands out handles: from
+            # 1, in the order they are made. Made once, in _init.
+            if c[1] != len(init) + 1:
+                raise ValueError("layer %d made out of order" % c[1])
+            init.append("    (drop %s)" % call(("make_layer",) + tuple(c[2:])))
+            continue
+        if c[0] == "target":
+            target = c[1]
         text = call(c)
         body.append("    (drop %s)" % text if table[c[0]]["results"] else "    " + text)
+    if target:
+        body.append("    " + call(("target", 0)))
 
     prologue = []
     if blit_first:
@@ -420,8 +487,8 @@ def module_wat(calls, source, note, blit_first):
         "(module",
     ] + imports + [
         '  (memory (export "memory") %d %d)' % (pages, pages),
-    ] + datas + [
-        '  (func (export "_init"))',
+    ] + datas + (['  (func (export "_init")'] + init + ["  )"] if init
+                  else ['  (func (export "_init"))']) + [
         '  (func (export "_update") (param f32))',
         '  (func (export "_draw")%s' % (" (local $i i32)" if blit_first else ""),
     ] + prologue + body + [
@@ -438,6 +505,10 @@ GENERATED = {
     "primitives": (primitives_calls, "conformance/traces/primitives.json",
                    PRIMITIVES_NOTE, False),
 }
+for _name in LAYER_SCENES:
+    GENERATED[_name] = ((lambda n=_name: trace_calls(n)),
+                        "conformance/traces/%s.json" % _name,
+                        layer_note(_name), False)
 
 
 # name -> the twin that draws its frame. Every scene is also a cart folder
@@ -449,6 +520,7 @@ SCENES = [
     ("target", target),
     ("verbs", verbs),
     ("primitives", primitives),
+] + [(_name, (lambda n=_name: trace_golden(n))) for _name in LAYER_SCENES] + [
     ("trap", trap),
 ]
 

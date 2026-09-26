@@ -20,10 +20,10 @@ verified is just a record of what the code did that day:
      own carts do not pass the loader, the suite is not testing what it claims.
 
 PROVENANCE: these goldens are rendered by moycore, and the WebAssembly player
-SPEC.md 11 names as the tiebreaker agrees with them on every scene -- along with
-libmoy, the reference console, and an ESP32-P4. See the README, which is also
-where the LIMITS of that agreement are recorded: all but the board share one
-lineage.
+SPEC.md 11 names as the tiebreaker agrees with them on every scene, as libmoy
+does; the reference console and an ESP32-P4 matched every scene the suite held
+before the layer_* scenes. See the README, which is also where the LIMITS of
+that agreement are recorded: all but the board share one lineage.
 """
 
 import hashlib
@@ -80,6 +80,20 @@ NOTES = {
     "screen_pal": "The screen palette (SPEC.md 6, 12.1): pal(c0, c1, 1) composes\n"
                   "after the draw palette for pixels drawn from then on, and a\n"
                   "pixel already on the canvas does not move; pal() resets both.",
+    "layer_left": "draw_layer (SPEC.md 6) past the left edge of a layer wider than\n"
+                  "the screen: the camera clamps to 0 on x, and to 0 on y where the\n"
+                  "layer is shorter, and the screen below the layer is not written.",
+    "layer_right": "draw_layer past the right edge and above the top: x clamps to\n"
+                   "layer - screen, y to 0.",
+    "layer_top": "draw_layer past the top edge of a layer taller than the screen:\n"
+                 "y clamps to 0, x to 0 where the layer is narrower, and the\n"
+                 "screen right of the layer is not written.",
+    "layer_bottom": "draw_layer past the bottom edge and left of the left: y clamps\n"
+                    "to layer - screen, x to 0.",
+    "layer_small": "draw_layer of a layer narrower and shorter than the screen,\n"
+                   "asked for past its far corner: the camera is 0 on both axes,\n"
+                   "the rest of the screen is not written, and the screen's camera,\n"
+                   "clip and pal do not apply.",
     "provisional": "SPEC.md 6.1 verbs. NOT part of conformance -- SPEC.md 11\n"
                    "excludes 6.1 until its promotion gates clear. Kept so the\n"
                    "golden already exists when they do.",
@@ -206,10 +220,11 @@ def main():
         "generated_by": "moycore %s" % moycore.__version__,
         "provenance": (
             "Rendered by moycore. Confirmed pixel-identical on all core scenes "
-            "by the reference console's own rasterizer (conformance/parity.py), "
             "by libmoy and the WebAssembly player built from it (the tiebreaker "
-            "SPEC.md 11 names), and by an ESP32-P4 over serial. Note that ALL "
-            "FIVE now share moycore's lineage -- the board ran a hand "
+            "SPEC.md 11 names). The reference console's own rasterizer "
+            "(conformance/parity.py) and an ESP32-P4 over serial matched every "
+            "scene the suite held before the layer_* scenes. Note that ALL of "
+            "them now share moycore's lineage -- the board ran a hand "
             "transcription until 2026-08-07 and now calls libmoy too. See "
             "conformance/README.md, 'The independent check, and its loss'."),
         "scenes": manifest_scenes,

@@ -1,0 +1,7 @@
+{
+  "format": "moy-1",
+  "title": "wasm scene: layer_bottom, SPEC.md 11's scene as a compiled cart",
+  "runtime": "wasm",
+  "main": "main.wasm",
+  "memory": 1
+}

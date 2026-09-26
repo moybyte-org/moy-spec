@@ -400,7 +400,9 @@ function MoyLayer:cls(c) end
 ---@return MoyLayer|nil
 function make_layer(w, h) end
 
----Blit the visible window of `layer` at camera offset (cam_x, cam_y).
+---Blit the visible window of `layer` at camera offset (cam_x, cam_y). The
+---camera is clamped so the window stays inside the layer; past the edge of a
+---layer smaller than the screen, the screen keeps what it held.
 ---@param layer MoyLayer
 ---@param cam_x? integer
 ---@param cam_y? integer

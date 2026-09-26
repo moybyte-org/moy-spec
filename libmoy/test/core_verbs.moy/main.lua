@@ -3,8 +3,8 @@
 --
 -- This cart exists because a player shipped without `make_layer` for twelve
 -- commits and nothing noticed. The conformance suite could not: its scenes are
--- recorded rasters and no scene uses a layer, so a host can pass all of them
--- with a verb table full of holes. examples/verbs.moy does reach every verb,
+-- recorded rasters, none of them used a layer then, and none calls `background`
+-- or `view`, so a host can pass all of them with a verb table full of holes. examples/verbs.moy does reach every verb,
 -- but SPEC.md 11 has it looked at rather than diffed, so the only thing that
 -- caught it was a person playing screen 8.
 --

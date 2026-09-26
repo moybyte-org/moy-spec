@@ -181,11 +181,12 @@ jobs:
         run: python3 conformance/run.py --player "node libmoy/port/wasm/conform.mjs {cart} {out}"
 
       # 2b. The goldens cannot see a MISSING verb. Every scene is a recorded
-      # raster, and no scene uses a layer, a background or a view -- so a player
-      # whose verb table has holes renders all ten perfectly and then kills any
+      # raster, and no scene uses a background or a view -- so a player whose
+      # verb table has holes renders every scene perfectly and then kills any
       # cart that calls one. That is not hypothetical: the committed wasm went
       # twelve commits without `background`, `view`, `make_layer` or
-      # `draw_layer`, passed every check here, and shipped to the website.
+      # `draw_layer`, passed every check here -- no scene used a layer then --
+      # and shipped to the website.
       - name: The committed player has every core verb
         run: node libmoy/port/wasm/conform.mjs libmoy/test/core_verbs.moy /tmp/cv.bin
 

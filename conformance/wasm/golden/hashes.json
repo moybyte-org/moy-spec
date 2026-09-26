@@ -12,6 +12,31 @@
       "sha256": "a511746407a423ef4ba2e4a15aee8d57d44399efd54fe8c7efe6992920ad193b",
       "traps": false
     },
+    "layer_bottom": {
+      "crc32": "8cb520db",
+      "sha256": "6779c5b88456488792348622b03a8c70aecc0d3ef7833e36004fda6adff02989",
+      "traps": false
+    },
+    "layer_left": {
+      "crc32": "6847e488",
+      "sha256": "1f099d442e371cbf25dfd3fbb08dce8c9a8c858eab35136967474069a1583925",
+      "traps": false
+    },
+    "layer_right": {
+      "crc32": "ee915fb0",
+      "sha256": "c9ee469fc3c55e7282d4efff30cfdbce18ab2143a53d3d73c0e1f7e3c5bd26c5",
+      "traps": false
+    },
+    "layer_small": {
+      "crc32": "bd4c112b",
+      "sha256": "353c4414bdbbc7360b65b97ee721d8f3a7f653ba582d66b639994d1c8ed6d273",
+      "traps": false
+    },
+    "layer_top": {
+      "crc32": "4b5e77e3",
+      "sha256": "9ffb743c9cc182968f5b978982cc37a636e31dfd11360327108ef16b17af4a8d",
+      "traps": false
+    },
     "primitives": {
       "crc32": "cc170182",
       "sha256": "4518bd1990d9a1aa57a4adf4090aae8e52063ceaeeb6b400a3852f9f9e51b244",
