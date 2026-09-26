@@ -510,9 +510,12 @@ numbering the issues cite keeps meaning.
    resolves a palette or copies.
 3. **One integrated cart** — the flat-shaded raycaster in C is the natural twin,
    since its Lua sibling is already measured on glass.
-4. **A wasm twin of one conformance scene** passing an RGB565 golden
-   (Determinism) — the moment this binding becomes testable against the suite
-   rather than argued.
+4. ~~**A wasm twin of one conformance scene** passing an RGB565 golden
+   (Determinism).~~ **Landed 2026-09-26:** `conformance/wasm_run.py` holds a
+   scene per import only this binding has, the ordinary verbs through it, §11's
+   `primitives` as a compiled cart, and a trap to RGB565 goldens, and refuses
+   the shape fixtures, on three hosts of libmoy's binding: its WAMR harness, the
+   desktop player and the web player, where the cart is a sibling module.
 5. **`moy_cart.h`** committed here once the import list survives item 3.
 6. **User-file access** (moybyte#108) is orthogonal to the cart-local `read`
    (item 10) and would be a separate import; it blocks the e-reader class of ports

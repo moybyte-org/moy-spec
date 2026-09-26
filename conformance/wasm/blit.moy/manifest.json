@@ -1,0 +1,7 @@
+{
+  "format": "moy-1",
+  "title": "wasm scene: blit",
+  "runtime": "wasm",
+  "main": "main.wasm",
+  "memory": 3
+}

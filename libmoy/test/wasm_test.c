@@ -89,6 +89,10 @@ static uint32_t h_read(void *u, const char *name, uint32_t offset, uint8_t *dst,
     snprintf(path, sizeof path, "%s/%s", cart, name);
     f = fopen(path, "rb");
     if (!f) return 0;
+    if (fgetc(f) == EOF && ferror(f)) {     /* a folder: not a file of the cart's */
+        fclose(f);
+        return 0;
+    }
     fseek(f, 0, SEEK_END);
     size = ftell(f);
     if (size >= 0 && (uint32_t)size > offset) {

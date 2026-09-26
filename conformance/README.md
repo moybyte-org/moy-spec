@@ -75,6 +75,10 @@ carts/<name>.moy/    a real cart per scene -- what your host runs
 traces/<name>.json   the portable verb trace -- what a port replays
 golden/<name>.png    the golden frame (indexed PNG: the framebuffer itself)
 golden/hashes.json   sha256 per frame, plus the suite manifest
+wasm_run.py          the compiled-cart runner (below)
+wasm_scenes.py       the compiled-cart scenes' twins
+wasm/<name>.moy/     a compiled cart per scene, its module as WAT
+wasm/golden/         their RGB565 goldens
 ```
 
 | scene | what fails here and nowhere else |
@@ -217,3 +221,57 @@ silent, which is a decision waiting to be made rather than one that has been.
    generated cart loads.
 3. **Look at the PNG.** A golden nobody has looked at is a record of what the
    code did, not of what the spec says.
+
+## Compiled carts: `wasm_run.py`
+
+Everything above judges the index raster through Lua carts. A `"runtime":
+"wasm"` cart ([`proposals/wasm-runtime.md`](../proposals/wasm-runtime.md)) is
+judged by a suite of its own under `wasm/`: compiled carts whose modules are
+committed as WAT source (`tools/wat.py` assembles them), and whose goldens are
+**RGB565 frames**, the proposal's Determinism section, because a palette blit's
+256 colours do not fit a palette-index golden. The PNGs in `wasm/golden/` are
+those frames with each channel's bits repeated, so each is a picture and reduces
+back to its words exactly; `wasm/golden/hashes.json` holds the words' sha256.
+
+```
+python3 conformance/wasm_run.py                        # every host built here
+python3 conformance/wasm_run.py --hosts harness,desktop,browser
+python3 conformance/wasm_run.py --player "CMD"         # yours
+python3 conformance/wasm_run.py --build                # re-render the goldens
+```
+
+The player protocol is §11's with a compiled cart's frame: run the cart's two
+ticks with the clock stopped and nothing pressed, write the last frame it
+**finished** to `{out}` as W × H little-endian RGB565 words, and exit 0. A tick
+that traps exits non-zero with the last whole frame written; a refused cart
+exits non-zero with nothing written. `wasm_run.py`'s docstring is the full
+statement.
+
+| scene | what fails here and nowhere else |
+|---|---|
+| `blit` | a 256-entry palette handed over with the frame; the frame replaces the whole screen whatever the camera, clip, pal and target are, and a HUD drawn after it lands on top through them |
+| `blit565` | a direct-colour frame shown word for word: the byte order is the proposal's, never the panel's |
+| `read` | the cart's own files: sizes, short reads, reads at and past the end, a file in a subfolder — and 0 for an absent name, a folder, and every name the rule refuses. A host that opens a folder as if it were a file answers garbage for it, which is how this scene's folder question came to be asked |
+| `target` | drawing into a layer and back, a layer's own camera persisting across hooks, `pix` read back from it, and its pixels kept between frames |
+| `verbs` | every ordinary verb through the binding at the import table's arity: the sentinel forms, `camera`'s out pointer, read-backs feeding colours, a sheet and map written with `sset` and `mset`, over a frame blitted through the cart's own palette with indices past 63 |
+| `primitives` | §11's scene of that name as a compiled cart: the same trace, through the binding, held to that scene's golden reduced to RGB565 |
+| `trap` | a trap in the second frame: the player shows and writes the first |
+
+Every scene is also held to `moy check`, and the refusal fixtures — libmoy's
+shape fixtures in `libmoy/test/wasm/` and `wasm/too_big.moy`, a well-formed cart
+asking for 4 GiB — must be refused by every host.
+
+**Provenance.** The goldens come from the twins in `wasm_scenes.py`: a blit's
+palette and bytes applied by hand from the proposal's rules, and every ordinary
+verb drawn by moycore, the raster the index goldens come from. `verbs` and
+`primitives` are data rather than WAT — `wasm_scenes.VERBS` and
+`traces/primitives.json` — and `--build` writes their modules from it, so the
+cart and its twin cannot drift.
+
+**The hosts.** Three in this repository run it: libmoy's WAMR harness
+(`libmoy/build/wasm_test play`), the desktop player (`moy-play --dump`, WAMR's
+interpreter inside the SDL2 port) and the web player (`conform.mjs`, the cart a
+sibling module on node's engine, its imports adapted onto the same C). Two
+engines, one binding: they agree on every scene, and that is a statement about
+`libmoy/src/moy_wasm.c` and about the adapters, not an independent witness to
+the proposal — the lineage caveat above applies here too.

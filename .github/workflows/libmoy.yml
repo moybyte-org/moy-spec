@@ -193,6 +193,13 @@ jobs:
         run: ./build/run_cart test/core_verbs.moy /tmp/cv-native.bin --frames 1
         working-directory: libmoy
 
+      # proposals/wasm-runtime.md's scenes on every host this job has built:
+      # the WAMR harness, the desktop player and the committed web player, each
+      # frame held to the same RGB565 golden, and every refusal fixture refused
+      # by all three.
+      - name: Compiled carts draw the same frames on every host
+        run: python3 conformance/wasm_run.py --hosts harness,desktop,browser
+
       # 3. And that bundle is what this source builds. emcc is not
       # byte-reproducible across versions, so the wasm is not compared -- step 2
       # judged the committed one directly. The page and the shim are pure

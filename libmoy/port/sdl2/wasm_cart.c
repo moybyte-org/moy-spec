@@ -70,6 +70,12 @@ static uint32_t cart_read(void *user, const char *name, uint32_t offset,
     snprintf(path, sizeof path, "%s/%s", c->dir, name);
     f = fopen(path, "rb");
     if (!f) return 0;
+    /* A name that opens and will not read -- a folder, where the system opens
+     * one -- is not a file of the cart's, and reads as absent. */
+    if (fgetc(f) == EOF && ferror(f)) {
+        fclose(f);
+        return 0;
+    }
     if (fseek(f, 0, SEEK_END) == 0 && (size = ftell(f)) >= 0
         && (unsigned long)size > offset) {
         uint32_t left = (uint32_t)((unsigned long)size - offset);

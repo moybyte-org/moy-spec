@@ -1,0 +1,7 @@
+{
+  "format": "moy-1",
+  "title": "wasm scene: a trap in the second frame",
+  "runtime": "wasm",
+  "main": "main.wasm",
+  "memory": 1
+}

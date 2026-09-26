@@ -1,0 +1,7 @@
+{
+  "format": "moy-1",
+  "title": "wasm refusal: more memory than a player gives",
+  "runtime": "wasm",
+  "main": "main.wasm",
+  "memory": 65536
+}

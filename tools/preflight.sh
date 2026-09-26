@@ -50,6 +50,9 @@ step "build"                 make -C libmoy CFLAGS="${CFLAGS_CI}"
 step "docs agree"            python3 tools/check_docs.py
 step "libmoy suite"          make -C libmoy test
 step "wasm binding (WAMR)"   make -C libmoy wasm-test CFLAGS="${CFLAGS_CI}"
+step "desktop player (SDL2, WAMR)" make -C libmoy play
+step "desktop player conformance" \
+  python3 conformance/run.py --player "libmoy/build/moy-play {cart} --dump {out}"
 
 # The artifact checks. `moy.py player` is the cheap one and catches the whole
 # class on its own -- it compares the committed bundle's stamp against a hash of
@@ -85,6 +88,15 @@ else
       printf '== (no node: skipping the two player conformance steps)\n'
     fi
   fi
+fi
+
+# After the rebuild above, so the web player it judges is the one just built.
+if command -v node >/dev/null 2>&1; then
+  step "compiled carts, every host" \
+    python3 conformance/wasm_run.py --hosts harness,desktop,browser
+else
+  step "compiled carts, the native hosts" \
+    python3 conformance/wasm_run.py --hosts harness,desktop
 fi
 
 if [ "${fails}" -ne 0 ]; then
