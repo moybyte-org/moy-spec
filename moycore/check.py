@@ -128,9 +128,9 @@ def check_manifest(manifest, findings):
         findings.append(("error", "manifest.title",
                          "title is required (SPEC.md 3.1)"))
     fps = manifest.get("fps", 30)
-    if fps not in VALID_FPS:
+    if fps not in VALID_FPS and fps != "free":
         findings.append(("error", "manifest.fps",
-                         "fps is %r; SPEC.md 5 allows 30 or 60 only" % (fps,)))
+                         'fps is %r; SPEC.md 5 allows 30, 60 or "free"' % (fps,)))
     rt = manifest.get("runtime")
     if rt == "wasm":
         findings.append(("warn", "manifest.runtime",
