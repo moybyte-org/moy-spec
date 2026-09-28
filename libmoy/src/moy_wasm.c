@@ -147,6 +147,41 @@ static moy_canvas *layer_of(moy_wasm *w, int32_t h)
 
 /* -- the screen's frame ------------------------------------------------------ */
 
+#if defined(__BYTE_ORDER__) && defined(__ORDER_LITTLE_ENDIAN__) \
+    && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+#define MOY_WASM_LE 1
+#else
+#define MOY_WASM_LE 0
+#endif
+
+/* blit565's words into the screen, byte-swapped when the screen is. On a
+ * little-endian host the frame's bytes ARE a canonical screen's, so that is a
+ * copy, and a swapped screen takes two pixels a word when both ends are
+ * aligned. Byte by byte otherwise: a cart may hand over a frame at any
+ * address. */
+static void write_565(moy_wasm *w, moy_pixel *d, const uint8_t *px, size_t n)
+{
+    size_t i = 0;
+#if MOY_WASM_LE
+    if (!w->wire_swapped) {
+        memcpy(d, px, n * 2u);
+        return;
+    }
+    if ((((uintptr_t)d | (uintptr_t)px) & 3u) == 0) {
+        const uint32_t *s32 = (const uint32_t *)(const void *)px;
+        uint32_t *d32 = (uint32_t *)(void *)d;
+        for (; i + 1 < n; i += 2) {
+            uint32_t v = *s32++;
+            *d32++ = ((v & 0x00FF00FFu) << 8) | ((v >> 8) & 0x00FF00FFu);
+        }
+    }
+#endif
+    for (; i < n; i++) {
+        uint16_t c = (uint16_t)(px[i * 2] | (px[i * 2 + 1] << 8));
+        d[i] = w->wire_swapped ? (uint16_t)((c >> 8) | ((c & 0xFFu) << 8)) : c;
+    }
+}
+
 /* Write a frame the way blit or blit565 does: `px` is the cart's frame or the
  * host's copy of it, in the layout frame_565 names. */
 static void write_frame(moy_wasm *w, const uint8_t *px)
@@ -154,10 +189,7 @@ static void write_frame(moy_wasm *w, const uint8_t *px)
     moy_canvas *s = w->screen;
     size_t i, n = (size_t)s->w * (size_t)s->h;
     if (w->frame_565) {
-        for (i = 0; i < n; i++) {
-            uint16_t c = (uint16_t)(px[i * 2] | (px[i * 2 + 1] << 8));
-            s->pix[i] = w->wire_swapped ? (uint16_t)((c >> 8) | ((c & 0xFFu) << 8)) : c;
-        }
+        write_565(w, s->pix, px, n);
     } else {
         for (i = 0; i < n; i++) s->pix[i] = w->frame_lut[px[i]];
     }

@@ -5,7 +5,7 @@
 ;;
 ;;   1  blit              2  blit, then rect     3  rect alone
 ;;   4  blit565           5  blit565, then rect  6  blit, then pix reads (1, 1)
-;;   7  blit, then cls    8  blit, then a trap
+;;   7  blit, then cls    8  blit, then a trap   9  blit565 from an odd address
 ;;
 ;; Every frame differs from the one before it (`seed`), so a stale frame never
 ;; reads as the right one. Memory: the palette at 8192, the frame from 65536 --
@@ -35,13 +35,15 @@
         (local.set $i (i32.add (local.get $i) (i32.const 1)))
         (br $each))))
 
-  ;; frame[i] = i * 37 + seed * 101, one little-endian word a pixel
-  (func $words (local $i i32)
+  ;; frame[i] = i * 37 + seed * 101, one little-endian word a pixel, from
+  ;; 65536 + $skew
+  (func $words (param $skew i32) (local $i i32)
     (local.set $i (i32.const 0))
     (block $done
       (loop $each
         (br_if $done (i32.ge_u (local.get $i) (i32.const 76800)))
-        (i32.store16 offset=65536 (i32.shl (local.get $i) (i32.const 1))
+        (i32.store16 offset=65536
+          (i32.add (local.get $skew) (i32.shl (local.get $i) (i32.const 1)))
           (i32.add (i32.mul (local.get $i) (i32.const 37))
                    (i32.mul (global.get $seed) (i32.const 101))))
         (local.set $i (i32.add (local.get $i) (i32.const 1)))
@@ -75,10 +77,15 @@
         (call $rect (i32.const 20) (i32.const 20) (i32.const 30) (i32.const 30)
                     (i32.const 12))
         (return)))
+    (if (i32.eq (global.get $mode) (i32.const 9))
+      (then
+        (call $words (i32.const 1))
+        (call $blit565 (i32.const 65537))
+        (return)))
     (if (i32.or (i32.eq (global.get $mode) (i32.const 4))
                 (i32.eq (global.get $mode) (i32.const 5)))
       (then
-        (call $words)
+        (call $words (i32.const 0))
         (call $blit565 (i32.const 65536)))
       (else
         (call $indices)

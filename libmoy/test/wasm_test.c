@@ -427,8 +427,8 @@ static int tick(moy_wasm *w, int mode, uint32_t *after_update, char *err, size_t
     return moy_wasm_draw(w, err, errlen) ? 1 : 0;
 }
 
-#define HANDOFF_STEPS 13
-static const int HANDOFF_MODES[HANDOFF_STEPS] = { 1, 2, 1, 3, 1, 3, 4, 5, 6, 7, 1, 3, 8 };
+#define HANDOFF_STEPS 14
+static const int HANDOFF_MODES[HANDOFF_STEPS] = { 1, 2, 1, 3, 1, 3, 4, 5, 6, 7, 1, 3, 9, 8 };
 
 /* handoff.wat through a host that takes no frame (`take` 0), filling ref_crc
  * and ref_pix, or through one that takes every frame and at each step does
@@ -473,6 +473,18 @@ static void handoff(int take, int swapped, uint32_t *ref_crc, int32_t *ref_pix)
             CHECK(offers == n0 + 1, "%s: step %d: the blit offered no frame", who, k);
         if (!take) {
             CHECK(!owed, "%s: step %d: a frame is owed with nothing taken", who, k);
+            if (mode == 4 || mode == 9) {
+                /* blit565 against the rule itself, pixel by pixel: the
+                 * little-endian word, swapped when the screen is. */
+                size_t i, bad = 0;
+                for (i = 0; i < MOY_W * MOY_H; i++) {
+                    uint16_t c = (uint16_t)(offered[i * 2] | (offered[i * 2 + 1] << 8));
+                    uint16_t want = swapped ? (uint16_t)((c >> 8) | ((c & 0xFFu) << 8)) : c;
+                    if (screen_px[i] != want) bad++;
+                }
+                CHECK(bad == 0, "%s: step %d (mode %d): %zu pixels differ from blit565's rule",
+                      who, k, mode, bad);
+            }
             ref_crc[k] = screen_crc();
             ref_pix[k] = pmem[0];
             continue;
@@ -501,6 +513,7 @@ static void handoff(int take, int swapped, uint32_t *ref_crc, int32_t *ref_pix)
             /* k == 2: left owed, for the next hook to settle */
             break;
         case 4:
+        case 9:
             CHECK(owed == offered && !lut, "%s: step %d: a blit565 frame owed wrongly", who, k);
             moy_wasm_settle(&w);
             break;
