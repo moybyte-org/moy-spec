@@ -16,7 +16,12 @@
  *     check an engine without WAMR's loader runs, must refuse every one of
  *     them and pass hello;
  *   - each trap module must end with a non-zero return and a message, and
- *     quit.wat with a zero return and the host's quit hook called.
+ *     quit.wat with a zero return and the host's quit hook called;
+ *   - the frame hand-off: hello.moy again through a host that takes every
+ *     frame, whose screen must come out the same, and handoff.wat's sequence
+ *     through a host that takes none and one that takes every frame, which
+ *     must leave the same screen at every step while the binding writes the
+ *     taken frames only when a verb, a settle or the next hook needs them.
  *
  * Exits non-zero on the first failure.
  *
@@ -226,7 +231,24 @@ static void fresh_console(void)
 
 /* -- the cases ----------------------------------------------------------- */
 
-static void hello(const char *frame_out)
+/* The frame hand-off's host half (moy_wasm.h, `frame`): it takes every frame
+ * offered while `take_frames` is set, and remembers the last offer. */
+static int take_frames, offers;
+static const uint8_t *offered;
+static const moy_pixel *offered_lut;
+
+static int h_frame(void *u, const uint8_t *pixels, const moy_pixel *lut)
+{
+    (void)u;
+    offers++;
+    offered = pixels;
+    offered_lut = lut;
+    return take_frames;
+}
+
+/* One tick of hello.moy; `frame_out` NULL writes nothing. Returns the frame's
+ * CRC. */
+static uint32_t hello(const char *frame_out)
 {
     char path[1024], err[256];
     loaded l;
@@ -234,6 +256,7 @@ static void hello(const char *frame_out)
     FILE *f;
     size_t i;
     uint8_t *bytes;
+    uint32_t crc = 0;
     static const struct { int slot; int32_t want; const char *what; } REPORTS[] = {
         {0, 1, "make_layer's first handle"},
         {1, 12, "pix read back on the layer through target"},
@@ -261,7 +284,7 @@ static void hello(const char *frame_out)
     fresh_console();
     if (load(path, &l, err, sizeof err)) {
         CHECK(0, "hello: load: %s", err);
-        return;
+        return 0;
     }
     CHECK(moy_wasm_check(l.module, l.copy, l.size, manifest_pages(cart), err,
                          sizeof err) == 0,
@@ -272,10 +295,11 @@ static void hello(const char *frame_out)
     if (instantiate(&l, err, sizeof err)) {
         CHECK(0, "hello: instantiate: %s", err);
         unload(&l);
-        return;
+        return 0;
     }
     memset(&w, 0, sizeof w);
     w.read = h_read;
+    w.frame = h_frame;
     CHECK(moy_wasm_open(&w, &con, l.env) == 0, "hello: open");
     CHECK(moy_wasm_init(&w, err, sizeof err) == 0, "hello: _init: %s", err);
     CHECK(moy_wasm_update(&w, 1.0f / 30.0f, err, sizeof err) == 0, "hello: _update: %s", err);
@@ -286,22 +310,26 @@ static void hello(const char *frame_out)
               REPORTS[i].what, REPORTS[i].slot, (int)pmem[REPORTS[i].slot],
               (int)REPORTS[i].want);
 
+    CHECK(!moy_wasm_frame(&w, NULL), "hello: a frame is owed after the verbs over it");
     bytes = (uint8_t *)malloc(sizeof screen_px);
     for (i = 0; i < MOY_W * MOY_H; i++) {
         bytes[i * 2] = (uint8_t)(screen_px[i] & 0xFFu);
         bytes[i * 2 + 1] = (uint8_t)(screen_px[i] >> 8);
     }
-    f = fopen(frame_out, "wb");
-    if (f) {
-        fwrite(bytes, 1, sizeof screen_px, f);
-        fclose(f);
+    crc = crc32(bytes, sizeof screen_px);
+    if (frame_out) {
+        f = fopen(frame_out, "wb");
+        if (f) {
+            fwrite(bytes, 1, sizeof screen_px, f);
+            fclose(f);
+        }
+        printf("  hello: frame crc32 %08x -> %s\n", (unsigned)crc, frame_out);
     }
-    printf("  hello: frame crc32 %08x -> %s\n", (unsigned)crc32(bytes, sizeof screen_px),
-           frame_out);
     free(bytes);
     moy_wasm_close(&w);
     CHECK(!layer_used, "hello: close released the layer");
     unload(&l);
+    return crc;
 }
 
 static void refused(const char *name)
@@ -372,6 +400,144 @@ static void traps(const char *name, int want_where, const char *want_msg)
           "%s: want a trap in hook %d saying \"%s\", got hook %d: \"%s\"",
           name, want_where, want_msg, where, err);
     if (where == want_where) printf("  ok   %s traps: %s\n", name, err);
+}
+
+/* -- the frame hand-off ------------------------------------------------------ */
+
+static uint32_t screen_crc(void)
+{
+    return crc32((const uint8_t *)screen_px, sizeof screen_px);
+}
+
+static int all_sentinel(void)
+{
+    size_t i;
+    for (i = 0; i < MOY_W * MOY_H; i++)
+        if (screen_px[i] != 0xA5A5u) return 0;
+    return 1;
+}
+
+/* One tick in `mode` (handoff.wat's list): 0, or 1 when a hook trapped.
+ * `*after_update` is the screen between the two hooks. */
+static int tick(moy_wasm *w, int mode, uint32_t *after_update, char *err, size_t errlen)
+{
+    moy_reset_state(&canvas);
+    if (moy_wasm_update(w, (float)mode / 1000.0f, err, errlen)) return 1;
+    *after_update = screen_crc();
+    return moy_wasm_draw(w, err, errlen) ? 1 : 0;
+}
+
+#define HANDOFF_STEPS 13
+static const int HANDOFF_MODES[HANDOFF_STEPS] = { 1, 2, 1, 3, 1, 3, 4, 5, 6, 7, 1, 3, 8 };
+
+/* handoff.wat through a host that takes no frame (`take` 0), filling ref_crc
+ * and ref_pix, or through one that takes every frame and at each step does
+ * what a console would -- present, settle, or nothing -- holding each screen
+ * to the reference. */
+static void handoff(int take, int swapped, uint32_t *ref_crc, int32_t *ref_pix)
+{
+    char path[1024], err[256];
+    loaded l;
+    moy_wasm w;
+    uint8_t *kept = (uint8_t *)malloc(MOY_W * MOY_H * 2);
+    int k;
+    const char *who = take ? "handoff (taken)" : "handoff";
+    snprintf(path, sizeof path, "%s/handoff.wasm", dir);
+    fresh_console();
+    for (k = 0; k < MOY_W * MOY_H; k++) screen_px[k] = 0xA5A5u;
+    if (!kept || load(path, &l, err, sizeof err) || instantiate(&l, err, sizeof err)) {
+        CHECK(0, "%s: load: %s", who, err);
+        unload(&l);
+        free(kept);
+        return;
+    }
+    memset(&w, 0, sizeof w);
+    w.wire_swapped = swapped;
+    w.frame = h_frame;
+    take_frames = take;
+    CHECK(moy_wasm_open(&w, &con, l.env) == 0, "%s: open", who);
+    CHECK(moy_wasm_init(&w, err, sizeof err) == 0, "%s: _init: %s", who, err);
+    for (k = 0; k < HANDOFF_STEPS; k++) {
+        int mode = HANDOFF_MODES[k], trapped, n0 = offers;
+        const moy_pixel *lut = NULL;
+        const uint8_t *owed;
+        uint32_t mid = 0;
+        pmem[0] = 0;
+        trapped = tick(&w, mode, &mid, err, sizeof err);
+        if (take && k == 3)                 /* step 2's owed frame, settled by _update */
+            CHECK(mid == ref_crc[2], "%s: the next hook did not settle an owed frame", who);
+        CHECK(trapped == (mode == 8), "%s: step %d (mode %d): %s", who, k, mode,
+              trapped ? err : "no trap");
+        owed = moy_wasm_frame(&w, &lut);
+        if (take && mode != 3 && mode != 8)
+            CHECK(offers == n0 + 1, "%s: step %d: the blit offered no frame", who, k);
+        if (!take) {
+            CHECK(!owed, "%s: step %d: a frame is owed with nothing taken", who, k);
+            ref_crc[k] = screen_crc();
+            ref_pix[k] = pmem[0];
+            continue;
+        }
+        switch (mode) {
+        case 1:
+            CHECK(owed == offered && lut == offered_lut && lut,
+                  "%s: step %d: the owed frame is not the one offered", who, k);
+            if (k == 0) {
+                CHECK(all_sentinel(), "%s: a taken frame was written", who);
+                moy_wasm_settle(&w);
+                CHECK(!moy_wasm_frame(&w, NULL), "%s: owed after a settle", who);
+            } else if (k == 4) {
+                /* Shown and kept: the cart's own copy is spoiled, so the verb
+                 * in step 5 can only find the frame in the host's. */
+                memcpy(kept, owed, MOY_W * MOY_H);
+                memset((uint8_t *)owed, 0x55, MOY_W * MOY_H);
+                moy_wasm_presented(&w, kept);
+                CHECK(!moy_wasm_frame(&w, NULL), "%s: owed after it was shown", who);
+                continue;
+            } else if (k == 10) {
+                /* Shown, and the host says it wrote the screen: it did, here. */
+                moy_wasm_settle(&w);
+                moy_wasm_presented(&w, NULL);
+            }
+            /* k == 2: left owed, for the next hook to settle */
+            break;
+        case 4:
+            CHECK(owed == offered && !lut, "%s: step %d: a blit565 frame owed wrongly", who, k);
+            moy_wasm_settle(&w);
+            break;
+        case 8:
+            CHECK(!owed, "%s: a trapped _draw's frame is owed", who);
+            break;
+        default:
+            CHECK(!owed, "%s: step %d (mode %d): a frame is owed after the verbs", who,
+                  k, mode);
+        }
+        if (k == 2) {
+            CHECK(owed != NULL, "%s: step 2 owes nothing", who);
+            continue;                       /* the screen is compared after step 3 */
+        }
+        if (mode == 8) continue;            /* a trapped frame is never compared */
+        CHECK(screen_crc() == ref_crc[k], "%s: step %d (mode %d): screen %08x, want %08x",
+              who, k, mode, (unsigned)screen_crc(), (unsigned)ref_crc[k]);
+        CHECK(pmem[0] == ref_pix[k], "%s: step %d: pix read %d, want %d", who, k,
+              (int)pmem[0], (int)ref_pix[k]);
+    }
+    moy_wasm_close(&w);
+    CHECK(!moy_wasm_frame(&w, NULL), "%s: owed after close", who);
+    unload(&l);
+    free(kept);
+}
+
+static void handoffs(void)
+{
+    uint32_t ref_crc[HANDOFF_STEPS];
+    int32_t ref_pix[HANDOFF_STEPS];
+    int swapped, f0 = failures;
+    for (swapped = 0; swapped < 2; swapped++) {
+        handoff(0, swapped, ref_crc, ref_pix);
+        handoff(1, swapped, ref_crc, ref_pix);
+    }
+    if (failures == f0)
+        printf("  ok   taken frames reach the screen exactly when they must, both wire orders\n");
 }
 
 /* -- play: the conformance player ------------------------------------------ */
@@ -520,6 +686,7 @@ int main(int argc, char **argv)
     };
     char err[256] = "";
     size_t i;
+    uint32_t crc;
     int playing = argc >= 2 && !strcmp(argv[1], "play");
 
     if (argc != 3 && !playing) {
@@ -547,7 +714,7 @@ int main(int argc, char **argv)
     }
 
     printf("wasm test: the conforming cart, one tick\n");
-    hello(argv[2]);
+    crc = hello(argv[2]);
     printf("wasm test: the refusal carts\n");
     for (i = 0; i < sizeof REFUSED / sizeof REFUSED[0]; i++) refused(REFUSED[i]);
     printf("wasm test: traps and quit\n");
@@ -558,6 +725,12 @@ int main(int argc, char **argv)
     CHECK(run("quit", err, sizeof err) == 0 && quit_called,
           "quit: want a clean ending with the host's quit hook called (%s)", err);
     if (quit_called) printf("  ok   quit ends the cart cleanly\n");
+    printf("wasm test: the frame hand-off\n");
+    take_frames = 1;
+    CHECK(hello(NULL) == crc && offers > 0,
+          "hello: a host taking its frame drew another screen");
+    take_frames = 0;
+    handoffs();
 
     wasm_runtime_destroy();
     if (failures) {

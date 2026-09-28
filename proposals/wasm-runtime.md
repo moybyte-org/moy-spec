@@ -203,6 +203,14 @@ target: like `cls` it composites rather than draws. It is legal only inside
 second one, is a trap. A cart may freely mix `blit` with ordinary verbs; draw
 order is call order, so a HUD drawn after the blit lands on top of it.
 
+**The frame stays as blitted until `_draw` returns.** A host may present it
+straight from the cart's memory — a panel flush that resolves the palette as
+it ships the frame, say — and so read it after the call rather than during it.
+A cart therefore leaves the frame it handed over, and its palette, unchanged
+for the rest of that `_draw`; from its next hook the memory is its own again.
+What the cart draws is the same either way: a verb drawn over the frame, or a
+pixel read from it, meets the frame as it was blitted.
+
 A frame a palette blit wrote holds up to 256 colours, which the 64 indices of an
 indexed canvas cannot represent, so a host running this binding keeps the screen
 in direct colour while a wasm cart runs — the choice §1.1 already allows. What
