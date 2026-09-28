@@ -206,7 +206,7 @@ p8-test: $(RUNCART) $(FLOATFOLD)
 # MOY_WASM. The fixtures are WAT, assembled by tools/wat.py; the harness runs
 # them and test/wasm_frame.py holds the frame against moycore's rendering.
 WAMR_REPO  ?= https://github.com/moybyte-org/wasm-micro-runtime.git
-WAMR_PIN   ?= f4decc3b7f2576a6aaabd2e0afbfa39b64156cdb
+WAMR_PIN   ?= 9841f2695151149c06091628c2841b0d51299c47
 WAMR_SRC   := build/wamr/src
 # WAMR's own platform directory for this machine, or for a cross build the
 # caller names with WAMR_PLATFORM=windows and a toolchain in WAMR_CMAKE_FLAGS.
@@ -233,13 +233,15 @@ $(WAMR_SRC)/.pin-$(WAMR_PIN):
 	test "$$(git -C $(WAMR_SRC) rev-parse HEAD)" = "$(WAMR_PIN)"
 	touch $@
 
+# WAMR builds with its own flags: make exports a command-line CFLAGS to the
+# recipe's environment, and cmake would hand this repo's -Werror set to WAMR.
 $(WAMR_LIB): $(WAMR_SRC)/.pin-$(WAMR_PIN)
-	cmake -S $(WAMR_SRC)/product-mini/platforms/$(WAMR_PLATFORM) -B $(WAMR_BUILD) \
+	env -u CFLAGS -u CXXFLAGS cmake -S $(WAMR_SRC)/product-mini/platforms/$(WAMR_PLATFORM) -B $(WAMR_BUILD) \
 	  -DCMAKE_BUILD_TYPE=Release -DWAMR_BUILD_INTERP=1 -DWAMR_BUILD_AOT=0 \
 	  -DWAMR_BUILD_JIT=0 -DWAMR_BUILD_FAST_JIT=0 -DWAMR_BUILD_LIBC_BUILTIN=0 \
 	  -DWAMR_BUILD_LIBC_WASI=0 -DWAMR_BUILD_SIMD=0 $(WAMR_PLATFORM_FLAGS) $(WAMR_CMAKE_FLAGS) \
 	  > build/wamr/cmake-$(WAMR_PLATFORM).log
-	cmake --build $(WAMR_BUILD) --target vmlib -j4 > build/wamr/build-$(WAMR_PLATFORM).log
+	env -u CFLAGS -u CXXFLAGS cmake --build $(WAMR_BUILD) --target vmlib -j4 > build/wamr/build-$(WAMR_PLATFORM).log
 
 wamr: $(WAMR_LIB)
 
