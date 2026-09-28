@@ -206,7 +206,7 @@ p8-test: $(RUNCART) $(FLOATFOLD)
 # MOY_WASM. The fixtures are WAT, assembled by tools/wat.py; the harness runs
 # them and test/wasm_frame.py holds the frame against moycore's rendering.
 WAMR_REPO  ?= https://github.com/moybyte-org/wasm-micro-runtime.git
-WAMR_PIN   ?= 0be18b702622b1bd7c406b22983cd80fbb5bdb4f
+WAMR_PIN   ?= f4decc3b7f2576a6aaabd2e0afbfa39b64156cdb
 WAMR_SRC   := build/wamr/src
 # WAMR's own platform directory for this machine, or for a cross build the
 # caller names with WAMR_PLATFORM=windows and a toolchain in WAMR_CMAKE_FLAGS.
