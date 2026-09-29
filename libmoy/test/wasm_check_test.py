@@ -128,6 +128,25 @@ def cases():
     expect("snd at another type",
            codes(module(ok_mem, '(import "moy" "snd" (func (param i32 i32)))'),
                  m2), "wasm.import")
+    par = '(import "moy" "par" (func (param i32 i32 i32 i32)))'
+    item = '(func (export "_par") (param i32 i32))'
+    sp = '(global (export "__stack_pointer") (mut i32) (i32.const 1024))'
+    expect("par with its item and its stack pointer",
+           codes(module(ok_mem, par + item + sp), m2), None)
+    expect("par with no _par export",
+           codes(module(ok_mem, par + sp), m2), "wasm.export")
+    expect("par with no __stack_pointer export",
+           codes(module(ok_mem, par + item), m2), "wasm.export")
+    expect("a _par at another type, par or not",
+           codes(module(ok_mem, '(func (export "_par") (param i32))'), m2),
+           "wasm.export")
+    expect("a __stack_pointer that cannot be set",
+           codes(module(ok_mem, par + item
+                         + '(global (export "__stack_pointer") i32 (i32.const 1024))'),
+                 m2), "wasm.export")
+    expect("par at another type",
+           codes(module(ok_mem, '(import "moy" "par" (func (param i32 i32 i32)))'
+                         + item + sp), m2), "wasm.import")
     expect("_update at the wrong type",
            codes(wat.assemble('(module (memory (export "memory") 2 2)'
                               '(func (export "_init")) (func (export "_update"))'
@@ -179,7 +198,7 @@ def cases():
 
 def the_table_is_readable():
     table = mw.load_table()
-    for name in ("blit", "blit565", "read", "target", "snd", "cls"):
+    for name in ("blit", "blit565", "read", "target", "snd", "par", "cls"):
         if name not in table:
             fail("the import table has no %s" % name)
     print("  ok   the import table loads (%d rows)" % len(table))

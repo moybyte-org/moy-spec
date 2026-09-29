@@ -35,6 +35,11 @@ EXPORTS = {
     "_draw": ((), ()),
 }
 
+# What a cart that imports `par` exports beside them: the item it runs, and
+# the global that moves its C stack, which the host sets for each item.
+PAR_ITEM = ("_par", (("i32", "i32"), ()))
+PAR_SP = ("__stack_pointer", ("i32", True))
+
 VALTYPES = {0x7F: "i32", 0x7E: "i64", 0x7D: "f32", 0x7C: "f64",
             0x7B: "v128", 0x70: "funcref", 0x6F: "externref"}
 KINDS = ("func", "table", "memory", "global")
@@ -107,6 +112,7 @@ def parse(blob):
                function, (flags, min, max) for a memory, None otherwise
       funcs    [type index] for the module's own functions
       memories [(flags, min, max)] for the module's own memories
+      globals  [(value type, mutable)] for the module's own globals
       exports  [(name, kind, index)]
       start    a function index, or None
       sections [section id, in order]
@@ -117,7 +123,7 @@ def parse(blob):
     if bytes(blob[4:8]) != b"\x01\x00\x00\x00":
         raise ModuleError("not WebAssembly version 1")
     out = {"types": [], "imports": [], "funcs": [], "memories": [],
-           "exports": [], "start": None, "sections": []}
+           "globals": [], "exports": [], "start": None, "sections": []}
     r = _Reader(blob, 8)
     while r.pos < r.end:
         sid = r.byte()
@@ -157,6 +163,12 @@ def parse(blob):
             out["funcs"] = [body.uleb() for _ in range(body.uleb())]
         elif sid == 5:
             out["memories"] = [body.limits() for _ in range(body.uleb())]
+        elif sid == 6:
+            for _ in range(body.uleb()):
+                t = body.valtype()
+                mutable = body.byte() == 1
+                _skip_const_expr(body)
+                out["globals"].append((t, mutable))
         elif sid == 7:
             for _ in range(body.uleb()):
                 name = body.name()
@@ -167,6 +179,35 @@ def parse(blob):
         elif sid == 8:
             out["start"] = body.uleb()
     return out
+
+
+def _skip_const_expr(r):
+    """Past a global's initializer: a constant expression and its end."""
+    while True:
+        op = r.byte()
+        if op == 0x0B:
+            return
+        if op in (0x41, 0x42, 0x23, 0xD2):     # i32/i64.const, global.get, ref.func
+            r.uleb()
+        elif op == 0x43:
+            r.bytes(4)
+        elif op == 0x44:
+            r.bytes(8)
+        elif op == 0xD0:                       # ref.null
+            r.byte()
+        else:
+            raise ModuleError("a global initializer this checker cannot read "
+                              "(opcode 0x%02x)" % op)
+
+
+def global_type(mod, index):
+    """(value type, mutable) of global `index` in the module's index space --
+    imported globals first -- or None."""
+    imported = [i for i in mod["imports"] if i[2] == "global"]
+    own = index - len(imported)
+    if 0 <= own < len(mod["globals"]):
+        return mod["globals"][own]
+    return None
 
 
 def func_type(mod, index):
@@ -249,6 +290,8 @@ def check_module(blob, manifest, findings, table=None):
                          "no memory export; the module's linear memory is "
                          "exported as \"memory\""))
 
+    check_par(mod, exports, findings)
+
     if mod["start"] is not None:
         findings.append(("error", "wasm.start",
                          "the module has a start function; nothing may run "
@@ -261,6 +304,39 @@ def check_module(blob, manifest, findings, table=None):
                      "imports %d of the table's %d functions"
                      % (len(used), len(table))))
     return findings
+
+
+def check_par(mod, exports, findings):
+    """A cart that imports `par` exports the item it runs and its stack
+    pointer, each at the proposal's type; either at another type is refused
+    whether or not it does."""
+    uses = any(m == IMPORT_MODULE and n == "par" and k == "func"
+               for m, n, k, _ in mod["imports"])
+    name, want = PAR_ITEM
+    item = exports.get(name)
+    if item is not None:
+        got = func_type(mod, item[1]) if item[0] == "func" else None
+        if got != want:
+            findings.append(("error", "wasm.export",
+                             "%s is %s; the proposal says %s"
+                             % (name, _sig(got) if got else "not a function",
+                                _sig(want))))
+    elif uses:
+        findings.append(("error", "wasm.export",
+                         "imports par but has no %s%s export: the item par runs"
+                         % (name, _sig(want))))
+    name, want = PAR_SP
+    sp = exports.get(name)
+    if sp is not None:
+        got = global_type(mod, sp[1]) if sp[0] == "global" else None
+        if got != want:
+            findings.append(("error", "wasm.export",
+                             "%s is not a mutable i32 global" % name))
+    elif uses:
+        findings.append(("error", "wasm.export",
+                         "imports par but does not export its %s (clang: "
+                         "-Wl,--export=%s), which the host sets for each item"
+                         % (name, name)))
 
 
 def check_memory(mod, manifest, findings):

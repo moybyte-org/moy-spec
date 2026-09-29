@@ -37,6 +37,16 @@
       "sha256": "9ffb743c9cc182968f5b978982cc37a636e31dfd11360327108ef16b17af4a8d",
       "traps": false
     },
+    "par": {
+      "crc32": "73bdcb5f",
+      "sha256": "5cebc8662d5134c54dfa9654261b155d5b6e16a9032636fc9f3ff02ab2a27b17",
+      "traps": false
+    },
+    "par_trap": {
+      "crc32": "bf76a374",
+      "sha256": "41ff20a559ade96eaefc8cf60b5772251dc36f1d8940f685602184f0c9a2b071",
+      "traps": true
+    },
     "primitives": {
       "crc32": "cc170182",
       "sha256": "4518bd1990d9a1aa57a4adf4090aae8e52063ceaeeb6b400a3852f9f9e51b244",

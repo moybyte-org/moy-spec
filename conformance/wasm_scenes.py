@@ -213,6 +213,27 @@ def snd_trap():
     return [MOY565[v] for v in c.buf]
 
 
+def par():
+    """Eight items of thirty rows each, then a bar per item and one for the
+    caller, green where the stack pointer was the one the rule gives."""
+    words = []
+    for n in range(W * H):
+        x, y = n % W, n // W
+        i = y // 30
+        words.append((((3 * x + 5 * i) & 31) << 11) | (((2 * y + 7 * i) & 63) << 5)
+                     | ((x ^ y) & 31))
+    c = blank_canvas()
+    for k in range(8):
+        c.rect(4 + k * 20, 4, 16, 8, 11)
+    c.rect(170, 4, 16, 8, 11)
+    return over(words, c)
+
+
+def par_trap():
+    """The first frame: four quarters of the rows, item i's in word 8191i + 1."""
+    return [(8191 * ((n // W) // 60) + 1) & 0xFFFF for n in range(W * H)]
+
+
 # -- verbs: every ordinary verb through the binding, as data -----------------
 
 def _tile_pixels():
@@ -550,16 +571,18 @@ SCENES = [
     ("read", read),
     ("target", target),
     ("snd", snd),
+    ("par", par),
     ("verbs", verbs),
     ("primitives", primitives),
 ] + [(_name, (lambda n=_name: trace_golden(n))) for _name in LAYER_SCENES] + [
     ("trap", trap),
     ("snd_trap", snd_trap),
+    ("par_trap", par_trap),
 ]
 
 # A scene whose last tick traps: the host exits non-zero and what it writes is
 # the last whole frame, which is the golden.
-TRAPS = ("trap", "snd_trap")
+TRAPS = ("trap", "snd_trap", "par_trap")
 
 # Carts every host must refuse before anything of them runs: exit non-zero,
 # no frame. The shape fixtures are libmoy's (libmoy/test/wasm/), the ones

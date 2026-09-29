@@ -64,6 +64,13 @@ which unwinds it exactly as a wasm trap does. The page calls the hooks between
 `moy_web_wasm_tick` and `moy_web_wasm_present`, and presents only a frame whose
 `_draw` finished.
 
+The cart's `par` items run on the page's one thread, one after another: the
+cart's memory is not shared, so no worker could reach it, and the frame is the
+same as on a host that spreads them over its cores. The binding asks the page
+for each through `moy_wasm_js_item`, and `cart.js` sets the cart's exported
+`__stack_pointer` to the item's own stack, calls its `_par`, and puts the stack
+pointer back.
+
 The cart's `snd` queues its samples in a `moy_stream` in `main.c`, and the
 page's audio pull adds them after the synth, so they reach the AudioWorklet
 the same way. While the page has no running AudioContext it drains the queue

@@ -262,7 +262,9 @@ statement.
 | `verbs` | every ordinary verb through the binding at the import table's arity: the sentinel forms, `camera`'s out pointer, read-backs feeding colours, a sheet and map written with `sset` and `mset`, over a frame blitted through the cart's own palette with indices past 63 |
 | `primitives` | §11's scene of that name as a compiled cart: the same trace, through the binding, held to that scene's golden reduced to RGB565 |
 | `layer_left` … `layer_small` | §11's layer scenes the same way: the layer made in `_init`, drawn into through `target`, composited by `draw_layer` |
+| `par` | the frame's rows as eight items: the same frame whether a host ran them on several cores or one after another, each item on the stack the rule gives it and the caller's stack pointer put back |
 | `trap` | a trap in the second frame: the player shows and writes the first |
+| `par_trap` | a trap in one of `par`'s items, in the second frame: it traps the cart, whichever core the item ran on |
 
 Every scene is also held to `moy check`, and the refusal fixtures — libmoy's
 shape fixtures in `libmoy/test/wasm/` and `wasm/too_big.moy`, a well-formed cart

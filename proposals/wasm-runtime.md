@@ -11,7 +11,8 @@ as well (same issue, same core).
 
 What this document decides is the contract a cart and a host meet at: the cart,
 the module shape, the import table and how every verb crosses the boundary, the
-framebuffer, the asset read, the sample stream, memory and traps. What is still
+framebuffer, the asset read, the sample stream, the cart's work across the
+cores, memory and traps. What is still
 open is listed at the end, and none of it reopens the contract. Three executable copies of the
 contract sit beside it, each tested against the others:
 
@@ -79,14 +80,18 @@ is the Lua cart.
 
 - **Profile: wasm32, MVP.** No WASI, no threads, no SIMD, no GC proposal. The
   profile is pinned so a 2026 toolchain and a 2030 one produce carts the same
-  host runs; extensions to it are a spec revision, not a toolchain default.
+  host runs; extensions to it are a spec revision, not a toolchain default. A
+  cart uses more than one core through `par` (below), never through threads.
 - **One linear memory, the module's own**, exported as `memory`, its minimum
   equal to its maximum equal to the manifest's `memory`. Not imported, not
   shared, not 64-bit.
 - **Exports:** `_init()`, `_update(f32 dt)`, `_draw()` and `memory` — all four
   required, at exactly those types; an empty hook is an empty function. The host
   calls the three hooks as the §5 tick calls the Lua ones, with `dt` the tick
-  period. Any other export is ignored.
+  period. A cart that imports `par` also exports `_par(i32 i, i32 arg)` and its
+  stack pointer, the mutable `i32` global `__stack_pointer` (below); a `_par` or
+  a `__stack_pointer` at another type is refused whether or not it does. Any
+  other export is ignored.
 - **No start function.** Nothing in the module runs before `_init`.
 - **Imports: functions from module `"moy"`, each a row of the import table at
   that row's exact type.** A cart imports only the rows it uses. The Lua build is
@@ -115,10 +120,10 @@ produce the same module with zero setup.
 ## The import table
 
 **The import table is the verb table.** Every verb the Lua binding installs is
-one import of the same name and the same §6–§9 meaning, and five exist because
+one import of the same name and the same §6–§9 meaning, and six exist because
 this binding needs them: `blit` and `blit565` (the framebuffer), `read` (the
-cart's own files), `target` (drawing into a layer) and `snd` (the sample
-stream). `wasm-imports.json` lists every one; a verb the spec gains is a row
+cart's own files), `target` (drawing into a layer), `snd` (the sample stream)
+and `par` (the cart's own work across the cores). `wasm-imports.json` lists every one; a verb the spec gains is a row
 there before it is anything else.
 
 `W` and `H` are not imports. The canvas is the manifest's (§1, §3.1) and a host
@@ -174,9 +179,10 @@ close the gap, and every row's notes apply them.
   milliseconds since the cart started, which is all a cart needs to measure. It
   paces itself by returning from `_update`, and §5 calls it again.
 - **No import blocks.** Every import completes in time bounded by its arguments —
-  `read` by its length, `blit` by the frame, `snd` by its count — and none waits
-  for input, a timer, the display, the audio output or the network. There is no
-  sleep and no vsync wait: a cart waits by returning.
+  `read` by its length, `blit` by the frame, `snd` by its count, `par` by the
+  cart's own items — and none waits for input, a timer, the display, the audio
+  output or the network. There is no sleep and no vsync wait: a cart waits by
+  returning.
 - **`quit()` does not return.** The host unwinds the cart as it would for a trap
   and treats the unwinding as the cart ending itself (§9), with no report.
 
@@ -404,7 +410,9 @@ A trap ends the cart the way a Lua error does (§4.3). Whatever makes wasm trap 
 `unreachable`, an out-of-bounds access, an integer division by zero, a stack
 overflow — traps the cart, and so does everything this document calls a trap: an
 import handed a range outside linear memory, a layer handle `make_layer` never
-returned, a `blit` outside `_draw` or a second one inside it. The host reports it
+returned, a `blit` outside `_draw` or a second one inside it, an import called
+from one of `par`'s items, and `par` handed a negative count or stacks outside
+memory or off 16-byte alignment. The host reports it
 — the trap's message, and whatever location the module lets it recover — and
 goes back to where the player launched the cart. **The frame the trap interrupted
 is never presented**: the player sees the last whole frame, then the report. A
@@ -475,6 +483,68 @@ and this repository's players use. A `pcm` range outside linear memory is a
 trap, and a negative `nframes` is such a range. Audio has no goldens (§8.3);
 what conformance holds is the counts, which a stopped clock makes exact.
 
+## The cart's own work across the cores — `par`
+
+```c
+void par(i32 n, i32 arg, i32 stacks, i32 size);
+    /* _par(i, arg) for every i in [0, n), across the host's cores; returns
+       when every item has. Item i's C stack is the `size` bytes below
+       stacks + (i + 1) * size */
+```
+
+A compiled cart's cost is its own loops, and the consoles that run it have
+more than one core. `par` hands the host `n` items of that work — a band of a
+frame's rows, a range of vertices — and returns when all are done. The host
+runs them on the cores it gives the cart, the calling one included, at once
+and in any order. A host with one core, or one that gives the cart only the
+calling core (a browser page without cross-origin isolation), runs them there
+one after another, in order. The cart cannot tell which, and its frame is the
+same either way.
+
+**What the cart provides.** The export `_par(i32 i, i32 arg)` runs item `i`;
+`arg` is `par`'s own, passed through, typically a pointer to the job. The cart
+also exports its stack pointer as `__stack_pointer`, the mutable `i32` global
+that C, C++, Rust and Zig all move their stack with (`-Wl,--export=__stack_pointer`
+with clang). The host sets it to `stacks + (i + 1) × size` for item `i`, so every
+item has a stack of its own whichever core runs it, and puts it back when the
+item returns. `stacks` and `size` are multiples of 16 and the `n × size` bytes
+from `stacks` lie in linear memory; otherwise `par` traps. A module that
+imports `par` without both exports is refused before it runs.
+
+**What an item may do** is compute over the cart's memory. It calls no import:
+one that does traps, `par` included, so items do not nest. It writes no memory
+another item reads or writes, and no global but its stack pointer. Within those
+rules the result depends neither on the order nor on how many cores ran it,
+which keeps a compiled cart's frames identical on every host (Determinism); an
+item that breaks them makes the result host-dependent, as a NaN payload is.
+Everything the cart wrote before calling `par` is visible to every item, and
+everything the items wrote is visible when `par` returns: the host's join is
+the only synchronisation a cart needs, so the profile stays without threads or
+atomics.
+
+**A trap** in any item traps the call to `par` with the message of the
+lowest-numbered item that trapped, which is the one a host running them in
+order stops at. A host lets every item it started finish first; items above
+the lowest trap may or may not have run.
+
+**Why fork-join, not threads.** Threads — shared memory, atomics and a spawn,
+as wasi-threads has them — would let a cart build any synchronisation it
+liked, and would cost this binding its determinism and its portability: the
+memory would have to be declared shared, which a browser gives only a
+cross-origin-isolated page; a cart could race, or spin on another core for
+ever; and on the Xtensa floor board, whose linear memory is in external RAM,
+the CPU's compare-and-swap does not work there, so every atomic becomes a lock.
+The work that wants the cores does not need them either. Jet's own ESP32
+runtime draws with two cores by keeping the frame's setup on one and cutting
+the frame's rows into bands that rasterize at once, then joining — fork-join
+exactly, with the memory unshared. A single-core host needs nothing but a loop.
+What `par` measures on the reference boards is in moybyte#158.
+
+How many cores a host gives a cart, and how it shares the items among them, is
+host policy, like AOT. The reference console gives a cart every core but the
+one its session runs on, below the display and audio tasks' priority, and each
+core takes the next item as it finishes one, so a busier core takes fewer.
+
 ## Determinism
 
 WASM is deterministic except NaN bit patterns. The binding pins it with one rule:
@@ -483,6 +553,9 @@ NaN payloads.** Everything else — integer arithmetic, `f32` rounding, linear
 memory — is bit-identical across engines by the WASM spec itself, which makes
 this binding *easier* to hold to golden frames than Lua was: the frame a cart
 blits is the frame the suite diffs, on every host.
+
+`par` keeps that: items that follow its rules leave the same memory whatever
+their order and however many cores ran them.
 
 **This binding's goldens are RGB565 frames.** The palette-index goldens of §11
 cannot represent a palette blit's 256 colours, so a wasm scene is judged on the
@@ -606,3 +679,7 @@ numbering the issues cite keeps meaning.
     16-bit, and a queue of 2,048 frames, pinned by Doom, the first cart to need
     them; the PCM audio section says why. `snd` is in the import table, and a
     host with no audio drains its queue at the rate.
+12. ~~**More than one core.**~~ **Decided 2026-09-29:** `par`, fork-join over the
+    cart's own unshared memory, and not the threads proposal; the section on it
+    says why, and moybyte#158 has what it measures against one core and against
+    native two-core rendering.

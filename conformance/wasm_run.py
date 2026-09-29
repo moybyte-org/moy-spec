@@ -7,12 +7,15 @@
     python3 conformance/wasm_run.py --build           # re-render the goldens
 
 The scenes are runtime "wasm" carts under conformance/wasm/, one per import
-only this binding has (blit, blit565, read, target, snd) plus `verbs`, the
+only this binding has (blit, blit565, read, target, snd, par) plus `verbs`, the
 ordinary verbs through it, `primitives` and the five `layer_*` scenes, SPEC.md
-11's scenes of those names as compiled carts, and two traps in the second
-frame: `trap`, and `snd_trap`, samples past the end of memory. `snd` holds a
-host's answers about its sample queue; with the clock stopped nothing drains,
-so the answers are exact and no sample is ever judged. Their goldens are RGB565 frames (proposals/wasm-runtime.md,
+11's scenes of those names as compiled carts, and three traps in the second
+frame: `trap`, `snd_trap`, samples past the end of memory, and `par_trap`, one
+of par's items reaching unreachable. `snd` holds a host's answers about its
+sample queue; with the clock stopped nothing drains, so the answers are exact
+and no sample is ever judged. `par` is the same frame whether a host ran its
+items on several cores or one after another: every host must match its golden,
+whatever cores it gives a cart. Their goldens are RGB565 frames (proposals/wasm-runtime.md,
 Determinism), rendered by the twins in wasm_scenes.py, and stored as PNGs
 whose channels are each word's bits repeated, so the file is a picture and
 reduces back to the word exactly.

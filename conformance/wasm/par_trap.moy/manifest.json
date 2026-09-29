@@ -1,0 +1,7 @@
+{
+  "format": "moy-1",
+  "title": "wasm scene: a trap in one of par's items, in the second frame",
+  "runtime": "wasm",
+  "main": "main.wasm",
+  "memory": 4
+}

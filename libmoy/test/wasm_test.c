@@ -25,13 +25,20 @@
  *   - the sample stream: snd.wat on a host with no audio, whose queue drains
  *     by the clock at the rate, and on a host that plays it through a
  *     moy_stream, over ten simulated minutes each, counting what the cart
- *     queued against what drained; and a range outside the memory traps.
+ *     queued against what drained; and a range outside the memory traps;
+ *   - par: par.wat's items on a host with no lanes and on one with POSIX
+ *     lanes (port/moy_lanes.c), which must leave the same memory, each item
+ *     on its own stack and the caller's stack pointer as it was, and trap
+ *     alike: the lowest trapping item's message, an import called from an
+ *     item, and par's own argument checks.
  *
  * Exits non-zero on the first failure.
  *
  * `play` is the same binding as a conformance player for compiled carts
- * (conformance/wasm_run.py): it runs a cart's ticks with the clock stopped
- * and writes the last frame it presented, RGB565 little-endian. Exit 0 when
+ * (conformance/wasm_run.py): it runs a cart's ticks with the clock stopped,
+ * its par items on two POSIX lanes beside the calling thread (--lanes N says
+ * otherwise, 0 for none), and writes the last frame it presented, RGB565
+ * little-endian. Exit 0 when
  * the cart ran; 1 when it trapped, with the last whole frame written if there
  * was one; 2 when it was refused, with nothing written. A cart whose load
  * footprint -- its declared memory, its module and the interpreter's stack --
@@ -45,6 +52,7 @@
 #include "moy.h"
 #include "moy_audio.h"
 #include "moy_wasm.h"
+#include "../port/moy_lanes.h"
 
 static char dir[512];
 static int failures;
@@ -748,6 +756,105 @@ static moy_pixel *h_layer_alloc(void *u, int w, int h)
     return (moy_pixel *)calloc((size_t)w * (size_t)h, sizeof(moy_pixel));
 }
 
+/* -- par --------------------------------------------------------------- */
+
+#define PAR_ITEMS 8
+
+/* One _update of par.wat with `n` items in `mode`, on `lanes` (NULL: none).
+ * Returns 0 when it returned, 1 when it trapped (the message in err), and
+ * fills `mem` with the 256 KiB of memory the update left. */
+static int par_run(moy_lanes *lanes, int32_t n, int32_t mode, uint8_t *mem,
+                   int32_t *sp_after, char *err, size_t errlen)
+{
+    char path[1024];
+    loaded l;
+    moy_wasm w;
+    int rc;
+    snprintf(path, sizeof path, "%s/par.wasm", dir);
+    fresh_console();
+    pmem[0] = n;
+    pmem[1] = mode;
+    pmem[2] = 64;
+    if (load(path, &l, err, errlen) || instantiate(&l, err, errlen)) {
+        CHECK(0, "par: load: %s", err);
+        unload(&l);
+        return -1;
+    }
+    CHECK(moy_wasm_check(l.module, l.copy, l.size, 4, err, errlen) == 0,
+          "par: check: %s", err);
+    memset(&w, 0, sizeof w);
+    moy_lanes_bind(lanes, &w);
+    moy_wasm_open(&w, &con, l.env);
+    rc = moy_wasm_init(&w, err, errlen)
+         || moy_wasm_update(&w, 1.0f / 30.0f, err, errlen);
+    memcpy(mem, wasm_runtime_addr_app_to_native(l.inst, 0), 4 * 65536);
+    *sp_after = pmem[3];
+    moy_wasm_close(&w);
+    unload(&l);
+    return rc;
+}
+
+static void par_items(void)
+{
+    static uint8_t alone[4 * 65536], shared[4 * 65536];
+    char err[256];
+    int32_t sp1 = 0, sp2 = 0;
+    int i, j, rc;
+    moy_lanes *lanes = moy_lanes_open(2);
+    static const struct { int32_t mode; const char *msg; } TRAPS[] = {
+        {1, "out of bounds memory access"},
+        {2, "an import called from a par item"},
+        {3, "par's count is negative"},
+        {4, "not 16-byte aligned"},
+        {5, "out of bounds memory access"},
+    };
+    size_t t;
+
+    CHECK(lanes != NULL, "par: no POSIX lanes");
+    rc = par_run(NULL, PAR_ITEMS, 0, alone, &sp1, err, sizeof err);
+    CHECK(rc == 0, "par: in order: %s", err);
+    for (i = 0; i < PAR_ITEMS; i++) {
+        uint32_t sum = 0, got, sp;
+        for (j = 0; j < 8192; j++) {
+            uint8_t v = (uint8_t)((i * 31 + j) & 255);
+            sum += v;
+            if (alone[131072 + i * 8192 + j] != v) {
+                CHECK(0, "par: item %d's fill at %d", i, j);
+                break;
+            }
+        }
+        memcpy(&got, alone + 128 + i * 4, 4);
+        memcpy(&sp, alone + 256 + i * 4, 4);
+        CHECK(got == sum + 1, "par: item %d reported %u, want %u", i, got, sum + 1);
+        CHECK(sp == 65536u + (uint32_t)(i + 1) * 4096u,
+              "par: item %d ran with its stack pointer at %u", i, sp);
+    }
+    CHECK(sp1 == 1024, "par: the caller's stack pointer came back as %d", (int)sp1);
+    printf("  ok   %d items in order: each ran once, on its own stack\n", PAR_ITEMS);
+
+    rc = par_run(lanes, PAR_ITEMS, 0, shared, &sp2, err, sizeof err);
+    CHECK(rc == 0, "par: on lanes: %s", err);
+    CHECK(!memcmp(alone, shared, sizeof alone) && sp2 == sp1,
+          "par: the lanes left other memory than the items in order");
+    CHECK(moy_lanes_started(lanes) > 0, "par: no lane ever started an item");
+    printf("  ok   the same %d items on two lanes and the caller: the same memory "
+           "(lanes started %ld times)\n", PAR_ITEMS, moy_lanes_started(lanes));
+
+    rc = par_run(lanes, 0, 0, shared, &sp2, err, sizeof err);
+    CHECK(rc == 0 && sp2 == 1024, "par: no items: %s", err);
+
+    for (t = 0; t < sizeof TRAPS / sizeof TRAPS[0]; t++) {
+        char e1[256] = "", e2[256] = "";
+        int r1 = par_run(NULL, PAR_ITEMS, TRAPS[t].mode, alone, &sp1, e1, sizeof e1);
+        int r2 = par_run(lanes, PAR_ITEMS, TRAPS[t].mode, shared, &sp2, e2, sizeof e2);
+        CHECK(r1 == 1 && r2 == 1 && strstr(e1, TRAPS[t].msg) && strstr(e2, TRAPS[t].msg),
+              "par mode %d: want a trap saying \"%s\", got \"%s\" in order and \"%s\" on lanes",
+              (int)TRAPS[t].mode, TRAPS[t].msg, e1, e2);
+        if (r1 == 1 && r2 == 1) printf("  ok   par mode %d traps alike: %s\n", (int)TRAPS[t].mode, e2);
+    }
+    moy_lanes_close(lanes);
+}
+
 static void h_layer_release(void *u, moy_pixel *p) { (void)u; free(p); }
 
 static int write_frame(const char *out, const uint8_t *frame, size_t n)
@@ -763,7 +870,8 @@ static int play(int argc, char **argv)
 {
     char path[1024], err[256];
     const char *out;
-    int i, frames = 2, shown = 0;
+    int i, frames = 2, shown = 0, n_lanes = 2;
+    moy_lanes *lanes;
     uint32_t pages;
     uint64_t limit = 1024u * 1024u * 1024u, footprint;
     uint8_t *frame;
@@ -775,7 +883,8 @@ static int play(int argc, char **argv)
     size_t n;
 
     if (argc < 4) {
-        fprintf(stderr, "usage: wasm_test play <cart> <out> [--frames N] [--limit MIB]\n");
+        fprintf(stderr, "usage: wasm_test play <cart> <out> [--frames N] [--limit MIB] "
+                        "[--lanes N]\n");
         return 2;
     }
     snprintf(cart, sizeof cart, "%s", argv[2]);
@@ -783,6 +892,7 @@ static int play(int argc, char **argv)
     for (i = 4; i + 1 < argc; i++) {
         if (!strcmp(argv[i], "--frames")) frames = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--limit")) limit = (uint64_t)atoi(argv[++i]) * 1024u * 1024u;
+        else if (!strcmp(argv[i], "--lanes")) n_lanes = atoi(argv[++i]);
     }
 
     snprintf(path, sizeof path, "%s/main.wasm", cart);
@@ -832,8 +942,12 @@ static int play(int argc, char **argv)
     }
     memset(&w, 0, sizeof w);
     w.read = h_read;
+    lanes = moy_lanes_open(n_lanes);
+    moy_lanes_bind(lanes, &w);
+    w.lane_stack = PLAY_STACK;
     if (moy_wasm_open(&w, &con, l.env)) {
         fprintf(stderr, "wasm_test: refused: a hook is missing\n");
+        moy_lanes_close(lanes);
         unload(&l);
         return 2;
     }
@@ -855,6 +969,7 @@ static int play(int argc, char **argv)
     }
     if (shown) write_frame(out, frame, n * 2);
     moy_wasm_close(&w);
+    moy_lanes_close(lanes);
     unload(&l);
     free(frame);
     return 0;
@@ -863,6 +978,7 @@ trapped:
     fprintf(stderr, "wasm_test: the cart trapped: %s\n", err);
     if (shown) write_frame(out, frame, n * 2);
     moy_wasm_close(&w);
+    moy_lanes_close(lanes);
     unload(&l);
     free(frame);
     return 1;
@@ -925,6 +1041,8 @@ int main(int argc, char **argv)
     handoffs();
     printf("wasm test: the sample stream\n");
     stream();
+    printf("wasm test: par\n");
+    par_items();
 
     wasm_runtime_destroy();
     if (failures) {

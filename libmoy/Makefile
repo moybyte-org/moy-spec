@@ -206,7 +206,7 @@ p8-test: $(RUNCART) $(FLOATFOLD)
 # MOY_WASM. The fixtures are WAT, assembled by tools/wat.py; the harness runs
 # them and test/wasm_frame.py holds the frame against moycore's rendering.
 WAMR_REPO  ?= https://github.com/moybyte-org/wasm-micro-runtime.git
-WAMR_PIN   ?= 9841f2695151149c06091628c2841b0d51299c47
+WAMR_PIN   ?= a7b71791f0e7b36e34d7d8abaef57b1d64d6f8e7
 WAMR_SRC   := build/wamr/src
 # WAMR's own platform directory for this machine, or for a cross build the
 # caller names with WAMR_PLATFORM=windows and a toolchain in WAMR_CMAKE_FLAGS.
@@ -245,10 +245,11 @@ $(WAMR_LIB): $(WAMR_SRC)/.pin-$(WAMR_PIN)
 
 wamr: $(WAMR_LIB)
 
-$(WASMT): test/wasm_test.c src/moy_wasm.c include/moy_wasm.h $(SRC) include/moy.h $(WAMR_LIB)
+$(WASMT): test/wasm_test.c src/moy_wasm.c include/moy_wasm.h port/moy_lanes.c port/moy_lanes.h \
+          $(SRC) include/moy.h $(WAMR_LIB)
 	$(CC) $(CFLAGS) -DMOY_PIXEL_RGB565 -DMOY_WASM \
 	  -isystem $(WAMR_SRC)/core/iwasm/include \
-	  test/wasm_test.c src/moy_wasm.c $(SRC) $(WAMR_LIB) -lm $(WAMR_LIBS) -o $@
+	  test/wasm_test.c src/moy_wasm.c port/moy_lanes.c $(SRC) $(WAMR_LIB) -lm $(WAMR_LIBS) -o $@
 
 wasm-test: $(WASMT)
 	rm -rf build/wasm && mkdir -p build/wasm
@@ -284,7 +285,7 @@ P565_CFLAGS = $(CFLAGS) -DMOY_PIXEL_RGB565 -DMOY_WASM -include port/moy565.h \
               -isystem $(WAMR_SRC)/core/iwasm/include
 ifeq ($(PLAY_WASM),1)
 PLAY_WASM_OBJ  := $(P565)/moy_canvas.o $(P565)/moy_sprite.o $(P565)/moy_wasm.o \
-                  $(P565)/wasm_cart.o
+                  $(P565)/wasm_cart.o $(P565)/moy_lanes.o
 PLAY_WASM_LINK := $(WAMR_LIB) $(WAMR_LIBS)
 PLAY_WASM_DEF  := -DMOY_PLAY_WASM
 endif
@@ -295,7 +296,13 @@ $(P565)/%.o: src/%.c include/moy.h include/moy_wasm.h src/moy_pixel.h port/moy56
 	$(CC) $(P565_CFLAGS) -c $< -o $@
 
 $(P565)/wasm_cart.o: port/sdl2/wasm_cart.c port/sdl2/wasm_cart.h include/moy.h \
-                     include/moy_wasm.h port/moy565.h $(WAMR_SRC)/.pin-$(WAMR_PIN)
+                     include/moy_wasm.h port/moy565.h port/moy_lanes.h \
+                     $(WAMR_SRC)/.pin-$(WAMR_PIN)
+	@mkdir -p $(P565)
+	$(CC) $(P565_CFLAGS) -c $< -o $@
+
+$(P565)/moy_lanes.o: port/moy_lanes.c port/moy_lanes.h include/moy_wasm.h \
+                     $(WAMR_SRC)/.pin-$(WAMR_PIN)
 	@mkdir -p $(P565)
 	$(CC) $(P565_CFLAGS) -c $< -o $@
 
@@ -316,7 +323,7 @@ wasm-check:
 	python3 test/wasm_check_test.py
 
 # The wasm import table (proposals/wasm-imports.json) is the verb table the Lua
-# binding installs plus the wasm binding's own four, and src/moy_wasm.c
+# binding installs plus the wasm binding's own six, and src/moy_wasm.c
 # registers exactly its rows at its signatures. Parsed, not compiled, so it
 # needs no WAMR.
 wasm-table:

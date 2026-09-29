@@ -177,7 +177,10 @@ reaching for any of them fails, as SPEC.md 11 requires of every conforming host.
 [`proposals/wasm-runtime.md`](../proposals/wasm-runtime.md) as C: a
 `NativeSymbol` array of the verbs, bound to a `moy_console` the way
 `moy_lua_open` binds a `lua_State`, with the palette `blit`, `blit565`, `target`
-for layers, and `read` routed to a callback the host supplies. It tracks the
+for layers, `read` routed to a callback the host supplies, and `par`, which
+runs the cart's own items on the lanes a host offers (threads it runs on its
+other cores, which the binding fills with sibling instances of the cart over
+the same memory) or, with none, one after another. It tracks the
 proposal, so it is not core, and it costs nobody who does not ask for it: the
 file compiles to nothing unless an engine is named. `MOY_WASM` builds it over
 WAMR, which registers the array under module `"moy"`; it is then the only file
@@ -185,7 +188,7 @@ here that includes WAMR's `wasm_export.h`, from an include path the host
 provides, and WAMR is not vendored in libmoy. `MOY_WASM_JS` builds it for a host
 whose JavaScript engine runs the cart as a module of its own: the host adapts
 each import onto the array's functions and supplies the two that copy to and
-from the cart's memory. The verbs, the marshalling and the traps are one body of
+from the cart's memory and the one that runs a `par` item. The verbs, the marshalling and the traps are one body of
 C either way, and `moy_wasm_check_bytes` checks a module's shape from its bytes
 for an engine that has no loader to ask. The binding needs the direct-colour
 build (`MOY_PIXEL_RGB565`), because a palette blit's 256 colours do not fit an
@@ -197,8 +200,10 @@ interpreter or compiled, from where, with what stack — stays the host's.
 Three hosts here run it: the harness below, the desktop player
 (`port/sdl2/wasm_cart.c`, WAMR's interpreter) and the web player
 (`port/wasm/cart.c` and `page/cart.js`, the cart a sibling module on the
-browser's engine). `conformance/wasm_run.py` holds all three to the same RGB565
-frames.
+browser's engine). The harness and the desktop player run `par` items on POSIX
+lanes (`port/moy_lanes.c`); the web player, whose page has one thread to give a
+cart, runs them in order. `conformance/wasm_run.py` holds all three to the same
+RGB565 frames.
 
 ```
 make wasm-check     # moy check refuses the refusal fixtures and passes hello
@@ -215,7 +220,8 @@ cross build (the release's Windows player is MinGW's). `make wasm-test` then
 runs the fixtures in `test/wasm/`. Those are WAT source, never binaries,
 assembled by `tools/wat.py` with nothing but Python: a conforming cart whose
 frame is held against moycore's own rendering of it, the carts a host must
-refuse, and modules that must trap or quit. Needs `git`, `cmake` and a C
+refuse, modules that must trap or quit, and `par`'s items in order and on two
+lanes, which must leave the same memory. Needs `git`, `cmake` and a C
 compiler. `make play PLAY_WASM=0` builds a player without WAMR, which refuses a
 compiled cart as SPEC.md 3.1 says.
 

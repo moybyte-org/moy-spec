@@ -29,9 +29,9 @@ LIBMOY = os.path.dirname(HERE)
 ROOT = os.path.dirname(LIBMOY)
 
 # The imports this binding has and the Lua binding does not: the framebuffer,
-# the cart's own files, the receiver a Lua layer method has for free, and the
-# sample stream.
-WASM_ONLY = {"blit", "blit565", "read", "target", "snd"}
+# the cart's own files, the receiver a Lua layer method has for free, the
+# sample stream, and the cart's own work across the cores.
+WASM_ONLY = {"blit", "blit565", "read", "target", "snd", "par"}
 
 # WAMR signature letter -> wasm value type. '*' and '~' are an i32 pointer and
 # the i32 length WAMR bounds-checks it by.

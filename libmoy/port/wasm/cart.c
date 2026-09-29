@@ -9,10 +9,10 @@
  * adapts each of its "moy" imports onto the table.
  *
  * What C cannot do is address the cart's memory, which is a different
- * WebAssembly.Memory from this module's. The two functions the binding asks
- * of its embedder for that are here, in JavaScript, and they hand the
- * binding copies: a range of the cart's memory copied in, or bytes copied
- * back out.
+ * WebAssembly.Memory from this module's, or call into the cart. The three
+ * functions the binding asks of its embedder for those are here, in
+ * JavaScript: two hand the binding copies -- a range of the cart's memory
+ * copied in, or bytes copied back out -- and one runs one of par's items.
  */
 
 #include <stdlib.h>
@@ -38,6 +38,12 @@ EM_JS(uint8_t *, moy_wasm_js_span, (moy_wasm *w, uint32_t offset, uint32_t n), {
 
 EM_JS(int, moy_wasm_js_store, (moy_wasm *w, uint32_t offset, const uint8_t *src, uint32_t n), {
     return Module.moyCart ? Module.moyCart.store(offset >>> 0, src, n >>> 0) : 0;
+});
+
+/* A par item, which the page runs on the cart itself: a page has one core to
+ * give a cart, so the binding runs the items here, one after another. */
+EM_JS(int, moy_wasm_js_item, (moy_wasm *w, int32_t i, int32_t arg, uint32_t sp), {
+    return Module.moyCart ? Module.moyCart.item(i, arg, sp >>> 0) : 1;
 });
 
 static moy_canvas canvas;
@@ -134,3 +140,4 @@ KEEP const NativeSymbol *moy_web_natives(uint32_t *count) { return moy_wasm_nati
 KEEP void moy_web_begin(moy_wasm *w, int hook) { moy_wasm_begin(w, hook); }
 KEEP int moy_web_end(moy_wasm *w, int threw) { return moy_wasm_end(w, threw); }
 KEEP const char *moy_web_trapped(const moy_wasm *w) { return moy_wasm_trapped(w); }
+KEEP void moy_web_item_trap(moy_wasm *w, const char *msg) { moy_wasm_item_trap(w, msg); }

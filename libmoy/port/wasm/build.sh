@@ -50,7 +50,8 @@ EXPORTS+=',"_moy_web_pmem","_moy_web_pmem_moved","_moy_web_pmem_clean"'
 # cart.c's reach to the import table and the hooks.
 EXPORTS+=',"_moy_web_runtime","_moy_web_binding","_moy_web_module"'
 EXPORTS+=',"_moy_web_wasm_tick","_moy_web_wasm_present","_moy_web_wasm_frame"'
-EXPORTS+=',"_moy_web_natives","_moy_web_begin","_moy_web_end","_moy_web_trapped"]'
+EXPORTS+=',"_moy_web_natives","_moy_web_begin","_moy_web_end","_moy_web_trapped"'
+EXPORTS+=',"_moy_web_item_trap"]'
 
 # Lua's own warnings are not ours to fix (-w), and it is built from source here
 # for the same reason the desktop port does: the VM is a build choice, and

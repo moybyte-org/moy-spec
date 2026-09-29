@@ -10,7 +10,9 @@
  *
  * The desktop runs the cart's own main.wasm on WAMR's interpreter: no
  * compiler, no per-architecture module, and fast enough for a desktop,
- * which is host policy and nothing a cart can observe.
+ * which is host policy and nothing a cart can observe. A cart's par items
+ * run on lanes over POSIX threads (port/moy_lanes.c), one for each core the
+ * machine has beside the one the cart runs on, up to the binding's limit.
  */
 
 #include <stdio.h>
@@ -19,6 +21,7 @@
 
 #include "moy.h"
 #include "moy_wasm.h"
+#include "../moy_lanes.h"
 #include "wasm_cart.h"
 
 #if WASM_CART_SND_RATE != MOY_WASM_SND_RATE || WASM_CART_SND_DEPTH != MOY_WASM_SND_DEPTH
@@ -40,6 +43,7 @@ struct wasm_cart {
     moy_map map;
     moy_console con;
     moy_wasm w;
+    moy_lanes *lanes;
     moy_pixel *screen;
 };
 
@@ -216,6 +220,9 @@ wasm_cart *wasm_cart_open(const wasm_cart_config *cfg, char *err, size_t errlen)
     c->w.read_user = c;
     c->w.snd = cfg->snd;
     c->w.snd_user = cfg->snd_user;
+    c->lanes = moy_lanes_open(moy_lanes_cores() - 1);
+    moy_lanes_bind(c->lanes, &c->w);
+    c->w.lane_stack = CART_STACK;
     if (moy_wasm_open(&c->w, &c->con, c->env) != 0) {
         snprintf(err, errlen, "this cart's module is refused: a hook is missing");
         wasm_cart_close(c);
@@ -244,6 +251,7 @@ void wasm_cart_close(wasm_cart *c)
 {
     if (!c) return;
     moy_wasm_close(&c->w);
+    moy_lanes_close(c->lanes);
     if (c->env) wasm_runtime_destroy_exec_env(c->env);
     if (c->inst) wasm_runtime_deinstantiate(c->inst);
     if (c->module) wasm_runtime_unload(c->module);

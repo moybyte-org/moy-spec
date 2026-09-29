@@ -1,0 +1,7 @@
+{
+  "format": "moy-1",
+  "title": "wasm scene: par, the frame's rows as eight items",
+  "runtime": "wasm",
+  "main": "main.wasm",
+  "memory": 4
+}
