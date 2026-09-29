@@ -10,23 +10,23 @@
       "sha256": "e2c04b5260080b75f53d90ce14cec2a64aaaf46068290c1a37115796ac1f6a8b"
     },
     "moy.mjs": {
-      "bytes": 16459,
-      "sha256": "eb3de2a355879fec11828b26012e81f038d5acfc0d82536878969105b24a9805"
+      "bytes": 16635,
+      "sha256": "0db42fe861943b18225523478f73f35d627e05bfce975f43a794c4e356de8744"
     },
     "moy.wasm": {
-      "bytes": 359406,
-      "sha256": "550ea42863d083cafe530b9171b3f0ee02f3da5ab42987c1e6896d64d8b734ff"
+      "bytes": 360976,
+      "sha256": "76cf2dc32bfd353c5541037be675f4355d4f25b0c49f909e44560d19b251eff4"
     },
     "player.js": {
-      "bytes": 28920,
-      "sha256": "2dd568ef2649a3ef8ec0ad322769386cb652c280fa3caffe027489e8b9734216"
+      "bytes": 29307,
+      "sha256": "22fa1f462f0d0cfe09275f0b2549503de00ae6f8e1fd31a88c39e3189175d416"
     }
   },
-  "inputs_sha256": "6f93e1c2b05697794d09caab786e085c44465621dc962026524eec18674fcefb",
+  "inputs_sha256": "1b8078b850cdea73be14243d51be4e7b928738bd54e1e27c5274103be198c6cc",
   "source": {
-    "branch": "main",
-    "commit": "4f9102fb82fae3dc4c2fb4b8c299fe50d9b773c2",
-    "dirty": true
+    "branch": "",
+    "commit": "",
+    "dirty": false
   },
   "toolchain": "emscripten 6.0.7"
 }
