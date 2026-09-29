@@ -19,6 +19,11 @@
  * from the binding is thrown as a JavaScript exception, which unwinds the
  * cart exactly as a wasm trap does.
  *
+ * A cart's par items run here, on the page's one thread, one after another:
+ * the cart's memory is not shared, so no worker could reach it. The binding
+ * calls item() below for each, which moves the cart's own stack pointer as
+ * every host does.
+ *
  * Used by player.js in the page and by conform.mjs under node.
  */
 
@@ -81,7 +86,34 @@ export async function startCart(M) {
 
   /* The binding's two reaches into the cart's memory (moy_wasm_js_span and
    * moy_wasm_js_store, cart.c). */
+  let instance;
+
   M.moyCart = {
+    /* One of par's items: _par(i, arg) with the cart's stack pointer at sp,
+     * then the stack pointer as it was. 0 when it returned; 1 when it threw,
+     * with the trap recorded unless the binding recorded its own. */
+    item(i, arg, sp) {
+      const ex = instance.exports;
+      const g = ex.__stack_pointer;
+      const saved = g.value;
+      g.value = sp;
+      try {
+        ex._par(i, arg);
+        return 0;
+      } catch (e) {
+        if (!M._moy_web_trapped(w)) {
+          const msg = String(e && e.message || e);
+          const n = M.lengthBytesUTF8(msg) + 1;
+          const p = M._malloc(n);
+          M.stringToUTF8(msg, p, n);
+          M._moy_web_item_trap(w, p);
+          M._free(p);
+        }
+        return 1;
+      } finally {
+        g.value = saved;
+      }
+    },
     span(off, n) {
       const mem = cartBytes();
       if (off + n > mem.length) return 0;
@@ -129,7 +161,6 @@ export async function startCart(M) {
     };
   }
 
-  let instance;
   try {
     ({ instance } = await WebAssembly.instantiate(module, { moy: imports }));
   } catch (e) {
