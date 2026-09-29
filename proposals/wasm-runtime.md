@@ -513,8 +513,11 @@ imports `par` without both exports is refused before it runs.
 
 **What an item may do** is compute over the cart's memory. It calls no import:
 one that does traps, `par` included, so items do not nest. It writes no memory
-another item reads or writes, and no global but its stack pointer. Within those
-rules the result depends neither on the order nor on how many cores ran it,
+another item reads or writes, and it uses no mutable global but its stack
+pointer: an item on another core runs in an instance of its own, whose
+globals are as the module declares them, so what the cart has to hand an item
+it hands over in memory. Within those rules the result depends neither on the
+order nor on how many cores ran it,
 which keeps a compiled cart's frames identical on every host (Determinism); an
 item that breaks them makes the result host-dependent, as a NaN payload is.
 Everything the cart wrote before calling `par` is visible to every item, and

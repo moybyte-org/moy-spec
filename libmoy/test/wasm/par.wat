@@ -3,8 +3,9 @@
 ;; eight 4 KiB stacks from 65536, and writes the stack pointer it has once par
 ;; returns into pmem[3]. Item i records the stack pointer it was given at
 ;; 256 + 4i, fills 8 KiB from 131072 + 8192i with (31i + j) mod 256 -- pmem[2]
-;; times over, so the items last long enough to overlap -- and writes that
-;; fill's byte sum plus one at 128 + 4i.
+;; times over, a count _update leaves at 64 because an item reads no global
+;; but its stack pointer, so the items last long enough to overlap -- and
+;; writes that fill's byte sum plus one at 128 + 4i.
 ;;
 ;;   mode 0  every item works
 ;;   mode 1  item 1 reads past the memory and item 3 reaches unreachable
@@ -17,8 +18,6 @@
 
   (memory (export "memory") 4 4)
   (global $sp (export "__stack_pointer") (mut i32) (i32.const 1024))
-
-  (global $rounds (mut i32) (i32.const 1))
 
   (func (export "_par") (param $i i32) (param $mode i32)
         (local $j i32) (local $base i32) (local $v i32) (local $sum i32) (local $r i32)
@@ -35,7 +34,7 @@
     (local.set $base (i32.add (i32.const 131072) (i32.shl (local.get $i) (i32.const 13))))
     (block $rounds_done
       (loop $round
-        (br_if $rounds_done (i32.ge_u (local.get $r) (global.get $rounds)))
+        (br_if $rounds_done (i32.ge_u (local.get $r) (i32.load (i32.const 64))))
         (local.set $j (i32.const 0))
         (local.set $sum (i32.const 0))
         (block $done
@@ -59,7 +58,7 @@
     (local.set $n (call $pmem (i32.const 0) (i32.const 0) (i32.const 0)))
     (local.set $mode (call $pmem (i32.const 1) (i32.const 0) (i32.const 0)))
     (local.set $stacks (i32.const 65536))
-    (global.set $rounds (call $pmem (i32.const 2) (i32.const 0) (i32.const 0)))
+    (i32.store (i32.const 64) (call $pmem (i32.const 2) (i32.const 0) (i32.const 0)))
     (if (i32.eq (local.get $mode) (i32.const 3)) (then (local.set $n (i32.const -1))))
     (if (i32.eq (local.get $mode) (i32.const 4)) (then (local.set $stacks (i32.const 65544))))
     (if (i32.eq (local.get $mode) (i32.const 5)) (then (local.set $stacks (i32.const 245760))))
