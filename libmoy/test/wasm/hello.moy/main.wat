@@ -5,8 +5,9 @@
 ;; test/wasm_frame.py renders independently through moycore.
 ;;
 ;; Memory: page 0 holds strings at 1024, the out buffer at 4096, the read
-;; buffer at 4200, the cfg buffer at 4300 and the palette at 8192; the frame
-;; is page 1 onward (76,800 bytes from 65536). Three pages, min = max.
+;; buffer at 4200, the cfg buffer at 4300, the samples at 4400 and the palette
+;; at 8192; the frame is page 1 onward (76,800 bytes from 65536). Three pages,
+;; min = max.
 (module
   (import "moy" "cls" (func $cls (param i32)))
   (import "moy" "pix" (func $pix (param i32 i32 i32) (result i32)))
@@ -26,6 +27,7 @@
   (import "moy" "flr" (func $flr (param f32) (result i32)))
   (import "moy" "read" (func $read (param i32 i32 i32 i32 i32) (result i32)))
   (import "moy" "blit" (func $blit (param i32 i32)))
+  (import "moy" "snd" (func $snd (param i32 i32) (result i32)))
 
   (memory (export "memory") 3 3)
 
@@ -92,6 +94,12 @@
 
     (call $report (i32.const 16) (call $flr (f32.const -1.5)))
     (call $report (i32.const 17) (call $time))
+
+    ;; the sample stream, on a host with no audio and a clock that stands:
+    ;; the room, a hundred frames queued, and the room left
+    (call $report (i32.const 19) (call $snd (i32.const 0) (i32.const 0)))
+    (call $report (i32.const 20) (call $snd (i32.const 4400) (i32.const 100)))
+    (call $report (i32.const 21) (call $snd (i32.const 0) (i32.const 0)))
 
     ;; the frame's palette: entry i is (i, 255 - i, 2i mod 256)
     (local.set $i (i32.const 0))

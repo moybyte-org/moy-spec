@@ -15,6 +15,12 @@
 
 typedef struct wasm_cart wasm_cart;
 
+/* The cart's sample stream: its rate and the most the player holds, which are
+ * moy_wasm.h's MOY_WASM_SND_RATE and MOY_WASM_SND_DEPTH (wasm_cart.c checks
+ * that they agree). */
+#define WASM_CART_SND_RATE  22050
+#define WASM_CART_SND_DEPTH 2048
+
 typedef struct {
     const char *dir;            /* the cart folder: `read`'s only root */
     const char *main;           /* the module, a name in it */
@@ -32,6 +38,10 @@ typedef struct {
     const void *host;
     uint32_t seed;              /* rnd()'s */
     uint64_t limit;             /* the most a cart may take to load, in bytes */
+    /* The cart's `snd`, when the player has audio: moy_wasm's snd callback.
+     * NULL is a player with none. */
+    uint32_t (*snd)(void *user, const uint8_t *pcm, uint32_t n);
+    void *snd_user;
 } wasm_cart_config;
 
 /* Check the cart and load it: its footprint against cfg->limit, then its

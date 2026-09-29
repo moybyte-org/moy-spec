@@ -64,6 +64,14 @@ which unwinds it exactly as a wasm trap does. The page calls the hooks between
 `moy_web_wasm_tick` and `moy_web_wasm_present`, and presents only a frame whose
 `_draw` finished.
 
+The cart's `snd` queues its samples in a `moy_stream` in `main.c`, and the
+page's audio pull adds them after the synth, so they reach the AudioWorklet
+the same way. While the page has no running AudioContext it drains the queue
+by the frame's time instead (`moy_web_audio_skip`), so a cart pacing itself on
+its stream does not stall waiting for a tap. `window.moy.state.snd` is the
+queue's counters: frames queued, frames played, and output frames that found
+none.
+
 ## Checking it
 
 ```

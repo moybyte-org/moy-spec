@@ -44,6 +44,7 @@ EXPORTS+=',"_moy_web_pixels","_moy_web_indices"'
 EXPORTS+=',"_moy_web_width","_moy_web_height","_moy_web_fps"'
 EXPORTS+=',"_moy_web_title","_moy_web_error","_moy_web_running","_moy_web_textmode"'
 EXPORTS+=',"_moy_web_audio","_moy_web_audio_rate","_moy_web_audio_wanted"'
+EXPORTS+=',"_moy_web_audio_skip","_moy_web_snd_counts"'
 EXPORTS+=',"_moy_web_pmem","_moy_web_pmem_moved","_moy_web_pmem_clean"'
 # ...and page/cart.js's, for a compiled cart: main.c's frame brackets, and
 # cart.c's reach to the import table and the hooks.

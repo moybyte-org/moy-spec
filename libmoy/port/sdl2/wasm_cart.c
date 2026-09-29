@@ -21,6 +21,10 @@
 #include "moy_wasm.h"
 #include "wasm_cart.h"
 
+#if WASM_CART_SND_RATE != MOY_WASM_SND_RATE || WASM_CART_SND_DEPTH != MOY_WASM_SND_DEPTH
+#error "wasm_cart.h's stream is not moy_wasm.h's"
+#endif
+
 /* The interpreter's operand and call stack, per cart. */
 #define CART_STACK (256 * 1024)
 #define CART_PATH 1024
@@ -210,6 +214,8 @@ wasm_cart *wasm_cart_open(const wasm_cart_config *cfg, char *err, size_t errlen)
     snprintf(c->dir, sizeof c->dir, "%s", cfg->dir);
     c->w.read = cart_read;
     c->w.read_user = c;
+    c->w.snd = cfg->snd;
+    c->w.snd_user = cfg->snd_user;
     if (moy_wasm_open(&c->w, &c->con, c->env) != 0) {
         snprintf(err, errlen, "this cart's module is refused: a hook is missing");
         wasm_cart_close(c);

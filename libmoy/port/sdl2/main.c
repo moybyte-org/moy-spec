@@ -39,6 +39,10 @@
  * with MOY_PLAY_WASM; without it such a cart is refused cleanly (SPEC.md
  * 3.1). --memory-limit MIB caps what a compiled cart may take to load.
  *
+ * A compiled cart's sample stream (`snd`) is mixed into the same output as the
+ * synth, after it; when the cart made one, the player says on exit how many
+ * frames the cart queued and the output played, over how long.
+ *
  * --dump is the conformance player (SPEC.md 11, conformance/wasm_run.py): no
  * window, no audio, the clock stopped and rnd() seeded 0, and after the ticks
  * the last frame the cart finished is written to <out> -- palette indices for
@@ -181,10 +185,55 @@ static moy_bank  bank;
 static moy_audio audio;
 static SDL_AudioDeviceID adev;
 
+#ifdef MOY_PLAY_WASM
+/* A compiled cart's `snd`: its frames queue here and the callback adds them
+ * after the synth, at the stream's own rate whatever the device's. */
+static moy_stream pcm;
+static int16_t pcm_ring[WASM_CART_SND_DEPTH];
+static uint32_t pcm_t0;                        /* when the first frame queued */
+
+static uint32_t h_snd(void *u, const uint8_t *frames, uint32_t n)
+{
+    uint32_t r;
+    (void)u;
+    SDL_LockAudioDevice(adev);
+    r = n ? moy_stream_write(&pcm, frames, n) : moy_stream_room(&pcm);
+    if (n && r && !pcm_t0) pcm_t0 = SDL_GetTicks() | 1u;
+    SDL_UnlockAudioDevice(adev);
+    return r;
+}
+
+static void pcm_reset(void)
+{
+    if (adev) SDL_LockAudioDevice(adev);
+    moy_stream_init(&pcm, pcm_ring, WASM_CART_SND_DEPTH, WASM_CART_SND_RATE);
+    pcm_t0 = 0;
+    if (adev) SDL_UnlockAudioDevice(adev);
+}
+
+/* What the stream did, measured from both ends: the frames the cart queued,
+ * the frames the output played and how often it found none. */
+static void pcm_report(void)
+{
+    uint32_t ms;
+    if (!pcm.in) return;
+    SDL_LockAudioDevice(adev);
+    ms = SDL_GetTicks() - pcm_t0;
+    fprintf(stderr, "moy-play: snd: %u frames queued, %u played, %u starved, "
+                    "over %.1f s: %.0f played a second\n",
+            (unsigned)pcm.in, (unsigned)pcm.out, (unsigned)pcm.starved,
+            (double)ms / 1000.0, ms ? (double)pcm.out * 1000.0 / (double)ms : 0.0);
+    SDL_UnlockAudioDevice(adev);
+}
+#endif
+
 static void audio_cb(void *ud, Uint8 *stream, int len)
 {
     (void)ud;
     moy_audio_render(&audio, (int16_t *)(void *)stream, len / 2);
+#ifdef MOY_PLAY_WASM
+    moy_stream_mix(&pcm, (int16_t *)(void *)stream, len / 2, audio.rate, audio.master);
+#endif
 }
 
 static void h_sfx(void *u, int n, int chan)
@@ -507,6 +556,10 @@ static int cart_boot(const char *cart, const char *mainfile,
         cfg.host = &con->host;
         cfg.seed = seed;
         cfg.limit = limit;
+        if (adev) {
+            cfg.snd = h_snd;
+            pcm_reset();
+        }
         next = wasm_cart_open(&cfg, err, n);
         if (!next) return 1;
         if (wc) wasm_cart_close(wc);
@@ -1062,6 +1115,7 @@ int main(int argc, char **argv)
 
 #ifdef MOY_PLAY_WASM
     if (wc) wasm_cart_close(wc);
+    if (adev) pcm_report();
 #endif
     if (vm) lua_close(vm);
     if (adev) SDL_CloseAudioDevice(adev);

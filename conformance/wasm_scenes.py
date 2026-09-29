@@ -182,6 +182,37 @@ def trap():
     return [MOY565[v] for v in c.buf]
 
 
+SND_RATE, SND_DEPTH = 22050, 2048       # proposals/wasm-runtime.md, "PCM audio"
+
+
+def snd():
+    """The queue from the rule, with the clock stopped: nothing drains."""
+    queued = [0]
+
+    def ask(n):
+        room = SND_DEPTH - queued[0]
+        if n == 0:
+            return room
+        got = min(n, room)
+        queued[0] += got
+        return got
+
+    answers = [ask(0), ask(300), ask(0), ask(2000), ask(0), ask(1), ask(0), ask(0)]
+    c = moycore.Canvas(W, H)
+    c.cls(1)
+    for k, v in enumerate(answers):
+        h = (v & 63) + 1
+        c.rect(4 + k * 21, 236 - h, 18, h, 8 + (v >> 6))
+    return [MOY565[v] for v in c.buf]
+
+
+def snd_trap():
+    c = moycore.Canvas(W, H)
+    c.cls(12)
+    c.circ(160, 120, 40, 7)
+    return [MOY565[v] for v in c.buf]
+
+
 # -- verbs: every ordinary verb through the binding, as data -----------------
 
 def _tile_pixels():
@@ -518,15 +549,17 @@ SCENES = [
     ("blit565", blit565),
     ("read", read),
     ("target", target),
+    ("snd", snd),
     ("verbs", verbs),
     ("primitives", primitives),
 ] + [(_name, (lambda n=_name: trace_golden(n))) for _name in LAYER_SCENES] + [
     ("trap", trap),
+    ("snd_trap", snd_trap),
 ]
 
 # A scene whose last tick traps: the host exits non-zero and what it writes is
 # the last whole frame, which is the golden.
-TRAPS = ("trap",)
+TRAPS = ("trap", "snd_trap")
 
 # Carts every host must refuse before anything of them runs: exit non-zero,
 # no frame. The shape fixtures are libmoy's (libmoy/test/wasm/), the ones

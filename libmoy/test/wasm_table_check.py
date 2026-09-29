@@ -9,7 +9,7 @@ claim is prose:
 
   * its names are exactly the globals libmoy's Lua binding installs (parsed
     from src/moy_lua.c: the VERBS table and open_host_verbs, as the reference
-    console's own deny-list test does) plus the binding's own four;
+    console's own deny-list test does) plus the binding's own five;
   * src/moy_wasm.c's NativeSymbol array names the same rows, in the same
     order, at the same WAMR signature strings;
   * each row's WAMR string says what its wasm type says, and each row's SPEC
@@ -29,8 +29,9 @@ LIBMOY = os.path.dirname(HERE)
 ROOT = os.path.dirname(LIBMOY)
 
 # The imports this binding has and the Lua binding does not: the framebuffer,
-# the cart's own files, and the receiver a Lua layer method has for free.
-WASM_ONLY = {"blit", "blit565", "read", "target"}
+# the cart's own files, the receiver a Lua layer method has for free, and the
+# sample stream.
+WASM_ONLY = {"blit", "blit565", "read", "target", "snd"}
 
 # WAMR signature letter -> wasm value type. '*' and '~' are an i32 pointer and
 # the i32 length WAMR bounds-checks it by.
@@ -154,6 +155,16 @@ def main():
         fail("btn's indices %s are not moy_lua.c's buttons %s" % (order, lua_btns))
     else:
         print("  ok   btn's indices are the Lua binding's button names, in order")
+
+    header = read(LIBMOY, "include", "moy_wasm.h")
+    snd = next(r for r in rows if r["name"] == "snd")["notes"]
+    proposal = read(ROOT, "proposals", "wasm-runtime.md")
+    for const, unit in (("MOY_WASM_SND_RATE", " Hz"), ("MOY_WASM_SND_DEPTH", " frames")):
+        value = re.search(r"#define %s\s+(\d+)" % const, header).group(1)
+        if value + unit not in snd or "{:,}".format(int(value)) + unit not in proposal:
+            fail("snd: moy_wasm.h's %s is %s; the table's note and the proposal "
+                 "must say %s%s" % (const, value, value, unit))
+    print("  ok   snd's rate and depth are moy_wasm.h's in the table and the proposal")
 
     if FAILS:
         sys.exit("wasm table: %d failure%s" % (len(FAILS), "" if len(FAILS) == 1 else "s"))

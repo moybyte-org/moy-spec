@@ -27,6 +27,10 @@
 
 #define KEEP EMSCRIPTEN_KEEPALIVE
 
+#if WEB_CART_SND_RATE != MOY_WASM_SND_RATE || WEB_CART_SND_DEPTH != MOY_WASM_SND_DEPTH
+#error "cart.h's stream is not moy_wasm.h's"
+#endif
+
 /* page/cart.js sets Module.moyCart while a cart is bound. */
 EM_JS(uint8_t *, moy_wasm_js_span, (moy_wasm *w, uint32_t offset, uint32_t n), {
     return Module.moyCart ? Module.moyCart.span(offset >>> 0, n >>> 0) : 0;
@@ -105,6 +109,7 @@ void *web_cart_open(const web_cart_config *cfg, char *err, size_t errlen)
 
     memset(&binding, 0, sizeof binding);
     binding.read = cfg->read;
+    binding.snd = cfg->snd;
     moy_wasm_bind(&binding, &con);
     return &binding;
 }

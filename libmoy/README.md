@@ -147,7 +147,9 @@ Sound is not among them. SPEC.md 8.3 makes silence a valid rendering, so audio i
 a fifth duty you may skip entirely. If you want it, it is libmoy's too — `moy_audio.h`
 synthesizes SPEC.md 8 into a buffer and asks the platform for nothing but a
 sample rate and somewhere to push samples. The SDL2 port wires it in ~50 lines;
-an ESP32 host renders into an I2S DMA buffer and nothing else changes.
+an ESP32 host renders into an I2S DMA buffer and nothing else changes. Its
+`moy_stream` is a queue of samples from elsewhere — a compiled cart's `snd` —
+added into that buffer after the synth.
 Everything else is libmoy's.
 
 `port/esp-idf/` is the same shim as an IDF component. Its README is explicit

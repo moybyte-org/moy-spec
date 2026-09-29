@@ -211,12 +211,16 @@ function audioQueuedSecs() {
   return Math.max(0, audioNext - actx.currentTime);
 }
 
-function audioPump() {
+/* `dt`: the seconds this frame stood for. */
+function audioPump(dt) {
   /* Only once the CART has asked for a sound. A browser suspends a fresh
    * AudioContext until a gesture, and saying so is right for a game with music
    * -- but telling someone to tap for audio a silent cart never wanted is
    * noise, and it would be on screen for the whole session. */
   if (!M._moy_web_audio_wanted()) return;
+  /* With nowhere to play, a compiled cart's stream still drains at the rate:
+   * a cart pacing itself on it must not stall until someone taps. */
+  if (!actx || actx.state !== "running") M._moy_web_audio_skip(Math.round(dt * audioRate));
   if (!actx) return;
   if (actx.state !== "running") {
     if (!audioBlocked) { audioBlocked = true; say("tap to enable sound"); }
@@ -524,7 +528,7 @@ function tick(now) {
   const ptr = M._moy_web_pixels();
   img.data.set(new Uint8ClampedArray(M.HEAPU8.buffer, ptr, W * H * 4));
   ctx.putImageData(img, 0, 0);
-  audioPump();
+  audioPump(use);
   pmemSave();
 }
 
@@ -687,6 +691,7 @@ window.moy = {
       wants: M ? !!M._moy_web_audio_wanted() : false,
       queued: awNode ? awDepth / audioRate : 0,
       peak: audioPeak, pushed: audioPushed,
+      snd: M ? Array.from(new Uint32Array(M.HEAPU8.buffer, M._moy_web_snd_counts(), 3)) : null,
       dest: actx ? actx.destination.channelCount : 0,
       base: actx ? actx.baseLatency : -1,
       status: statusEl.textContent,

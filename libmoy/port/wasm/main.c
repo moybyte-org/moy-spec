@@ -346,7 +346,10 @@ static const char *h_cfg(void *u, const char *key)
  *
  * No lock and no callback thread: the page pulls samples from the same thread
  * that runs the frame, between frames, so the synth is never re-entered
- * mid-verb. That is the browser being easier than SDL, not a shortcut. */
+ * mid-verb. That is the browser being easier than SDL, not a shortcut.
+ *
+ * A compiled cart's `snd` queues its frames in `pcm`, and each pull adds them
+ * after the synth at the stream's own rate. */
 
 static int16_t pcm16[AUDIO_MAX];
 static float   pcmf[AUDIO_MAX];
@@ -355,6 +358,19 @@ static int     audio_on = 0;
  * AudioContext without a gesture, and the page says so in its status line --
  * but a silent cart must not be nagged to tap for audio it never wanted. */
 static int     audio_used = 0;
+static moy_stream pcm;
+static int16_t    pcm_ring[WEB_CART_SND_DEPTH];
+static uint32_t   pcm_counts[3];
+
+static uint32_t h_snd(void *u, const uint8_t *frames, uint32_t n)
+{
+    uint32_t r;
+    (void)u;
+    if (!n) return moy_stream_room(&pcm);
+    r = moy_stream_write(&pcm, frames, n);
+    if (r) audio_used = 1;
+    return r;
+}
 
 static void h_sfx(void *u, int n, int chan) { (void)u; audio_used = 1; moy_audio_sfx(&audio, n, chan); }
 static void h_beep(void *u, float f, float d) { (void)u; audio_used = 1; moy_audio_beep(&audio, f, d); }
@@ -374,8 +390,30 @@ KEEP float *moy_web_audio(int n)
     if (!audio_on || n <= 0) return NULL;
     if (n > AUDIO_MAX) n = AUDIO_MAX;
     moy_audio_render(&audio, pcm16, n);
+    moy_stream_mix(&pcm, pcm16, n, AUDIO_RATE, audio.master);
     for (i = 0; i < n; i++) pcmf[i] = (float)pcm16[i] / 32768.0f;
     return pcmf;
+}
+
+/* n frames of output time with nowhere to play them -- an AudioContext the
+ * browser has not let start: the cart's stream drains as it would have, so
+ * the cart meets the backpressure a silent console gives it. */
+KEEP void moy_web_audio_skip(int n)
+{
+    if (n <= 0) return;
+    if (n > AUDIO_MAX) n = AUDIO_MAX;
+    memset(pcm16, 0, (size_t)n * sizeof pcm16[0]);
+    moy_stream_mix(&pcm, pcm16, n, AUDIO_RATE, 0);
+}
+
+/* The stream's counters: frames queued, frames played, output frames that
+ * found none. */
+KEEP const uint32_t *moy_web_snd_counts(void)
+{
+    pcm_counts[0] = pcm.in;
+    pcm_counts[1] = pcm.out;
+    pcm_counts[2] = pcm.starved;
+    return pcm_counts;
 }
 
 KEEP int moy_web_audio_rate(void) { return AUDIO_RATE; }
@@ -397,6 +435,7 @@ KEEP void moy_web_reset(void)
     memset(key_edge, 0, sizeof key_edge);
     key_last = 0;
     audio_used = 0;
+    moy_stream_init(&pcm, pcm_ring, WEB_CART_SND_DEPTH, WEB_CART_SND_RATE);
     touch_x = touch_y = touch_down = touch_prev = 0;
     text_mode = 0;
     now_ms = 0;
@@ -569,6 +608,8 @@ KEEP int moy_web_boot(uint32_t seed)
         cfg.flags = flag_bytes;
         cfg.host = &con.host;
         cfg.read = h_read;
+        cfg.snd = h_snd;
+        moy_stream_init(&pcm, pcm_ring, WEB_CART_SND_DEPTH, WEB_CART_SND_RATE);
         cfg.seed = seed;
         cfg.limit = WASM_LIMIT;
         binding = web_cart_open(&cfg, errmsg, sizeof errmsg);

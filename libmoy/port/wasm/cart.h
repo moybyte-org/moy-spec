@@ -19,6 +19,12 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/* The cart's sample stream: its rate and the most the player holds, which are
+ * moy_wasm.h's MOY_WASM_SND_RATE and MOY_WASM_SND_DEPTH (cart.c checks that
+ * they agree). */
+#define WEB_CART_SND_RATE  22050
+#define WEB_CART_SND_DEPTH 2048
+
 typedef struct {
     const uint8_t *module;      /* main.wasm, all of it */
     size_t size;
@@ -37,6 +43,8 @@ typedef struct {
     /* The cart's own files, for `read`: moy_wasm's read callback. */
     uint32_t (*read)(void *user, const char *name, uint32_t offset,
                      uint8_t *dst, uint32_t len);
+    /* The cart's `snd`: moy_wasm's snd callback. */
+    uint32_t (*snd)(void *user, const uint8_t *pcm, uint32_t n);
     uint32_t seed;              /* rnd()'s */
     uint64_t limit;             /* the most a cart may take to load, in bytes */
 } web_cart_config;

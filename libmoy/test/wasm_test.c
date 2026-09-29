@@ -21,7 +21,11 @@
  *     frame, whose screen must come out the same, and handoff.wat's sequence
  *     through a host that takes none and one that takes every frame, which
  *     must leave the same screen at every step while the binding writes the
- *     taken frames only when a verb, a settle or the next hook needs them.
+ *     taken frames only when a verb, a settle or the next hook needs them;
+ *   - the sample stream: snd.wat on a host with no audio, whose queue drains
+ *     by the clock at the rate, and on a host that plays it through a
+ *     moy_stream, over ten simulated minutes each, counting what the cart
+ *     queued against what drained; and a range outside the memory traps.
  *
  * Exits non-zero on the first failure.
  *
@@ -39,6 +43,7 @@
 #include <string.h>
 
 #include "moy.h"
+#include "moy_audio.h"
 #include "moy_wasm.h"
 
 static char dir[512];
@@ -277,6 +282,9 @@ static uint32_t hello(const char *frame_out)
         {16, -2, "flr(-1.5)"},
         {17, 1234, "time()"},
         {18, 33, "_update's dt, in ms"},
+        {19, MOY_WASM_SND_DEPTH, "snd(0, 0): the room, on a host with no audio"},
+        {20, 100, "snd: a hundred frames queued"},
+        {21, MOY_WASM_SND_DEPTH - 100, "snd(0, 0): the room left, the clock standing"},
     };
 
     snprintf(cart, sizeof cart, "%s/hello.moy", dir);
@@ -553,6 +561,177 @@ static void handoffs(void)
         printf("  ok   taken frames reach the screen exactly when they must, both wire orders\n");
 }
 
+/* -- the sample stream ------------------------------------------------------ */
+
+static uint32_t clock_ms;
+
+static uint32_t h_clock_ms(void *u) { (void)u; return clock_ms; }
+
+static moy_stream played;
+static int16_t played_ring[MOY_WASM_SND_DEPTH];
+
+/* A host with audio: the cart's frames go into a moy_stream, which the
+ * harness drains the way an output would. */
+static uint32_t h_snd(void *u, const uint8_t *pcm, uint32_t n)
+{
+    (void)u;
+    return n ? moy_stream_write(&played, pcm, n) : moy_stream_room(&played);
+}
+
+/* One _update of snd.wat: offer `n` frames from `ptr` (0: the ramp). Its
+ * answer, or -1 when the call trapped. */
+static int32_t offer(moy_wasm *w, uint32_t n, int32_t ptr, char *err, size_t errlen)
+{
+    pmem[0] = (int32_t)n;
+    pmem[1] = -7;
+    pmem[2] = ptr;
+    if (moy_wasm_update(w, 1.0f / 30.0f, err, errlen)) return -1;
+    return pmem[1];
+}
+
+static int open_snd(loaded *l, moy_wasm *w, int audio, char *err, size_t errlen)
+{
+    char path[1024];
+    snprintf(path, sizeof path, "%s/snd.wasm", dir);
+    memset(w, 0, sizeof *w);
+    fresh_console();
+    con.host.time_ms = h_clock_ms;
+    clock_ms = 0;
+    if (load(path, l, err, errlen) || instantiate(l, err, errlen)) return -1;
+    if (audio) {
+        moy_stream_init(&played, played_ring, MOY_WASM_SND_DEPTH, MOY_WASM_SND_RATE);
+        w->snd = h_snd;
+    }
+    if (moy_wasm_open(w, &con, l->env) || moy_wasm_init(w, err, errlen)) return -1;
+    return 0;
+}
+
+/* Ten minutes of a cart that fills the room every frame, at a frame time that
+ * wanders between 17 and 67 ms. On the silent host the queue drains by the
+ * clock; on the playing one an output takes 256 frames whenever 256 frames of
+ * clock have passed. Either way what the cart queued must be what drained plus
+ * what is still queued, and what drained must be the rate times the time. */
+static void stream_run(int audio)
+{
+    const char *who = audio ? "snd (played)" : "snd (no audio)";
+    char err[256];
+    loaded l;
+    moy_wasm w;
+    uint64_t queued = 0, drained = 0;
+    uint32_t t, seed = 1;
+    int16_t out[256];
+    if (open_snd(&l, &w, audio, err, sizeof err)) {
+        CHECK(0, "%s: open: %s", who, err);
+        unload(&l);
+        return;
+    }
+    for (t = 0; t <= 600000u;) {
+        int32_t room = offer(&w, 0, 0, err, sizeof err), got;
+        if (room < 0 || room > MOY_WASM_SND_DEPTH) {
+            CHECK(0, "%s: at %u ms the room is %d (%s)", who, (unsigned)t, (int)room, err);
+            break;
+        }
+        got = room ? offer(&w, (uint32_t)room, 0, err, sizeof err) : 0;
+        if (got != room) {
+            CHECK(0, "%s: at %u ms %d of %d frames were taken", who, (unsigned)t,
+                  (int)got, (int)room);
+            break;
+        }
+        queued += (uint32_t)got;
+        seed = seed * 1103515245u + 12345u;
+        t += 17u + (seed >> 16) % 51u;
+        clock_ms = t;
+        if (audio) {
+            uint64_t due = (uint64_t)t * MOY_WASM_SND_RATE / 1000u;
+            while (drained + 256u <= due) {
+                memset(out, 0, sizeof out);
+                moy_stream_mix(&played, out, 256, MOY_WASM_SND_RATE, 7);
+                drained += 256u;
+            }
+        }
+    }
+    if (audio) {
+        CHECK(played.in == queued, "%s: the stream took %u frames, the cart counted %llu",
+              who, (unsigned)played.in, (unsigned long long)queued);
+        CHECK(played.in == played.out + played.count,
+              "%s: %u in, %u out, %u queued", who, (unsigned)played.in,
+              (unsigned)played.out, (unsigned)played.count);
+        CHECK(played.out == drained && played.starved == 0,
+              "%s: the output took %u of %llu frames, %u starved", who,
+              (unsigned)played.out, (unsigned long long)drained, (unsigned)played.starved);
+    } else {
+        /* The last offer filled the queue at the last clock reading before
+         * the loop's end, so what drained is that reading's worth. */
+        uint64_t due = (uint64_t)w.snd_ms * MOY_WASM_SND_RATE / 1000u;
+        CHECK(queued == due + w.snd_level && w.snd_level == MOY_WASM_SND_DEPTH,
+              "%s: queued %llu, want %llu drained and %u queued (%u)", who,
+              (unsigned long long)queued, (unsigned long long)due,
+              MOY_WASM_SND_DEPTH, (unsigned)w.snd_level);
+    }
+    printf("  ok   %s: %llu frames queued over %u s, %llu a second\n", who,
+           (unsigned long long)queued, (unsigned)(t / 1000u),
+           (unsigned long long)(queued * 1000u / t));
+    moy_wasm_close(&w);
+    unload(&l);
+}
+
+static void stream(void)
+{
+    char err[256];
+    loaded l;
+    moy_wasm w;
+    int f0 = failures;
+    int16_t out[64];
+    int i, same;
+
+    /* The silent host's clock, a step at a time. */
+    if (open_snd(&l, &w, 0, err, sizeof err)) {
+        CHECK(0, "snd: open: %s", err);
+        unload(&l);
+        return;
+    }
+    CHECK(offer(&w, 0, 0, err, sizeof err) == MOY_WASM_SND_DEPTH, "snd: an empty queue's room");
+    CHECK(offer(&w, 3000, 0, err, sizeof err) == MOY_WASM_SND_DEPTH, "snd: a full queue takes the depth");
+    CHECK(offer(&w, 1, 0, err, sizeof err) == 0, "snd: a full queue takes nothing");
+    clock_ms = 50;
+    CHECK(offer(&w, 0, 0, err, sizeof err) == 1102, "snd: 50 ms drain 1102 frames");
+    clock_ms = 51;
+    CHECK(offer(&w, 0, 0, err, sizeof err) == 1124, "snd: the fraction carries into the next ms");
+    clock_ms = 5000;
+    CHECK(offer(&w, 0, 0, err, sizeof err) == MOY_WASM_SND_DEPTH, "snd: a long wait empties the queue");
+    CHECK(offer(&w, 0, 70000, err, sizeof err) == MOY_WASM_SND_DEPTH, "snd: a query reads no pointer");
+    CHECK(offer(&w, 8, 65530, err, sizeof err) == -1 && strstr(err, "out of bounds"),
+          "snd: frames past the memory trap (%s)", err);
+    moy_wasm_close(&w);
+    unload(&l);
+    if (open_snd(&l, &w, 0, err, sizeof err) == 0)
+        CHECK(offer(&w, 0xFFFFFFFFu, 0, err, sizeof err) == -1,
+              "snd: a negative count traps");
+    moy_wasm_close(&w);
+    unload(&l);
+
+    /* The playing host: the frames arrive as the cart wrote them. */
+    if (open_snd(&l, &w, 1, err, sizeof err)) {
+        CHECK(0, "snd (played): open: %s", err);
+        unload(&l);
+        return;
+    }
+    CHECK(offer(&w, 0, 0, err, sizeof err) == MOY_WASM_SND_DEPTH, "snd (played): the room");
+    CHECK(offer(&w, 64, 0, err, sizeof err) == 64, "snd (played): 64 frames");
+    CHECK(offer(&w, 0, 0, err, sizeof err) == MOY_WASM_SND_DEPTH - 64, "snd (played): the room left");
+    memset(out, 0, sizeof out);
+    moy_stream_mix(&played, out, 64, MOY_WASM_SND_RATE, 7);
+    for (i = 0, same = 1; i < 64; i++) same &= out[i] == i * 8;
+    CHECK(same, "snd (played): the output does not hold the cart's frames");
+    moy_wasm_close(&w);
+    unload(&l);
+
+    stream_run(0);
+    stream_run(1);
+    if (failures == f0)
+        printf("  ok   snd answers the room, queues to the depth, drains at the rate, traps outside memory\n");
+}
+
 /* -- play: the conformance player ------------------------------------------ */
 
 #define PLAY_STACK (256 * 1024)
@@ -744,6 +923,8 @@ int main(int argc, char **argv)
           "hello: a host taking its frame drew another screen");
     take_frames = 0;
     handoffs();
+    printf("wasm test: the sample stream\n");
+    stream();
 
     wasm_runtime_destroy();
     if (failures) {

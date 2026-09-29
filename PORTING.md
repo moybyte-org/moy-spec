@@ -345,6 +345,14 @@ the whole of the job:
   the same C (`libmoy/port/wasm/cart.c`, `libmoy/port/wasm/page/cart.js`), and a
   pointer into the cart's memory crosses as a copy.
 
+A compiled cart's sound is `snd`, a stream of samples. A host with audio hands
+the binding a queue — libmoy's `moy_stream` is one — and adds it into its
+output after the synth, under the same volume; the desktop player does it in
+its SDL callback, the web player in the pull its page makes each frame. A host
+without audio leaves the binding's `snd` callback NULL, and the binding drains
+the queue by the host's clock and drops the samples, so the cart sees the same
+backpressure either way.
+
 `conformance/wasm_run.py` holds a host to the compiled-cart scenes' RGB565
 goldens and to the refusals, by the same kind of player protocol as SPEC.md 11's.
 

@@ -7,18 +7,21 @@
     python3 conformance/wasm_run.py --build           # re-render the goldens
 
 The scenes are runtime "wasm" carts under conformance/wasm/, one per import
-only this binding has (blit, blit565, read, target) plus `verbs`, the ordinary
-verbs through it, `primitives` and the five `layer_*` scenes, SPEC.md 11's
-scenes of those names as compiled carts, and `trap`, a trap in the second
-frame. Their goldens are RGB565 frames (proposals/wasm-runtime.md,
+only this binding has (blit, blit565, read, target, snd) plus `verbs`, the
+ordinary verbs through it, `primitives` and the five `layer_*` scenes, SPEC.md
+11's scenes of those names as compiled carts, and two traps in the second
+frame: `trap`, and `snd_trap`, samples past the end of memory. `snd` holds a
+host's answers about its sample queue; with the clock stopped nothing drains,
+so the answers are exact and no sample is ever judged. Their goldens are RGB565 frames (proposals/wasm-runtime.md,
 Determinism), rendered by the twins in wasm_scenes.py, and stored as PNGs
 whose channels are each word's bits repeated, so the file is a picture and
 reduces back to the word exactly.
 
 THE PLAYER PROTOCOL is SPEC.md 11's, for a compiled cart. Your player is a
 command with {cart} and {out} in it; for each cart it runs the cart's ticks
-(two, with dt 1/30, the clock stopped and nothing pressed) and writes the last
-frame the cart finished to {out}: W x H RGB565 words, little-endian, row-major.
+(two, with dt 1/30, the clock stopped, nothing pressed and no sample of a
+cart's stream played) and writes the last frame the cart finished to {out}:
+W x H RGB565 words, little-endian, row-major.
 It exits 0 when the cart ran. When a tick traps it exits non-zero and {out}
 holds the last whole frame -- never the one the trap interrupted. When the cart
 is refused -- its module's shape, or more memory than the player gives a cart

@@ -44,6 +44,88 @@ static float rms(const int16_t *buf, int n)
 
 static int16_t buf[RATE * 2];
 
+/* -- the sample stream ------------------------------------------------ */
+
+static int16_t ring[2048];
+static uint8_t pcm[2 * 4096];
+
+/* Frame i of a test stream: a sawtooth with a period of 100 frames. */
+static int16_t saw(uint32_t i) { return (int16_t)((int)(i % 100u) * 300 - 15000); }
+
+static void put(uint32_t from, uint32_t n)
+{
+    uint32_t i;
+    for (i = 0; i < n; i++) {
+        uint16_t u = (uint16_t)saw(from + i);
+        pcm[i * 2] = (uint8_t)(u & 0xFFu);
+        pcm[i * 2 + 1] = (uint8_t)(u >> 8);
+    }
+}
+
+static void stream_checks(void)
+{
+    moy_stream s;
+    uint32_t i, fed = 0, played = 0;
+    int ok, k;
+
+    moy_stream_init(&s, ring, 2048, 22050);
+    check(moy_stream_room(&s) == 2048, "an empty stream's room is its ring");
+    put(0, 3000);
+    check(moy_stream_write(&s, pcm, 3000) == 2048, "a write stops at the ring");
+    check(moy_stream_room(&s) == 0 && s.in == 2048, "a full ring has no room");
+
+    /* At the output's rate the stream is added frame for frame. */
+    for (i = 0; i < 512; i++) buf[i] = 100;
+    moy_stream_mix(&s, buf, 512, 22050, 7);
+    for (i = 0, ok = 1; i < 512; i++) ok &= buf[i] == saw(i) + 100;
+    check(ok, "at the same rate the stream is added exactly");
+    check(s.out == 512 && moy_stream_room(&s) == 512, "mixing takes what it played");
+
+    /* The master level scales it; the sum saturates. */
+    for (i = 0; i < 100; i++) buf[i] = 0;
+    moy_stream_mix(&s, buf, 100, 22050, 0);
+    for (i = 0, ok = 1; i < 100; i++) ok &= buf[i] == 0;
+    check(ok && s.out == 612, "at level 0 the stream is consumed and silent");
+    for (i = 0; i < 100; i++) buf[i] = 30000;
+    moy_stream_mix(&s, buf, 100, 22050, 7);
+    for (i = 0, ok = 1; i < 100; i++) ok &= buf[i] == (saw(612 + i) > 2767 ? 32767 : 30000 + saw(612 + i));
+    check(ok, "the sum saturates");
+
+    /* Emptied, it adds nothing and counts the frames it could not fill. */
+    moy_stream_clear(&s);
+    for (i = 0; i < 64; i++) buf[i] = 5;
+    moy_stream_mix(&s, buf, 64, 22050, 7);
+    for (i = 0, ok = 1; i < 64; i++) ok &= buf[i] == 5;
+    check(ok && s.starved == 64, "an empty stream adds nothing and counts it starved");
+
+    /* At twice the output's rate a constant stays that constant, and the
+     * stream drains at its own rate, not the output's. */
+    moy_stream_init(&s, ring, 2048, 22050);
+    for (i = 0; i < 2048; i++) { pcm[i * 2] = 0xE8; pcm[i * 2 + 1] = 0x03; }
+    moy_stream_write(&s, pcm, 2048);
+    memset(buf, 0, 2000 * sizeof buf[0]);
+    moy_stream_mix(&s, buf, 2000, 44100, 7);
+    for (i = 2, ok = 1; i < 2000; i++) ok &= buf[i] == 1000;
+    check(ok, "a constant resampled up stays constant");
+    check(s.out >= 999 && s.out <= 1001, "upsampled 2x, 2000 output frames take 1000");
+
+    /* Ten minutes of a producer filling the room in uneven bites against an
+     * output taking 512 frames at a time at 44100: nothing lost, nothing
+     * starved, and the stream plays at 22050 whatever the output runs at. */
+    moy_stream_init(&s, ring, 2048, 22050);
+    for (k = 0; k < 44100 * 600 / 512; k++) {
+        uint32_t room = moy_stream_room(&s), bite = room > 700 ? 700 : room;
+        put(fed, bite);
+        fed += moy_stream_write(&s, pcm, bite);
+        moy_stream_mix(&s, buf, 512, 44100, 7);
+        played += 512;
+    }
+    check(s.in == fed && s.in == s.out + s.count, "every frame queued is played or queued");
+    check(s.starved == 0, "a producer that keeps the room filled never starves the output");
+    check(s.out + 1 >= played / 2 && s.out <= played / 2 + 1,
+          "the stream drains at its own rate");
+}
+
 int main(void)
 {
     moy_bank bank;
@@ -249,6 +331,8 @@ int main(void)
     moy_audio_beep(&a, -1.0f, 0.0f);
     moy_audio_render(&a, buf, RATE / 10);
     check(rms(buf, RATE / 10) == 0.0f, "no bank renders silence");
+
+    stream_checks();
 
     if (failures) {
         fprintf(stderr, "%d audio checks failed\n", failures);

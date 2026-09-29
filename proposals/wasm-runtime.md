@@ -11,8 +11,8 @@ as well (same issue, same core).
 
 What this document decides is the contract a cart and a host meet at: the cart,
 the module shape, the import table and how every verb crosses the boundary, the
-framebuffer, the asset read, memory and traps. What is still open is listed at
-the end, and none of it reopens the contract. Three executable copies of the
+framebuffer, the asset read, the sample stream, memory and traps. What is still
+open is listed at the end, and none of it reopens the contract. Three executable copies of the
 contract sit beside it, each tested against the others:
 
 - **`wasm-imports.json`** — the import table, one row per import: its wasm type,
@@ -115,10 +115,11 @@ produce the same module with zero setup.
 ## The import table
 
 **The import table is the verb table.** Every verb the Lua binding installs is
-one import of the same name and the same §6–§9 meaning, and four exist because
+one import of the same name and the same §6–§9 meaning, and five exist because
 this binding needs them: `blit` and `blit565` (the framebuffer), `read` (the
-cart's own files) and `target` (drawing into a layer). `wasm-imports.json` lists
-every one; a verb the spec gains is a row there before it is anything else.
+cart's own files), `target` (drawing into a layer) and `snd` (the sample
+stream). `wasm-imports.json` lists every one; a verb the spec gains is a row
+there before it is anything else.
 
 `W` and `H` are not imports. The canvas is the manifest's (§1, §3.1) and a host
 runs the cart at exactly that size or refuses it, so a compiled cart knows both
@@ -173,9 +174,9 @@ close the gap, and every row's notes apply them.
   milliseconds since the cart started, which is all a cart needs to measure. It
   paces itself by returning from `_update`, and §5 calls it again.
 - **No import blocks.** Every import completes in time bounded by its arguments —
-  `read` by its length, `blit` by the frame — and none waits for input, a timer,
-  the display or the network. There is no sleep and no vsync wait: a cart waits
-  by returning.
+  `read` by its length, `blit` by the frame, `snd` by its count — and none waits
+  for input, a timer, the display, the audio output or the network. There is no
+  sleep and no vsync wait: a cart waits by returning.
 - **`quit()` does not return.** The host unwinds the cart as it would for a trap
   and treats the unwinding as the cart ending itself (§9), with no report.
 
@@ -412,29 +413,67 @@ silently exactly as §4.3 requires of a Lua error.
 
 `quit()` unwinds the same way and is not a trap (Marshalling).
 
-## PCM audio — the hardware tier's second gap
+## PCM audio — `snd`
 
 SPEC.md §8 is a tracker-shaped data model, which is right for authored carts and
 useless for an emulated APU or a ported engine's mixer: those produce a sample
-stream. The binding wants one import:
+stream. So this tier's audio surface is **samples, not the §8 data model** — the
+same finding as the framebuffer and the per-frame palette, from a third angle:
+this tier programs the console's hardware, not the script tier's abstractions.
+The §8 verbs stay in the table, and a cart may use both.
 
 ```c
-i32 snd(i32 ptr, i32 nframes);   /* nframes of signed 16-bit mono (or LR
-                                    interleaved stereo; TBD with the first
-                                    implementation) at a host-declared rate.
-                                    Returns frames accepted -- a full return
-                                    means keep feeding, 0 means the host's
-                                    buffer is full this tick */
+i32 snd(i32 pcm, i32 nframes);   /* pcm: nframes of signed 16-bit mono,
+                                    LITTLE-ENDIAN, at 22,050 Hz. Queues what
+                                    the host has room for and returns how
+                                    many; with nframes 0 it reads nothing and
+                                    returns the room */
 ```
 
-§8.3 already makes silence a valid rendering, so a host without audio hardware
-accepts and drops — the cart cannot tell, exactly as with `sfx`. Rate, channel
-count and buffer depth get pinned by the first implementation, not guessed
-here, and `snd` joins the import table when they are (open item 11). What is
-decided now is only that the compiled tier's audio surface is **samples, not the
-§8 data model** — the same finding as the framebuffer and the per-frame palette,
-from a third angle: this tier programs the console's hardware, not the script
-tier's abstractions.
+**22,050 Hz, mono, 16-bit.** The rate is the one the reference console's boards
+output and PICO-8's own, which §8.3's synthesis is defined at, so on the
+hardware tier a stream reaches the speaker unconverted and costs the console
+one add per sample. Doom's effects are 11,025 Hz, an exact half. The boards'
+speakers carry nothing a higher rate would add, and 44,100 Hz doubles the
+cart's mixing and the copy for none of it. Mono because every speaker in the
+reference lineup is one speaker and §8.3 mixes to mono; a cart with stereo
+sources folds them itself. A browser or desktop resamples to its device, which
+is `blit565`'s position again: the format is fixed by this document and the
+host converts, never the cart tracking the device.
+
+**The host holds 2,048 frames**, about 93 ms: that many frames the cart handed
+over and the output has not yet taken. The cart refills the queue once per
+frame, so it has to outlast the gap between two frames with room for a slow
+one. The first cart to use it, Doom, draws in the 30s and 40s of fps on the
+floor board — 25 to 35 ms a frame, and a WAD read over SD adds 5 (moybyte#158).
+2,048 frames is more than two frames at 30 fps before the stream runs dry; half
+that is under two, one hitch from a gap, and twice that puts a sound effect a
+sixth of a second behind the frame that caused it. The depth is also the most
+latency the queue adds. What an output does after it takes frames — a DMA ring,
+a browser's audio thread — is its own latency, like a panel's, and does not
+count against the 2,048.
+
+**The return value is the clock.** The output drains the queue at its rate and
+the cart fills it at its own pace, and neither may assume the other's: a cart
+that makes a fixed count per tick drifts against the output, because two clocks
+never agree, and starves it or overflows it. A cart that asks for the room
+(`snd(0, 0)`) and fills it — or offers what it has and keeps what was not
+taken — tracks the output exactly, whatever its frame rate. 0 means the queue is
+full for now; nothing blocks (Marshalling).
+
+**Silence drains at the rate.** §8.3 already makes silence a valid rendering, so
+a host without audio accepts and drops — and its queue still drains by the
+console's clock, 22,050 frames a second, so the cart meets the backpressure it
+would meet where the frames are played. A cart that paces itself on the stream,
+an emulator syncing to its APU, runs at speed on a silent host. The cart cannot
+tell, exactly as with `sfx`.
+
+How the stream meets the console's own sound is the host's. libmoy's
+`moy_stream` (`moy_audio.h`) is a queue mixed into the §8 synth's output after
+its channels and under its master level, and it is what the reference console
+and this repository's players use. A `pcm` range outside linear memory is a
+trap, and a negative `nframes` is such a range. Audio has no goldens (§8.3);
+what conformance holds is the counts, which a stopped clock makes exact.
 
 ## Determinism
 
@@ -563,5 +602,7 @@ numbering the issues cite keeps meaning.
     `read`, read-only and scoped to the cart's own folder, pinned without waiting
     on the user-file question (item 6). The clock Doom also wanted is §9's
     `time()`, and there is no clock import.
-11. **PCM audio's shape** — sample rate, channel count and buffer depth, pinned by
-    the first cart that needs them; `snd` joins the import table then.
+11. ~~**PCM audio's shape**~~ **Decided 2026-09-29:** 22,050 Hz, mono, signed
+    16-bit, and a queue of 2,048 frames, pinned by Doom, the first cart to need
+    them; the PCM audio section says why. `snd` is in the import table, and a
+    host with no audio drains its queue at the rate.

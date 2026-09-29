@@ -62,7 +62,7 @@ def fixtures(scratch):
         if want is None:
             if rc != 0 or errors:
                 fail("%s should pass, got rc=%d:\n%s" % (name, rc, out))
-            elif "imports 18 of the table's" not in out:
+            elif "imports 19 of the table's" not in out:
                 fail("%s: the import count is not reported:\n%s" % (name, out))
             else:
                 print("  ok   %s passes" % name)
@@ -122,6 +122,12 @@ def cases():
     expect("a global import from moy",
            codes(module(ok_mem, '(import "moy" "W" (global i32))'), m2),
            "wasm.import")
+    expect("snd at its type",
+           codes(module(ok_mem, '(import "moy" "snd" (func (param i32 i32) '
+                                '(result i32)))'), m2), None)
+    expect("snd at another type",
+           codes(module(ok_mem, '(import "moy" "snd" (func (param i32 i32)))'),
+                 m2), "wasm.import")
     expect("_update at the wrong type",
            codes(wat.assemble('(module (memory (export "memory") 2 2)'
                               '(func (export "_init")) (func (export "_update"))'
@@ -173,7 +179,7 @@ def cases():
 
 def the_table_is_readable():
     table = mw.load_table()
-    for name in ("blit", "blit565", "read", "target", "cls"):
+    for name in ("blit", "blit565", "read", "target", "snd", "cls"):
         if name not in table:
             fail("the import table has no %s" % name)
     print("  ok   the import table loads (%d rows)" % len(table))
