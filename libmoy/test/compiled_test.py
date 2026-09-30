@@ -216,7 +216,8 @@ class FakeConsole(object):
                 self.replies.append(b"moy-ok\n")
             elif text == "moy-rescan":
                 self.replies.append(b"booting... noise\n")
-                self.replies.append(b"moy-ok\n")
+                # Logging that was mid-line when the reply was written.
+                self.replies.append(b"PERF fps=0/60 flush=0moy-ok\n")
 
     def readline(self):
         return self.replies.pop(0) if self.replies else b""

@@ -18,6 +18,7 @@ reported as skipped rather than silently absent.
 import base64
 import json
 import os
+import re
 import shutil
 import socket
 import struct
@@ -185,6 +186,12 @@ def _serial_module():
         return None
 
 
+# A reply, wherever it starts in a line: a console's own logging can be
+# mid-line when the reply is written, so the reference console's T-Deck has
+# been seen to answer `... flush=0moy-info {...}`.
+_REPLY = re.compile(rb"moy-(?:ok|err|info|note)\b.*")
+
+
 def _read_reply(port, deadline, log=print):
     """The next `moy-` reply before the deadline, or None. A `moy-note` line is
     the console telling the person something, printed and not a reply;
@@ -193,11 +200,14 @@ def _read_reply(port, deadline, log=print):
         line = port.readline()
         if not line:
             continue
-        line = line.strip()
-        if line.startswith(b"moy-note "):
-            log("  console: %s" % line[9:].decode("utf-8", "replace"))
-        elif line.startswith(b"moy-"):
-            return line.decode("utf-8", "replace")
+        m = _REPLY.search(line.strip())
+        if m is None:
+            continue
+        reply = m.group(0)
+        if reply.startswith(b"moy-note "):
+            log("  console: %s" % reply[9:].decode("utf-8", "replace"))
+        else:
+            return reply.decode("utf-8", "replace")
     return None
 
 
