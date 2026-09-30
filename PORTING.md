@@ -434,9 +434,9 @@ code:
 
 `moy push` probes all three in order and carries no device database — a console
 that answers is supported, including one from a vendor this repository has never
-heard of. The client side is implemented and tested against mocks; what does not
-exist yet is firmware that answers, so **the first console to ship the marker
-file is the one that makes the tool real**.
+heard of. The reference console answers tier 1 over the serial console it already
+drives its tests with; the table at the end of `proposals/sideload.md` says who
+answers what.
 
 ## Showing carts in a launcher
 

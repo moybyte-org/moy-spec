@@ -6,8 +6,8 @@
 # The datas are everything moy.py reaches on disk: the web player it serves
 # (`run`/`export`), the editor stubs `new` copies, the two normative data
 # files moycore reads beside SPEC.md, the wasm import table `check` reads
-# beside them, and the conformance suite's carts,
-# goldens and traces so `moy conform` can judge a third-party player from the
+# beside them, the header `new --wasm` and `new --jet` copy, and the
+# conformance suite's carts, goldens and traces so `moy conform` can judge a third-party player from the
 # frozen binary alone. Paths inside the bundle mirror the checkout, so no
 # module needed a frozen-specific search path. The one thing frozen changes is
 # that the player may be OVERRIDDEN: `moy.py::_user_runner` is a per-user data
@@ -24,6 +24,8 @@ a = Analysis(
         ("palette.json", "."),
         ("font.bin", "."),
         ("wasm-imports.json", "."),
+        ("libmoy/include/moy_cart.h", "libmoy/include"),
+        ("templates", "templates"),
         ("conformance/carts", "conformance/carts"),
         ("conformance/golden", "conformance/golden"),
         ("conformance/traces", "conformance/traces"),

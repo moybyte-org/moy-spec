@@ -29,7 +29,8 @@ Status: **draft 0.3, unstable.** Names and values will still move.
   unsigned — first run is right-click → Open.
 
 `moy-play` and the browser player also run compiled carts — WebAssembly, the
-spec's optional second binding (SPEC.md §16).
+spec's optional second binding (SPEC.md §16); [COMPILED.md](COMPILED.md) takes
+you from `moy new --wasm` to one playing on a board.
 
 No Python, no install. From a checkout of this repository, every command below
 also runs as `python3 moy.py …` — Python 3.8+ and nothing else.

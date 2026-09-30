@@ -670,3 +670,5 @@ The short list of things that catch everyone exactly once.
 - **SPEC.md** — the exact answer to anything above. §6, §7 and §9 are the verb
   tables; §12 is where the surprising decisions are argued.
 - **RATIONALE.md** — why each fixed number is that number.
+- **[COMPILED.md](COMPILED.md)** — when Lua is too slow for what you want to
+  draw: the same verbs from C or C++, compiled to WebAssembly.

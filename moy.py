@@ -7,6 +7,14 @@ art tools already work; this CLI supplies the loop around them.
     moy.py new <name>            scaffold a Lua cart (manifest + main.lua +
                                  moy-api.lua editor stubs -- the Lua language
                                  server reads those for autocomplete + docs)
+    moy.py new --wasm <name>     scaffold a COMPILED cart (SPEC.md 16): C in
+                                 src/, with moy_cart.h declaring every verb
+    moy.py new --jet <name>      ...the same, a 3D starter drawn by Jet
+                                 (CubeCoders' MIT rasteriser, fetched once)
+    moy.py build <cart.moy>      compile a compiled cart's src/ into main.wasm
+          [--stack KB]           with a pinned wasi-sdk (fetched by sha256 the
+                                 first time); `play` and `web` do this for
+                                 you, and again whenever you save
     moy.py play <cart.moy>       play the cart in a window, with HOT RELOAD:
                                  save a file, the game restarts in under a
                                  second (moy-play, the C console -- it ships
@@ -192,11 +200,30 @@ def cart_dir(arg):
 # --- new ---------------------------------------------------------------------
 
 def cmd_new(args):
+    kind = None
+    for flag in ("--wasm", "--jet"):
+        if flag in args:
+            if kind:
+                die("pick one of --wasm and --jet")
+            kind = flag[2:]
+            args = [a for a in args if a != flag]
     if not args:
-        die("usage: moy.py new <name>")
+        die("usage: %s new [--wasm | --jet] <name>" % PROG)
     dst = cart_dir(args[0])
     if os.path.exists(dst):
         die("already exists: " + dst)
+    if kind:
+        import compiled
+        try:
+            compiled.new_cart(dst, kind)
+        except compiled.BuildError as exc:
+            die(str(exc))
+        print("created %s" % dst)
+        print("  src/main.%s is the cart; src/moy_cart.h declares every verb"
+              % ("c" if kind == "wasm" else "cpp"))
+        print("  next: %s play %s   (builds it, and rebuilds when you save)"
+              % (PROG, os.path.relpath(dst)))
+        return
     name = os.path.basename(dst)[:-4]
     title = name.replace("_", " ").replace("-", " ").title()
     os.makedirs(dst)
@@ -218,6 +245,23 @@ def cmd_new(args):
 
 # --- run (the hot-reload dev loop) -------------------------------------------
 
+def _player_skips(src):
+    """Folders the player never reads: the usual clutter, and a compiled
+    cart's src/, which `moy build` has already turned into its module."""
+    skip = {"thumbs", "__pycache__", ".git"}
+    if _is_compiled(src):
+        skip.add("src")
+    return skip
+
+
+def _is_compiled(src):
+    try:
+        with open(os.path.join(src, "manifest.json"), encoding="utf-8") as f:
+            return json.load(f).get("runtime") == "wasm"
+    except (OSError, ValueError, AttributeError):
+        return False
+
+
 def pack_cart(src):
     """The cart folder as the player's carts.json shape {<name>/<rel>: text},
     where a file that is not UTF-8 text -- a compiled cart's module, the data
@@ -225,9 +269,10 @@ def pack_cart(src):
     import base64
     name = os.path.basename(src.rstrip("/"))
     bundle = {}
+    skip = _player_skips(src)
     for dirpath, dirnames, filenames in os.walk(src):
         dirnames[:] = [d for d in dirnames
-                       if d not in ("thumbs", "__pycache__", ".git")]
+                       if not (d in skip and (d != "src" or dirpath == src))]
         for fn in sorted(filenames):
             # Editor stubs and moy-play's save: never part of the game.
             if fn in ("moy-api.lua", ".pmem"):
@@ -251,9 +296,10 @@ def pack_cart(src):
 def cart_stamp(src):
     """Latest mtime under the cart folder -- the page's reload-poll target."""
     latest = 0.0
+    skip = _player_skips(src)
     for dirpath, dirnames, filenames in os.walk(src):
         dirnames[:] = [d for d in dirnames
-                       if d not in ("thumbs", "__pycache__", ".git")]
+                       if not (d in skip and (d != "src" or dirpath == src))]
         for fn in filenames:
             try:
                 m = os.stat(os.path.join(dirpath, fn)).st_mtime
@@ -271,6 +317,7 @@ def cmd_web(args):
     if not os.path.isdir(src):
         die("no such cart: " + src)
     port = int(args[1]) if len(args) > 1 else DEFAULT_PORT
+    _build_and_watch(src)
 
     class Handler(http.server.SimpleHTTPRequestHandler):
         extensions_map = dict(http.server.SimpleHTTPRequestHandler.extensions_map,
@@ -555,17 +602,14 @@ def cmd_pack(args):
     """Folder -> one deterministic file (see proposals/single-file-cart.md)."""
     if not args:
         die("usage: moy.py pack <cart.moy> [out%s]" % _moycore().pack.EXT)
-    moycore = _moycore()
+    _moycore()
     from moycore import pack as _pack
     src = cart_dir(args[0])
     if not os.path.isdir(src):
         die("no such cart folder: " + src)
     files = _pack.read_folder(src)
     files.pop("moy-api.lua", None)      # editor stubs are never part of the game
-    try:
-        moycore.Cart.from_files(files)
-    except moycore.CartError as exc:
-        die("refusing to pack a cart that does not load: %s" % exc)
+    _refuse_unloadable(files, "pack")
     blob = _pack.pack_bytes(files)
     out = args[1] if len(args) > 1 else src[:-4] + _pack.EXT
     with open(out, "wb") as f:
@@ -993,7 +1037,90 @@ def cmd_play(args):
     src = cart_dir(args[0])
     if not os.path.isdir(src):
         die("no such cart: " + src)
+    _build_and_watch(src)
     _run_native(src, ["--watch"] + [a for a in args[1:] if a != "--watch"])
+
+
+def _build_and_watch(src):
+    """For a compiled cart with its source in src/: build it now if its module
+    is missing or older than its source, then rebuild in the background on
+    every save -- the player reloads when the module changes. A Lua cart, or
+    a compiled one shipped without source, is left as it is."""
+    import compiled
+    if not compiled.is_compiled(src) or not compiled.has_source(src):
+        return
+    main = os.path.join(src, compiled.manifest(src).get("main") or "main.wasm")
+    if compiled.needs_build(src):
+        try:
+            compiled.build(src)
+        except compiled.BuildError as exc:
+            if not os.path.isfile(main):
+                die("build failed:\n%s" % exc)
+            print("moy: build failed -- playing the last good main.wasm\n%s" % exc,
+                  file=sys.stderr)
+    compiled.Watcher(src).start()
+
+
+def cmd_build(args):
+    """Compile a compiled cart's src/ into its module (SPEC.md 16)."""
+    import compiled
+    if "--toolchain" in args:
+        try:
+            print(compiled.fetch_sdk())
+        except compiled.BuildError as exc:
+            die(str(exc))
+        return
+    stack = compiled.DEFAULT_STACK
+    if "--stack" in args:
+        i = args.index("--stack")
+        try:
+            stack = int(args[i + 1]) * 1024
+        except (IndexError, ValueError):
+            die("--stack takes a size in KB")
+        if stack <= 0 or stack % 16:
+            die("--stack takes a positive size in KB")
+        args = args[:i] + args[i + 2:]
+    if not args:
+        die("usage: %s build <cart.moy> [--stack KB] | --toolchain" % PROG)
+    src = cart_dir(args[0])
+    if not os.path.isdir(src):
+        die("no such cart: " + src)
+    try:
+        compiled.build(src, stack=stack)
+    except compiled.BuildError as exc:
+        die("build failed:\n%s" % exc)
+    # What `moy check` would say, so a module that builds but breaks SPEC.md
+    # 16 says so here rather than on a console.
+    _moycore()
+    from moycore import check as _check
+    from moycore import pack as _pack
+    findings = _check.check_wasm_files(_pack.read_folder(src))
+    bad = [f for f in findings if f[0] in ("error", "warn")]
+    for level, code, msg in bad:
+        print("  %-6s %s: %s" % (level, code, msg))
+    if _check.worst(findings) == "error":
+        die("the module does not keep to SPEC.md 16 -- see above")
+
+
+def _refuse_unloadable(files, what):
+    """Die unless `files` is a cart a host could load: a Lua cart through
+    moycore, a compiled one through SPEC.md 16's checks."""
+    moycore = _moycore()
+    from moycore import check as _check
+    try:
+        manifest = json.loads(files["manifest.json"])
+    except (KeyError, ValueError):
+        manifest = None
+    if isinstance(manifest, dict) and manifest.get("runtime") == "wasm":
+        errors = [f for f in _check.check_wasm_files(files) if f[0] == "error"]
+        if errors:
+            die("refusing to %s a cart that does not load: %s"
+                % (what, "; ".join("%s: %s" % (c, m) for _l, c, m in errors)))
+        return
+    try:
+        moycore.Cart.from_files(files)
+    except moycore.CartError as exc:
+        die("refusing to %s a cart that does not load: %s" % (what, exc))
 
 
 def cmd_push(args):
@@ -1021,14 +1148,11 @@ def cmd_push(args):
 
     # Refuse to push a cart that does not load -- same bar as `pack`. The
     # worst place to discover a broken manifest is on the handheld.
-    moycore = _moycore()
+    _moycore()
     from moycore import pack as _pack
     files = _pack.read_folder(src)
     files.pop("moy-api.lua", None)
-    try:
-        moycore.Cart.from_files(files)
-    except moycore.CartError as exc:
-        die("refusing to push a cart that does not load: %s" % exc)
+    _refuse_unloadable(files, "push")
 
     try:
         if "--to" in args:
@@ -1047,6 +1171,11 @@ def cmd_push(args):
                     print("  %s" % c, file=sys.stderr)
                 die("%d consoles found -- pick one with --to" % len(consoles))
             console = consoles[0]
+        runtime = json.loads(files["manifest.json"]).get("runtime") or "lua"
+        runs = console.desc.get("runtimes")
+        if isinstance(runs, list) and runtime not in runs:
+            die("%s runs %s carts, and this one is \"%s\" (SPEC.md 15): it would "
+                "refuse it, so it is not pushed" % (console, " and ".join(runs), runtime))
         print("pushing to %s" % console)
         sideload.push(console, src)
     except sideload.SideloadError as exc:
@@ -1058,7 +1187,7 @@ def main():
             "export": cmd_export, "port": cmd_port, "demo": cmd_demo,
             "check": cmd_check, "pack": cmd_pack, "unpack": cmd_unpack,
             "gfx": cmd_gfx, "map": cmd_map, "conform": cmd_conform,
-            "player": cmd_player, "push": cmd_push}
+            "player": cmd_player, "push": cmd_push, "build": cmd_build}
     # `run` was the browser and `play` was the window, which nobody could keep
     # straight -- and now that the window hot-reloads there is nothing left for
     # two names to mean. Say so rather than printing the whole help.

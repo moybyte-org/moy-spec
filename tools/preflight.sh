@@ -53,6 +53,7 @@ step "wasm binding (WAMR)"   make -C libmoy wasm-test CFLAGS="${CFLAGS_CI}"
 step "desktop player (SDL2, WAMR)" make -C libmoy play
 step "desktop player conformance" \
   python3 conformance/run.py --player "libmoy/build/moy-play {cart} --dump {out}"
+step "compiled carts: new, build, play, push" make -C libmoy compiled-test
 
 # The artifact checks. `moy.py player` is the cheap one and catches the whole
 # class on its own -- it compares the committed bundle's stamp against a hash of

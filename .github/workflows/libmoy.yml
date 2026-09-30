@@ -165,6 +165,21 @@ jobs:
       - name: Conformance (the desktop player)
         run: python3 conformance/run.py --player "libmoy/build/moy-play {cart} --dump {out}"
 
+      # The compiled-cart authoring loop: both starters built with the pinned
+      # wasi-sdk (compiled.py pins it by sha256; the cache key is that pin),
+      # held to SPEC.md 16, played in the desktop player built above, and
+      # `moy build` refusing what it should. The Jet starter fetches Jet at
+      # its pin, file by file.
+      - name: Cache wasi-sdk
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/moy/toolchain
+          key: wasi-sdk-${{ runner.os }}-${{ hashFiles('compiled.py') }}
+
+      - name: Compiled carts (new, build, play, push)
+        run: make compiled-test
+        working-directory: libmoy
+
       # runner/ is a build artifact that is CHECKED IN, so `moy.py web` needs
       # only Python and a browser. A checked-in artifact drifts from its source
       # silently -- someone edits player.js inside runner/ to try something, it

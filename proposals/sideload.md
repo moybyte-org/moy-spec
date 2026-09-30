@@ -66,7 +66,11 @@ moy-run <title>               -> "moy-ok" / "moy-err <reason>"; optional
 
 Paths are relative to `cart_root` and must not escape it. Everything else the
 console prints on serial is noise the tool ignores; replies are prefixed
-`moy-` so the two interleave safely with logging. The tool probes only
+`moy-` so the two interleave safely with logging. One more prefix is not a
+reply: a console may send `moy-note <text>` at any point to tell the person
+pushing something the protocol cannot — that a compiled cart it just took
+needs a file only the console's own tools can build, say — and the tool prints
+it and keeps waiting for the reply. The tool probes only
 USB-backed serial ports (a console on a bare UART is reachable with an
 explicit `--to <port>`), and probing is one `moy?\n` line -- inert to any
 firmware that does not speak this.
@@ -99,13 +103,14 @@ tiers 1–2 serve it):
   "transports": ["msc", "serial", "http"],
   "cart_root": "carts",
   "free_kb": 1932,
+  "runtimes": ["lua", "wasm"],
   "extensions": ["espnow"]
 }
 ```
 
 `transports` lets `moy push` say what it found and pick the fastest;
-`extensions` lets it warn before pushing a cart the console will refuse
-(SPEC.md 10). Core declares no standard extensions, so every name in that
+`runtimes` (the bindings it runs, SPEC.md 15) and `extensions` let it stop
+before pushing a cart the console will refuse (SPEC.md 3.1, 10). Core declares no standard extensions, so every name in that
 list is a vendor one — the example is a radio, which is the shape of thing
 SPEC.md 10 keeps the mechanism for.
 
@@ -122,15 +127,14 @@ This tool EXISTS: `moy.py push` (client code in `sideload.py`, and included
 in the released `moy` binaries). All three probes and all three transports
 are implemented and tested against mocks — `--list` shows what a probe finds,
 `--to <dir|port|url>` skips probing, and a push to a marker-less directory
-works with a warning, so an SD card is a valid target today. What does not
-exist yet is any firmware that answers: until a console ships the marker file
-or the protocol, `push` fails honestly, printing exactly where it looked.
+works with a warning, so an SD card is a valid target today. The reference
+console answers tier 1 over its dev channel; a console that answers nothing
+still gets an honest failure, `push` printing exactly where it looked.
 
 ## Status of implementations
 
 | | tier 0 | tier 1 | tier 2 |
 |---|---|---|---|
 | `moy push` (this repo) | done | sender done (needs pyserial; bundled in releases) | client + mDNS done |
-| moybyte P4 | SD (marker pending) | dev-serial exists, protocol pending | webserver exists, endpoints pending |
-| moybyte T-Deck | SD (marker pending) | RX untested (listener never ported) | same as P4 |
+| moybyte (its console boards) | SD or flash store (marker pending) | the dev channel answers `moy?`, `moy-put`, `moy-del`, `moy-rescan` and `moy-run`, over USB serial | webserver exists, endpoints pending |
 | libmoy example | disk mode planned (S3-class, TinyUSB; builds in CI, proven on hardware with native USB) | — | — |

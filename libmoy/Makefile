@@ -35,7 +35,7 @@ LUA_OBJ  := $(LUA_SRC:.c=.o)
 LUA_CFLAGS := -std=c99 -O2 -w -I$(LUA_DIR)
 RUNCART  := build/run_cart
 
-.PHONY: all clean data conform conform-lua test lua play audio-test p8-carts float-fold sources-test wasm-check wasm-test wasm-table wamr
+.PHONY: all clean data conform conform-lua test lua play audio-test p8-carts float-fold sources-test wasm-check wasm-test wasm-table wamr compiled-test compiled-test-offline
 
 all: $(LIB) $(REPLAY)
 
@@ -329,7 +329,19 @@ wasm-check:
 wasm-table:
 	python3 test/wasm_table_check.py
 
-test: conform conform-lua ext-test sources-test audio-test lowres spr-sweep p8-test p8-carts wasm-check wasm-table
+# The compiled-cart authoring loop (compiled.py): `moy new --wasm`, `moy
+# pack` and `moy push` to a stand-in console with Python alone, then
+# both starters built with the pinned wasi-sdk (fetched by sha256 once, into
+# moy's data directory), held to SPEC.md 16 and played in moy-play when it is
+# built, and `moy build` refusing what it should. `compiled-test-offline` is
+# the half that needs no toolchain and no network.
+compiled-test:
+	python3 test/compiled_test.py
+
+compiled-test-offline:
+	python3 test/compiled_test.py --offline
+
+test: conform conform-lua ext-test sources-test audio-test lowres spr-sweep p8-test p8-carts wasm-check wasm-table compiled-test-offline
 
 clean:
 	rm -f $(OBJ) $(LUA_OBJ) src/moy_lua.o src/moy_p8.o $(LIB)

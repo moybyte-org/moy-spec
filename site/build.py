@@ -60,6 +60,9 @@ PAGES = {
     "GUIDE.md": ("guide.html", "Guide",
                  "Writing games for moy: a first cart, then a handbook -- art, "
                  "audio, saving, budgets and the gotchas."),
+    "COMPILED.md": ("compiled.html", "Compiled carts",
+                    "Your first compiled moy cart: C or C++ to WebAssembly, from "
+                    "`moy new --wasm` to a desktop, a browser and a board."),
     "PORTING.md": ("porting.html", "Porting",
                    "Running moy carts on your own hardware: what to build, in "
                    "what order, what to refuse, and how to prove it."),

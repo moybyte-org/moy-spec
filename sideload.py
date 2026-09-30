@@ -7,8 +7,7 @@ marker (tier 0), serial ports that answer `moy?` (tier 1), and mDNS
 
 There is no device database here, on purpose. A console that describes itself
 per the proposal is supported, including consoles by vendors this repository
-has never heard of. When nothing answers -- which today is every device, the
-firmware side is not implemented yet -- push fails with the map of where it
+has never heard of. When nothing answers, push fails with the map of where it
 looked, so "why did nothing happen" is never the question.
 
 Stdlib only, like the rest of the CLI. The one exception is tier-1 serial,
@@ -52,12 +51,24 @@ class Console(object):
         return "%-6s %s  (%s)" % (self.kind, self.where, name)
 
 
+def _compiled(src):
+    try:
+        with open(os.path.join(src, "manifest.json"), encoding="utf-8") as f:
+            return json.load(f).get("runtime") == "wasm"
+    except (OSError, ValueError, AttributeError):
+        return False
+
+
 def cart_files(src):
     """{relpath: bytes} for the cart folder, exclusions applied. Relpaths use
-    forward slashes -- they cross OS boundaries by definition here."""
+    forward slashes -- they cross OS boundaries by definition here. A compiled
+    cart's src/ stays behind: `moy build` has already made it the module, and
+    a console has no compiler to hand it to (SPEC.md 16.1)."""
     out = {}
+    top_skip = ("src",) if _compiled(src) else ()
     for dirpath, dirnames, filenames in os.walk(src):
-        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS
+                       and not (dirpath == src and d in top_skip)]
         for fn in sorted(filenames):
             if fn in SKIP_FILES:
                 continue
@@ -174,15 +185,18 @@ def _serial_module():
         return None
 
 
-def _read_reply(port, deadline):
-    """The next `moy-` line before the deadline, or None. Everything else the
-    console prints is logging and is ignored, per the proposal."""
+def _read_reply(port, deadline, log=print):
+    """The next `moy-` reply before the deadline, or None. A `moy-note` line is
+    the console telling the person something, printed and not a reply;
+    everything else it prints is logging and is ignored, per the proposal."""
     while time.time() < deadline:
         line = port.readline()
         if not line:
             continue
         line = line.strip()
-        if line.startswith(b"moy-"):
+        if line.startswith(b"moy-note "):
+            log("  console: %s" % line[9:].decode("utf-8", "replace"))
+        elif line.startswith(b"moy-"):
             return line.decode("utf-8", "replace")
     return None
 
@@ -232,7 +246,7 @@ def push_serial(device, src, log=print):
     files = cart_files(src)
     with serial.Serial(device, SERIAL_BAUD, timeout=0.2, write_timeout=5) as s:
         def expect_ok(what, seconds=10.0):
-            reply = _read_reply(s, time.time() + seconds)
+            reply = _read_reply(s, time.time() + seconds, log)
             if reply is None:
                 raise SideloadError("%s: no reply from the console" % what)
             if not reply.startswith("moy-ok"):
