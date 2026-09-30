@@ -1,4 +1,4 @@
-;; snd past the memory (proposals/wasm-runtime.md, "PCM audio"): a range of
+;; snd past the memory (SPEC.md 16.9, "Sample audio"): a range of
 ;; samples that leaves linear memory is a trap. The first _draw finishes; the
 ;; second repaints the screen and hands snd eight frames that run four bytes
 ;; past the end. A host ends the cart -- a player exits non-zero -- and the

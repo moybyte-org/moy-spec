@@ -295,3 +295,140 @@ measurement that will be retracted in one.
 
 The lesson, which is general: a confident write-up outlives the code it measured, and
 nobody re-runs a number that reads like a verdict.
+
+---
+
+## The WebAssembly binding
+
+SPEC.md §15 says why a second binding exists and §16 is the contract; this is the
+evidence under it. The first run is a 6502 interpreter core, line-faithful in Lua and
+C with identical cycle counts out of every runtime, on the reference console's RISC-V
+board at its shipping clock (moybyte#158, 2026-07-27), and the same core on the
+Xtensa floor board since 2026-09-24.
+
+### Why AOT, and why not an interpreter
+
+| runtime | 6502 instr/s | vs Lua | arithmetic (`spin`) |
+|---|---|---|---|
+| Lua (the shipping binding) | 0.173 M | 1.0× | 5.2 M ops/s |
+| WASM, WAMR fast-interp | 0.188 M | **1.09×** | 12.35 M |
+| WASM, AOT (XIP — the *pessimistic* mode) | 2.828 M | **16.3×** | 476 M (**91×**) |
+
+Two conclusions, both load-bearing: **interpreted WASM does not justify a runtime** —
+its advantage collapses exactly on dispatch-shaped code, which is what interpreters
+and emulators are — and **AOT does**. An interp-only evaluation would have said no and
+been wrong. How a host executes a module stays its own business all the same
+(PORTING.md): the numbers argue for the binding, not for one execution strategy.
+
+### Why nothing for Lua carts
+
+The speed comes from static types, not from WebAssembly: the interpreter row above
+is the control group, and honest Lua-to-C transpilation measures in the 1.2–2× range
+elsewhere. So there is no Lua-to-AOT path; a slow Lua cart gets ported instead,
+and the twin-cart pattern the reference implementation already uses
+(line-faithful pairs held bit-identical by a parity harness) extends to a C twin
+checked by the same golden frames. A typed Lua dialect (Pallene, Nelua) compiling
+into this pipeline is plausible and unproposed. An engine-shaped cart may embed its
+own interpreter — Lua compiles to wasm32 — to run gameplay scripts inside a compiled
+engine, and that needs nothing from the spec.
+
+### `blit` — why a whole frame, and why 256 entries
+
+Measured budget: about 4.6 M pixel-writes/s from AOT code into linear memory against
+476 M ops/s of arithmetic, so a full-screen software raster lands around 17 ms on the
+measured board, inside a 30 fps frame with the geometry effectively free. The
+boundary, not the speed, was the blocker, which is why the import hands over a frame.
+
+The palette is 256 entries because the first real port needed it: Doom's palette is
+256 entries and a frame uses well over 64 of them (decided 2026-09-25). With 256 any
+game holding 256 or fewer simultaneous colours maps exactly, fades included, and the
+per-frame table stays noise to rebuild; the alternative pushed every port onto
+`blit565`, which the next section measures as the slow route on the floor board. The
+NES needs none of this — its 54-entry master palette is fixed hardware and fits §2.2
+as it is — and neither do the GB's 4 shades.
+
+### `blit565` — why it is not the default
+
+Measured on an ESP32-P4 (360 MHz, PSRAM 200 MHz, 256 KB L2, `-O2`), one rasterizer
+compiled twice from a single source, differing only in stored pixel type:
+
+| the cart's own raster | 8-bit indices | RGB565 |
+|---|---|---|
+| filled rects | 988 µs | 1292 µs (**+31%**) |
+| textured scanlines | 6780 µs | 7455 µs (+10%) |
+| scaled sprite columns | 7921 µs | 8518 µs (+7.5%) |
+| triangles | 4789 µs | 5004 µs (+4.5%) |
+
+Against the ~17 ms full-screen budget above, choosing `blit565` costs the cart
+**+0.8 to +5.3 ms**, and it saves the host only ~0.8 ms: the difference between
+resolving a palette (1148 µs with a pixel-pair table; 2026 µs with a per-pixel loop)
+and copying 153,600 bytes (344 µs). Best case a wash, worst case six times worse. More
+optimization does not close the gap either: every lookup's address depends on the
+byte just loaded, so the resolve plateaus around 3× a copy, where a copy has no
+dependency chain at all.
+
+**On the floor board it is not close.** The same bench on an ESP32-S3 at 240 MHz with
+octal PSRAM and no L2 — the board a cart is most likely to be too slow on, and
+therefore the one that decides (measured 2026-08-06):
+
+| the cart's own raster | 8-bit indices | RGB565 |
+|---|---|---|
+| filled rects | 3226 µs | 10615 µs (**3.3×**) |
+| triangles | 9410 µs | 21853 µs (**2.3×**) |
+| scaled sprite columns | 18466 µs | 25163 µs (1.4×) |
+| textured scanlines | 18275 µs | 20823 µs (1.1×) |
+
+A 32-bit fill store covers four indexed pixels and only two RGB565 ones, and with no
+cache to absorb it the wider format is paid in full. The host side inverts too: with
+the source half the size, the palette resolve is **cheaper than the copy it would
+replace** — 1681 µs against 2483 µs into the panel's bounce buffer. So on this board
+`blit565` costs the cart up to 3.3× and saves the host nothing. That is why SPEC.md
+§16.5 keeps a cart indexed whenever its pixels allow: advice on the faster board, close to a requirement on the floor board, and a cart is judged on the
+floor board.
+
+The floor-board figures are at 80 MHz PSRAM, not the 120 MHz the reference console
+ships: that board's flash is not verified for the high-performance mode
+`SPIRAM_SPEED_120M` requires, and a 120 MHz build aborts in MSPI timing init. 80 MHz
+makes external memory dearer than it really is, so the margins are generous — but the
+3.3× is far outside what a bus-speed correction reaches, and the internal-SRAM rows do
+not depend on it at all.
+
+It is also why the binding declares its own memory floor (SPEC.md §16.7). 153,600
+bytes against §1.1's 192 KB cart heap leaves about 40 KB for the game, and on the
+floor board, with the console's own 76,800-byte canvas resident, a second
+153,600-byte buffer could not be allocated contiguously in internal SRAM at all — on
+an otherwise empty heap. A `blit565` cart there is committed to external memory for
+its framebuffer, which is exactly where the 3.3× comes from.
+
+### `snd` — why 22,050 Hz and 2,048 frames
+
+22,050 Hz is the rate the reference console's boards output and PICO-8's own, so on
+the hardware tier a stream reaches the speaker unconverted and costs the console one
+add per sample. Doom's effects are 11,025 Hz, an exact half. The boards' speakers
+carry nothing a higher rate would add, and 44,100 Hz doubles the cart's mixing and the
+copy for none of it. Mono because every speaker in the reference lineup is one
+speaker and §8.3 mixes to mono; a cart with stereo sources folds them itself.
+
+The first cart to use the stream, Doom, draws in the 30s and 40s of fps on the floor
+board — 25 to 35 ms a frame, and a WAD read over SD adds 5 (moybyte#158). 2,048 frames
+is more than two frames at 30 fps before the stream runs dry; half that is under two,
+one hitch from a gap, and twice that puts a sound effect a sixth of a second behind
+the frame that caused it (decided 2026-09-29).
+
+### `par` — why fork-join, not threads
+
+Threads — shared memory, atomics and a spawn, as wasi-threads has them — would let a
+cart build any synchronisation it liked, and would cost the binding its determinism
+and its portability: the memory would have to be declared shared, which a browser
+gives only a cross-origin-isolated page; a cart could race, or spin on another core
+for ever; and on the Xtensa floor board, whose linear memory is in external RAM, the
+CPU's compare-and-swap does not work there, so every atomic becomes a lock. The work
+that wants the cores does not need them either. Jet's own ESP32 runtime draws with two
+cores by keeping the frame's setup on one and cutting the frame's rows into bands that
+rasterize at once, then joining — fork-join exactly, with the memory unshared. A
+single-core host needs nothing but a loop (decided 2026-09-29; what it measures is
+moybyte#158's).
+
+The reference console gives a cart every core but the one its session runs on, below
+the display and audio tasks' priority, and each core takes the next item as it
+finishes one, so a busier core takes fewer.

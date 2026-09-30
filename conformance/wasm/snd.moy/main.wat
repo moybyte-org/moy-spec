@@ -1,4 +1,4 @@
-;; snd (proposals/wasm-runtime.md, "PCM audio"): the queue a host holds for
+;; snd (SPEC.md 16.9, "Sample audio"): the queue a host holds for
 ;; the cart's samples. The player protocol stops the clock and plays nothing,
 ;; so no frame leaves the queue and every answer is exact on every host.
 ;; _init asks seven questions and _update an eighth, each answer drawn as a

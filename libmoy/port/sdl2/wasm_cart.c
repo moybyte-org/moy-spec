@@ -4,7 +4,7 @@
  * moy_* calls below reach the direct-colour raster under its moy565_ names
  * and main.c keeps the index one. The import table, the marshalling, the
  * blit, the read and the traps are src/moy_wasm.c's -- the same file every
- * other host of this binding runs. What is here is the part the proposal
+ * other host of this binding runs. What is here is the part SPEC.md 16
  * leaves to a host: how the module is loaded and run, and how much a cart
  * may take.
  *

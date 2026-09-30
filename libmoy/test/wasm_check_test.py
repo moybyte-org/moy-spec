@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""`moy check` on runtime "wasm" carts (proposals/wasm-runtime.md).
+"""`moy check` on runtime "wasm" carts (SPEC.md 16).
 
 The fixtures under test/wasm/ are WAT source; each is assembled into a cart in
 a scratch directory and handed to the real CLI, so what is tested is the
-command an author runs. hello.moy must pass and every other fixture must be
-refused with the finding its name promises. The cases below the fixtures reach
+command an author runs. hello.moy must pass with no warning -- the binding is
+the spec's, so a well-formed compiled cart draws none -- and every other
+fixture must be refused with the finding its name promises. The cases below the fixtures reach
 the module checker directly, for the refusals that are one line of WAT each.
 Run by `make wasm-check`.
 """
@@ -59,9 +60,10 @@ def fixtures(scratch):
         rc, out = run_check(cart)
         want = EXPECT.get(name)
         errors = [ln for ln in out.splitlines() if ln.strip().startswith("error")]
+        warnings = [ln for ln in out.splitlines() if ln.strip().startswith("warn")]
         if want is None:
-            if rc != 0 or errors:
-                fail("%s should pass, got rc=%d:\n%s" % (name, rc, out))
+            if rc != 0 or errors or warnings or not out.rstrip().endswith("OK."):
+                fail("%s should pass with no warning, got rc=%d:\n%s" % (name, rc, out))
             elif "imports 19 of the table's" not in out:
                 fail("%s: the import count is not reported:\n%s" % (name, out))
             else:

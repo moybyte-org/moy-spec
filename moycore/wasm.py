@@ -1,13 +1,11 @@
-"""A compiled cart's module, read and checked (proposals/wasm-runtime.md).
+"""A compiled cart's module, read and checked (SPEC.md 16).
 
 A cart whose manifest says `"runtime": "wasm"` carries a WebAssembly module as
-its `main`, and everything the proposal pins about that module is decidable
+its `main`, and everything SPEC.md 16 pins about that module is decidable
 from its bytes: which imports it declares, which exports, what memory. This
 reads exactly those sections and checks them against the import table
-(proposals/wasm-imports.json) and the manifest. It does not validate code --
-a host's loader does that -- and it never runs anything.
-
-Tracks the proposal, which is not part of core 0.3.
+(wasm-imports.json) and the manifest. It does not validate code -- a host's
+loader does that -- and it never runs anything.
 
 Stdlib only and MicroPython-importable, like the rest of moycore.
 """
@@ -18,17 +16,17 @@ from . import _data
 
 PAGE = 65536
 IMPORT_MODULE = "moy"
-TABLE_FILE = "proposals/wasm-imports.json"
+TABLE_FILE = "wasm-imports.json"
 
-# The tier's memory floor in pages: the reference implementation's floor
+# The binding's memory floor in pages: the reference implementation's floor
 # board's share of its cart-runtime reserve, measured with the runtime
-# resident (the proposal's Memory section and open item 8). A cart above it is
-# allowed and warned about, never refused: it runs only on consoles with more
-# memory. None until that measurement lands, and while it is None no declared
-# size draws a warning.
+# resident (SPEC.md 16.7; proposals/wasm-runtime.md, open item 8). A cart
+# above it is allowed and warned about, never refused: it runs only on
+# consoles with more memory. None until that measurement lands, and while it
+# is None no declared size draws a warning.
 MEMORY_FLOOR_PAGES = None
 
-# name -> (params, results), the proposal's required exports.
+# name -> (params, results), the exports SPEC.md 16.2 requires.
 EXPORTS = {
     "_init": ((), ()),
     "_update": (("f32",), ()),
@@ -105,7 +103,7 @@ class _Reader(object):
 
 
 def parse(blob):
-    """The parts of a module the proposal constrains, as a dict:
+    """The parts of a module SPEC.md 16 constrains, as a dict:
 
       types    [(params, results)]
       imports  [(module, name, kind, desc)] -- desc is a type index for a
@@ -224,7 +222,7 @@ def func_type(mod, index):
 
 
 def load_table():
-    """{name: (params, results)} from the proposal's import table."""
+    """{name: (params, results)} from the import table."""
     rows = json.loads(_data.read(TABLE_FILE))["imports"]
     return dict((r["name"], (tuple(r["params"]), tuple(r["results"])))
                 for r in rows)
@@ -235,7 +233,7 @@ def _sig(t):
 
 
 def check_module(blob, manifest, findings, table=None):
-    """Every rule of the proposal's module shape, against `blob` and the
+    """Every rule of SPEC.md 16.2's module shape, against `blob` and the
     manifest's declared memory. Appends (level, code, message) findings."""
     table = load_table() if table is None else table
     try:
@@ -247,8 +245,8 @@ def check_module(blob, manifest, findings, table=None):
     later = [s for s in mod["sections"] if s not in MVP_SECTIONS]
     if later:
         findings.append(("error", "wasm.profile",
-                         "section %d is past the wasm32 MVP profile the "
-                         "proposal pins" % later[0]))
+                         "section %d is past the wasm32 MVP profile SPEC.md "
+                         "16.2 pins" % later[0]))
 
     for m, name, kind, desc in mod["imports"]:
         where = "%s.%s" % (m, name)
@@ -283,7 +281,7 @@ def check_module(blob, manifest, findings, table=None):
         got = func_type(mod, exports[name][1])
         if got != want:
             findings.append(("error", "wasm.export",
-                             "%s is %s; the proposal says %s"
+                             "%s is %s; SPEC.md 16.2 says %s"
                              % (name, _sig(got) if got else "?", _sig(want))))
     if "memory" not in exports or exports["memory"][0] != "memory":
         findings.append(("error", "wasm.export",
@@ -308,7 +306,7 @@ def check_module(blob, manifest, findings, table=None):
 
 def check_par(mod, exports, findings):
     """A cart that imports `par` exports the item it runs and its stack
-    pointer, each at the proposal's type; either at another type is refused
+    pointer, each at SPEC.md 16.10's type; either at another type is refused
     whether or not it does."""
     uses = any(m == IMPORT_MODULE and n == "par" and k == "func"
                for m, n, k, _ in mod["imports"])
@@ -318,7 +316,7 @@ def check_par(mod, exports, findings):
         got = func_type(mod, item[1]) if item[0] == "func" else None
         if got != want:
             findings.append(("error", "wasm.export",
-                             "%s is %s; the proposal says %s"
+                             "%s is %s; SPEC.md 16.10 says %s"
                              % (name, _sig(got) if got else "not a function",
                                 _sig(want))))
     elif uses:

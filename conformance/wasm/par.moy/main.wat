@@ -1,4 +1,4 @@
-;; par (proposals/wasm-runtime.md, "The cart's own work across the cores"):
+;; par (SPEC.md 16.10, "The cart's own work across the cores"):
 ;; _draw hands par eight items, each the RGB565 words of thirty rows of the
 ;; frame, then blits it. A host runs them on any of its cores, at once or one
 ;; after another, and the frame is the same: this golden is every host's.

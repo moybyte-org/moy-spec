@@ -173,16 +173,15 @@ reaching for any of them fails, as SPEC.md 11 requires of every conforming host.
 
 ## The wasm binding — built only when asked
 
-`src/moy_wasm.c` is the import table of
-[`proposals/wasm-runtime.md`](../proposals/wasm-runtime.md) as C: a
+`src/moy_wasm.c` is the import table of SPEC.md §16, the WebAssembly binding,
+as C: a
 `NativeSymbol` array of the verbs, bound to a `moy_console` the way
 `moy_lua_open` binds a `lua_State`, with the palette `blit`, `blit565`, `target`
 for layers, `read` routed to a callback the host supplies, and `par`, which
 runs the cart's own items on the lanes a host offers (threads it runs on its
 other cores, which the binding fills with sibling instances of the cart over
-the same memory) or, with none, one after another. It tracks the
-proposal, so it is not core, and it costs nobody who does not ask for it: the
-file compiles to nothing unless an engine is named. `MOY_WASM` builds it over
+the same memory) or, with none, one after another. The binding is optional
+(SPEC.md §15), and it costs nobody who does not ask for it: the file compiles to nothing unless an engine is named. `MOY_WASM` builds it over
 WAMR, which registers the array under module `"moy"`; it is then the only file
 here that includes WAMR's `wasm_export.h`, from an include path the host
 provides, and WAMR is not vendored in libmoy. `MOY_WASM_JS` builds it for a host
@@ -196,6 +195,10 @@ indexed canvas; a program that also runs Lua carts on the index build links the
 raster twice, the second copy under the `moy565_` names `port/moy565.h` gives
 it. `include/moy_wasm.h` says how a host calls it; how the host loads a module —
 interpreter or compiled, from where, with what stack — stays the host's.
+
+`include/moy_cart.h` is the other side of the same table: the declarations a C or
+C++ cart includes to import it. `test/wasm_table_check.py` holds it, `moy_wasm.c`,
+the Lua binding and `wasm-imports.json` to one another.
 
 Three hosts here run it: the harness below, the desktop player
 (`port/sdl2/wasm_cart.c`, WAMR's interpreter) and the web player

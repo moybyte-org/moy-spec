@@ -29,7 +29,7 @@ buttons in, and a Lua VM. Everything between is here.
 | `cart.py` | the cart folder: manifest, script, assets, and what refuses vs degrades |
 | `api.py` | the verb table, input model, `pmem` |
 | `check.py` | the static checks behind `moy.py check` |
-| `wasm.py` | a `"runtime": "wasm"` cart's module, read and checked against `proposals/wasm-imports.json` — tracks the proposal |
+| `wasm.py` | a `"runtime": "wasm"` cart's module, read and checked against SPEC.md §16 and `wasm-imports.json` |
 | `budget.py` | SPEC.md 1.1's memory floor, as numbers a tool can use |
 | `pack.py` | the single-file shipping form (a proposal — see `proposals/`) |
 | `png.py` | a minimal PNG codec for goldens and asset conversion |

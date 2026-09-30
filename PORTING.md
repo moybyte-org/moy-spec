@@ -115,7 +115,7 @@ they are not symmetric:
 |---|---|
 | a manifest field you do not know | **ignore it** — vendors annotate carts, and minor versions add fields |
 | `"extensions": ["something"]` you lack | **refuse the cart**, by name, before running a frame (§10) |
-| `"runtime"` naming a binding you lack | **refuse the cart** (§3.1, §15) — never hand the script to your Lua VM anyway |
+| `"runtime"` naming a binding you lack | **refuse the cart** (§3.1, §15) — never hand the file to your Lua VM anyway |
 | `"canvas"` outside the closed set | **refuse the cart** (§1) — running at a size it did not ask for breaks every coordinate |
 | `"sources"` listing several scripts | **run them all, in order, each its own chunk** (§4); refuse a list that omits `main` or names a file the folder lacks |
 | an `"icon"` out of range or past the sheet | **ignore it** and choose your own (§3.4) |
@@ -317,16 +317,13 @@ evidence nobody here can generate.**
 
 ## Compiled carts: `"runtime": "wasm"`
 
-A cart can carry a WebAssembly module in place of its Lua. That binding is
-[`proposals/wasm-runtime.md`](proposals/wasm-runtime.md), a candidate the
-reference console and this repository's players implement as a vendor runtime
-(§15), so refusing such a cart cleanly is all a conforming host owes it. A host
-that takes it on implements the proposal's import table, and
-`libmoy/src/moy_wasm.c` is that table already written in C, compiled only when
-you ask for it: over WAMR with `MOY_WASM`, or with `MOY_WASM_JS` for a host whose
-own JavaScript engine runs the cart. `moy check` tells an author and a host alike
-whether a cart's module keeps to the proposal's shape. How your host executes
-the module is yours to choose and is nowhere in the contract.
+A cart can carry a WebAssembly module in place of its Lua. That binding is SPEC.md
+§16, and it is optional: refusing such a cart cleanly (§3.1) is all a conforming host
+owes it. A host that takes it on implements §16's import table, and
+`libmoy/src/moy_wasm.c` is that table already written in C, compiled only when you
+ask for it: over WAMR with `MOY_WASM`, or with `MOY_WASM_JS` for a host whose own
+JavaScript engine runs the cart. `moy check` tells an author and a host alike
+whether a cart's module keeps to §16's shape.
 
 Three hosts in this repository take the binding on, and between them they show
 the whole of the job:
@@ -335,15 +332,55 @@ the whole of the job:
   table registered, the module checked before its memory exists, the three
   hooks called. Start there.
 - **The desktop player** (`libmoy/port/sdl2/wasm_cart.c`) is the same over
-  WAMR's interpreter inside a real frame loop, with the part the proposal leaves
-  to a host: the cart's footprint checked against what the player gives a cart,
-  and a trapped frame never shown. A Lua cart and a compiled one share the
+  WAMR's interpreter inside a real frame loop, with the part §16 leaves to a
+  host: the cart's footprint checked against what the player gives a cart, and
+  a trapped frame never shown. A Lua cart and a compiled one share the
   player because the raster is linked twice, the direct-colour copy under
   `moy565_` names (`libmoy/port/moy565.h`).
 - **The web player** runs the cart as a sibling module on the browser's engine,
   never an engine inside the console: each import is a JavaScript adapter over
   the same C (`libmoy/port/wasm/cart.c`, `libmoy/port/wasm/page/cart.js`), and a
   pointer into the cart's memory crosses as a copy.
+
+### How your host executes the module
+
+That is host policy, like where you put PSRAM (§1.1), and it is nowhere in the
+contract: an interpreter, AOT, a cache, XIP — whatever holds the tick on your board.
+What the reference console and this repository learned doing it, so the next
+implementer inherits it:
+
+- **Browser, desktop:** run the `.wasm` directly. No install step, and the browser
+  is the fastest tier. The web player instantiates the cart as a sibling module
+  whose imports are adapters over the console's verbs — never a WebAssembly
+  interpreter nested inside a WebAssembly console — and the desktop player runs
+  the module on WAMR's interpreter, which a desktop has the speed for.
+- **A microcontroller: compile ahead of time.** An interpreter does not pay for
+  itself there (RATIONALE.md, "The WebAssembly binding"). On the reference console's
+  RISC-V board (ESP32-P4) external RAM carries no PMP entry, so a plain AOT module
+  loads from a file straight into PSRAM and runs there, the caches synced after the
+  loader writes the text — no flash partition and no per-install wear; XIP from a
+  partition stays an option for a host that wants the text out of RAM. The Xtensa
+  floor board (ESP32-S3) loads the same way, through the chip's instruction-bus alias
+  of external RAM; that alias is fetch-only, so the module is compiled without
+  literal pools (`wamrc --size-level=0`). Doom runs from that path on both
+  (moybyte#158).
+- **A compiled module is native code.** Whatever the sandbox promises lives in the
+  compiler's output, not in your loader, so a host that runs AOT modules decides whom
+  it trusts to have compiled them. The reference console loads a module only if a
+  key inside it names the `.wasm` it came from, the runtime build and the compiler
+  flags, and only if it is signed or its owner has chosen to run unsigned ones.
+- **Distribution.** A store may serve pre-compiled variants per architecture beside
+  the canonical `.wasm`. `wamrc` ships prebuilt for x86-64 and RISC-V targets; the
+  Xtensa backend is not in that binary and needs a build against Espressif's LLVM
+  fork, which a store does once. Runtime and compiler versions must match.
+- **Frictions already paid for.** WAMR's `LIBC_WASI` defaults on and fails riscv32
+  builds; `REF_TYPES` defaults differ between its linux and esp-idf paths; a
+  `br_table`-heavy module loads on linux and is rejected by the esp-idf build
+  (dispatch through a function-pointer table instead); WAMR must run on a real
+  pthread under ESP-IDF; and its esp-idf platform layer needed fixes on both boards
+  (the S3's dual-bus mirror, executable PSRAM on the P4), which the reference
+  implementation carries in its pinned fork of WAMR
+  (moybyte-org/wasm-micro-runtime, the pin libmoy's Makefile fetches).
 
 A compiled cart's sound is `snd`, a stream of samples. A host with audio hands
 the binding a queue — libmoy's `moy_stream` is one — and adds it into its

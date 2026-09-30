@@ -34,7 +34,7 @@
  * still conforming, just mute. Everything else -- the raster, the palette, the
  * font, the sheet, the map, the verb table, the sandbox -- is libmoy's.
  *
- * A "runtime": "wasm" cart (proposals/wasm-runtime.md) runs through the same
+ * A "runtime": "wasm" cart (SPEC.md 16) runs through the same
  * hooks on libmoy's wasm binding, in wasm_cart.c, when the player is built
  * with MOY_PLAY_WASM; without it such a cart is refused cleanly (SPEC.md
  * 3.1). --memory-limit MIB caps what a compiled cart may take to load.
@@ -720,7 +720,7 @@ int main(int argc, char **argv)
     if (fps != 60) fps = 30;
     frame_ms = 1000 / fps;
     /* A compiled cart is one module: `sources` does not apply, and a
-     * manifest that lists it is refused (proposals/wasm-runtime.md). */
+     * manifest that lists it is refused (SPEC.md 16.1). */
     if (is_wasm && manifest && strstr(manifest, "\"sources\"")) nsrc = -1;
     free(manifest);
 

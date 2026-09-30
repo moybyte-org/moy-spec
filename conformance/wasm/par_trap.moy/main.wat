@@ -1,8 +1,8 @@
-;; A trap in one of par's items (proposals/wasm-runtime.md, "The cart's own
-;; work across the cores"): it traps the call to par, and so the cart. Each
-;; _draw hands par four items, each a quarter of the frame's rows in one
-;; colour, and blits the frame. In the second, item 2 reaches unreachable after
-;; filling its rows, whichever core it ran on; a host ends the cart -- a player
+;; A trap in one of par's items (SPEC.md 16.10, "The cart's own work across
+;; the cores"): it traps the call to par, and so the cart. Each _draw hands
+;; par four items, each a quarter of the frame's rows in one colour, and
+;; blits the frame. In the second, item 2 reaches unreachable after filling its
+;; rows, whichever core it ran on; a host ends the cart -- a player
 ;; exits non-zero -- and the frame it shows, and writes, is the first one.
 ;;
 ;; Memory: the stacks from 8192, the frame from 65536. Four pages.

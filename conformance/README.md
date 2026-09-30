@@ -231,10 +231,10 @@ silent, which is a decision waiting to be made rather than one that has been.
 ## Compiled carts: `wasm_run.py`
 
 Everything above judges the index raster through Lua carts. A `"runtime":
-"wasm"` cart ([`proposals/wasm-runtime.md`](../proposals/wasm-runtime.md)) is
+"wasm"` cart (SPEC.md §16) is
 judged by a suite of its own under `wasm/`: compiled carts whose modules are
 committed as WAT source (`tools/wat.py` assembles them), and whose goldens are
-**RGB565 frames**, the proposal's Determinism section, because a palette blit's
+**RGB565 frames** (§16.11), because a palette blit's
 256 colours do not fit a palette-index golden. The PNGs in `wasm/golden/` are
 those frames with each channel's bits repeated, so each is a picture and reduces
 back to its words exactly; `wasm/golden/hashes.json` holds the words' sha256.
@@ -256,7 +256,7 @@ statement.
 | scene | what fails here and nowhere else |
 |---|---|
 | `blit` | a 256-entry palette handed over with the frame; the frame replaces the whole screen whatever the camera, clip, pal and target are, and a HUD drawn after it lands on top through them |
-| `blit565` | a direct-colour frame shown word for word: the byte order is the proposal's, never the panel's |
+| `blit565` | a direct-colour frame shown word for word: the byte order is the spec's, never the panel's |
 | `read` | the cart's own files: sizes, short reads, reads at and past the end, a file in a subfolder — and 0 for an absent name, a folder, and every name the rule refuses. A host that opens a folder as if it were a file answers garbage for it, which is how this scene's folder question came to be asked |
 | `target` | drawing into a layer and back, a layer's own camera persisting across hooks, `pix` read back from it, and its pixels kept between frames |
 | `verbs` | every ordinary verb through the binding at the import table's arity: the sentinel forms, `camera`'s out pointer, read-backs feeding colours, a sheet and map written with `sset` and `mset`, over a frame blitted through the cart's own palette with indices past 63 |
@@ -271,7 +271,7 @@ shape fixtures in `libmoy/test/wasm/` and `wasm/too_big.moy`, a well-formed cart
 asking for 4 GiB — must be refused by every host.
 
 **Provenance.** The goldens come from the twins in `wasm_scenes.py`: a blit's
-palette and bytes applied by hand from the proposal's rules, and every ordinary
+palette and bytes applied by hand from §16's rules, and every ordinary
 verb drawn by moycore, the raster the index goldens come from. `verbs`,
 `primitives` and the layer scenes are data rather than WAT — `wasm_scenes.VERBS`
 and their `traces/*.json` — and `--build` writes their modules from it, so the
@@ -283,4 +283,4 @@ interpreter inside the SDL2 port) and the web player (`conform.mjs`, the cart a
 sibling module on node's engine, its imports adapted onto the same C). Two
 engines, one binding: they agree on every scene, and that is a statement about
 `libmoy/src/moy_wasm.c` and about the adapters, not an independent witness to
-the proposal — the lineage caveat above applies here too.
+§16 — the lineage caveat above applies here too.

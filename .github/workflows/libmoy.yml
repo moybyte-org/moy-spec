@@ -125,7 +125,7 @@ jobs:
         run: make p8-test
         working-directory: libmoy
 
-      # proposals/wasm-runtime.md's module rules, through `moy check`: a
+      # SPEC.md 16's module rules, through `moy check`: a
       # conforming compiled cart passes and each refusal fixture is refused
       # with the finding its name promises. Python only -- the fixtures are
       # WAT source that tools/wat.py assembles.
@@ -134,7 +134,8 @@ jobs:
         working-directory: libmoy
 
       # The import table is the verb table: the Lua binding's globals plus the
-      # wasm binding's four, and moy_wasm.c's NativeSymbol rows are the table's.
+      # wasm binding's six, and moy_wasm.c's NativeSymbol rows and moy_cart.h's
+      # declarations are the table's.
       - name: The wasm import table is the verb table
         run: make wasm-table
         working-directory: libmoy
@@ -143,7 +144,7 @@ jobs:
       # here from the fork the reference console pins, at the pin -- libmoy
       # does not vendor it. The conforming cart's frame is held against
       # moycore's rendering; the refusal carts, the traps and quit() behave as
-      # the proposal says.
+      # SPEC.md 16 says.
       - name: The wasm binding runs under WAMR
         run: make wasm-test CFLAGS="-std=c99 -O2 -Wall -Wextra -Wpedantic -Wshadow -Wconversion -Wstrict-prototypes -Werror -Iinclude"
         working-directory: libmoy
@@ -194,7 +195,7 @@ jobs:
         run: ./build/run_cart test/core_verbs.moy /tmp/cv-native.bin --frames 1
         working-directory: libmoy
 
-      # proposals/wasm-runtime.md's scenes on every host this job has built:
+      # SPEC.md 16's scenes on every host this job has built:
       # the WAMR harness, the desktop player and the committed web player, each
       # frame held to the same RGB565 golden, and every refusal fixture refused
       # by all three.

@@ -3,8 +3,8 @@
 
     python3 test/wasm_table_check.py
 
-proposals/wasm-imports.json is the import table of proposals/wasm-runtime.md,
-and three things must agree with it or the "one verb table, two bindings"
+wasm-imports.json is the import table of SPEC.md 16, the WebAssembly binding,
+and four things must agree with it or the "one verb table, two bindings"
 claim is prose:
 
   * its names are exactly the globals libmoy's Lua binding installs (parsed
@@ -13,7 +13,10 @@ claim is prose:
   * src/moy_wasm.c's NativeSymbol array names the same rows, in the same
     order, at the same WAMR signature strings;
   * each row's WAMR string says what its wasm type says, and each row's SPEC
-    section exists.
+    section exists -- a row only this binding has names a section of 16;
+  * include/moy_cart.h, the header a C cart includes, declares every row, in
+    the table's order, imported from "moy" under the row's name, at the row's
+    wasm type once its C types are lowered to wasm32's.
 
 Two of the notes are lists the Lua binding also holds -- the verbs `target`
 redirects are the ones a Lua layer answers, and `btn`'s indices are its button
@@ -81,8 +84,64 @@ def spec_sections():
     return ids
 
 
+# A C parameter or result type -> its wasm32 value type. A pointer is an
+# offset into linear memory, so any pointer is an i32.
+C_TYPES = {"int32_t": "i32", "float": "f32", "int64_t": "i64", "double": "f64"}
+
+
+def c_type(decl):
+    decl = decl.strip()
+    if "*" in decl:
+        return "i32"
+    words = [w for w in decl.split() if w != "const"]
+    return C_TYPES.get(words[0]) if words else None
+
+
+def cart_declarations(src):
+    """[(import name, C name, [param types], [result types])] from moy_cart.h,
+    in file order; a type that is not a wasm32 value type is None."""
+    body = re.sub(r"/\*.*?\*/", " ", src, flags=re.S)
+    out = []
+    for m in re.finditer(r"MOY_IMPORT\((\w+)\)\s+([^;]*?)\bmoy_(\w+)\s*\(([^)]*)\)\s*;",
+                         body):
+        ret = m.group(2).strip()
+        params = [] if m.group(4).strip() in ("", "void") else \
+            [c_type(re.sub(r"\w+$", "", p.strip())) for p in m.group(4).split(",")]
+        results = [] if ret == "void" else [c_type(ret)]
+        out.append((m.group(1), m.group(3), params, results))
+    return out
+
+
+def check_cart_header(src, rows):
+    decls = cart_declarations(src)
+    if 'import_module("moy")' not in src or "import_name(#name)" not in src:
+        fail('moy_cart.h\'s MOY_IMPORT does not import from "moy" under the row\'s name')
+    for imp, cname, _, _ in decls:
+        if imp != cname:
+            fail("moy_cart.h imports %s as moy_%s" % (imp, cname))
+    if [d[0] for d in decls] != [r["name"] for r in rows]:
+        fail("moy_cart.h does not declare the table's rows in its order: only in the "
+             "header %s, only in the table %s"
+             % (sorted({d[0] for d in decls} - {r["name"] for r in rows}),
+                sorted({r["name"] for r in rows} - {d[0] for d in decls})))
+    by_name = dict((r["name"], r) for r in rows)
+    for imp, _, params, results in decls:
+        r = by_name.get(imp)
+        if r and (params != r["params"] or results != r["results"]):
+            fail("moy_cart.h: moy_%s lowers to (%s) -> (%s); the table says (%s) -> (%s)"
+                 % (imp, ", ".join(map(str, params)), ", ".join(map(str, results)),
+                    ", ".join(r["params"]), ", ".join(r["results"])))
+    btn = next(r for r in rows if r["name"] == "btn")["notes"]
+    order = [n.upper() for n, _ in re.findall(r"(\w+) (\d)", re.search(r"-- (.*?) --", btn).group(1))]
+    enum = re.search(r"enum \{ (MOY_LEFT[^}]*) \}", src)
+    if not enum or [e.strip()[4:] for e in enum.group(1).split(",")] != order:
+        fail("moy_cart.h's button names are not btn's indices %s" % order)
+    print("  ok   moy_cart.h declares the table's %d rows, in order, at their types"
+          % len(decls))
+
+
 def main():
-    table = json.loads(read(ROOT, "proposals", "wasm-imports.json"))
+    table = json.loads(read(ROOT, "wasm-imports.json"))
     rows = table["imports"]
     names = [r["name"] for r in rows]
     lua = read(LIBMOY, "src", "moy_lua.c")
@@ -133,9 +192,12 @@ def main():
                     ", ".join(r["results"])))
         if "~" in m.group(1) and not re.search(r"\*~", m.group(1)):
             fail("%s: a '~' that does not follow a '*'" % r["name"])
-        spec = r["spec"]
-        if spec != "wasm" and spec.lstrip("§") not in sections:
-            fail("%s: SPEC.md has no section %s" % (r["name"], spec))
+        spec = r["spec"].lstrip("§")
+        if spec not in sections:
+            fail("%s: SPEC.md has no section %s" % (r["name"], r["spec"]))
+        if (r["name"] in WASM_ONLY) != spec.startswith("16."):
+            fail("%s: its section is %s; a row is in 16 exactly when only this "
+                 "binding has it" % (r["name"], r["spec"]))
     print("  ok   every row's WAMR string matches its wasm type")
 
     target = next(r for r in rows if r["name"] == "target")["notes"]
@@ -158,13 +220,17 @@ def main():
 
     header = read(LIBMOY, "include", "moy_wasm.h")
     snd = next(r for r in rows if r["name"] == "snd")["notes"]
-    proposal = read(ROOT, "proposals", "wasm-runtime.md")
+    spec_md = read(ROOT, "SPEC.md")
+    cart_h = read(LIBMOY, "include", "moy_cart.h")
     for const, unit in (("MOY_WASM_SND_RATE", " Hz"), ("MOY_WASM_SND_DEPTH", " frames")):
         value = re.search(r"#define %s\s+(\d+)" % const, header).group(1)
-        if value + unit not in snd or "{:,}".format(int(value)) + unit not in proposal:
-            fail("snd: moy_wasm.h's %s is %s; the table's note and the proposal "
-                 "must say %s%s" % (const, value, value, unit))
-    print("  ok   snd's rate and depth are moy_wasm.h's in the table and the proposal")
+        if (value + unit not in snd or "{:,}".format(int(value)) + unit not in spec_md
+                or value + unit not in " ".join(cart_h.split())):
+            fail("snd: moy_wasm.h's %s is %s; the table's note, SPEC.md 16.9 and "
+                 "moy_cart.h must say %s%s" % (const, value, value, unit))
+    print("  ok   snd's rate and depth are moy_wasm.h's in the table, SPEC.md and moy_cart.h")
+
+    check_cart_header(cart_h, rows)
 
     if FAILS:
         sys.exit("wasm table: %d failure%s" % (len(FAILS), "" if len(FAILS) == 1 else "s"))

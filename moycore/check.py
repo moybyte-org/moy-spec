@@ -132,16 +132,11 @@ def check_manifest(manifest, findings):
         findings.append(("error", "manifest.fps",
                          'fps is %r; SPEC.md 5 allows 30, 60 or "free"' % (fps,)))
     rt = manifest.get("runtime")
-    if rt == "wasm":
+    if rt is not None and rt not in ("lua", "wasm"):
         findings.append(("warn", "manifest.runtime",
-                         'runtime is "wasm", which tracks proposals/wasm-runtime.md '
-                         "and is not core: a console that does not implement it "
-                         "refuses this cart cleanly (SPEC.md 15)"))
-    elif rt is not None and rt != "lua":
-        findings.append(("warn", "manifest.runtime",
-                         'runtime is "%s"; Lua is core\'s only binding, so this cart is '
-                         "non-portable by construction and every other console will "
-                         "refuse it cleanly (SPEC.md 15)" % rt))
+                         'runtime is "%s"; SPEC.md 15 defines "lua" and "wasm", so this '
+                         "cart is non-portable by construction and every other console "
+                         "will refuse it cleanly" % rt))
     kinds = manifest.get("input")
     if kinds is not None:
         if not isinstance(kinds, (list, tuple)):
@@ -312,7 +307,7 @@ def check_assets(sheet, tm, findings):
 
 def check_wasm_files(files, findings=None):
     """Every static check of a `"runtime": "wasm"` cart, from its raw
-    {name: bytes} (proposals/wasm-runtime.md). A module cannot be loaded into
+    {name: bytes} (SPEC.md 16). A module cannot be loaded into
     a Cart -- its main is not text -- so this reads the manifest and the
     assets itself, and hands the module to moycore.wasm."""
     findings = [] if findings is None else findings
@@ -325,6 +320,9 @@ def check_wasm_files(files, findings=None):
         findings.append(("error", "manifest", "%s must be a JSON object" % MANIFEST))
         return findings
     check_manifest(manifest, findings)
+    findings.append(("info", "manifest.runtime",
+                     'runtime "wasm" is SPEC.md 16, an optional binding: a console '
+                     "without it refuses this cart cleanly"))
 
     cv = manifest.get("canvas")
     if cv is not None and cv not in CANVAS_SIZES:

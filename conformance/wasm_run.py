@@ -15,8 +15,8 @@ of par's items reaching unreachable. `snd` holds a host's answers about its
 sample queue; with the clock stopped nothing drains, so the answers are exact
 and no sample is ever judged. `par` is the same frame whether a host ran its
 items on several cores or one after another: every host must match its golden,
-whatever cores it gives a cart. Their goldens are RGB565 frames (proposals/wasm-runtime.md,
-Determinism), rendered by the twins in wasm_scenes.py, and stored as PNGs
+whatever cores it gives a cart. Their goldens are RGB565 frames (SPEC.md
+16.11), rendered by the twins in wasm_scenes.py, and stored as PNGs
 whose channels are each word's bits repeated, so the file is a picture and
 reduces back to the word exactly.
 
@@ -109,7 +109,7 @@ def build():
             f.write(ws.module_wat(calls(), source, note, blit_first))
     if not os.path.isdir(GOLDEN):
         os.makedirs(GOLDEN)
-    hashes = {"about": "proposals/wasm-runtime.md's compiled-cart scenes: each golden "
+    hashes = {"about": "SPEC.md 16's compiled-cart scenes: each golden "
                        "is the RGB565 frame, little-endian, whose sha256 and CRC32 are "
                        "below; the PNG beside it is that frame with each channel's bits "
                        "repeated. Written by conformance/wasm_run.py --build.",

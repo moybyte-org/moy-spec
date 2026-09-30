@@ -1,4 +1,4 @@
-;; read (proposals/wasm-runtime.md, "Reading the cart's own files"): the
+;; read (SPEC.md 16.6, "The cart's own files"): the
 ;; cart's own folder, its subfolders included, and nothing else. _init asks
 ;; fifteen questions of it, each answer is drawn as a bar in _draw, and the
 ;; bytes it read are the frame. What the scene holds a host to:

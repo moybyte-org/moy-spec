@@ -1,4 +1,4 @@
-;; A trap (proposals/wasm-runtime.md, "Traps"): the frame it interrupts is
+;; A trap (SPEC.md 16.8, "Traps"): the frame it interrupts is
 ;; never presented. The first _draw finishes; the second repaints the whole
 ;; screen and then traps. A host ends the cart -- a player exits non-zero --
 ;; and the frame it shows, and writes, is the first one.

@@ -50,7 +50,7 @@ typedef struct {
 } web_cart_config;
 
 /* Check the cart before anything of it exists -- its footprint against the
- * limit, its module against the proposal's shape -- and bind a fresh console
+ * limit, its module against SPEC.md 16's shape -- and bind a fresh console
  * to it. Returns the binding (the moy_wasm the page's adapters call the table
  * with), or NULL with the refusal in `err`: a plain sentence for the player. */
 void *web_cart_open(const web_cart_config *cfg, char *err, size_t errlen);

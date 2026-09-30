@@ -3,7 +3,8 @@
 > **Status: DRAFT 0.3.** Every verb here is decided and implemented — this
 > describes a console that exists and runs games today, not a design sketch.
 > The 3D verbs (§6.1), provisional through 0.2, are core as of 0.3. Decisions
-> worth arguing about are collected in §12 with their reasoning.
+> worth arguing about are collected in §12 with their reasoning. §16, the
+> WebAssembly binding, is optional: a host implements it or refuses its carts.
 
 **moy** is a virtual console: a fixed raster, a fixed palette, a fixed set of
 drawing, input and audio verbs, and a cart format that packages a game against them.
@@ -54,7 +55,7 @@ desktop simulator, and someone else's OS.
 | Tilemap | one grid, cells hold a tile id 0–254 |
 | Audio | **4 channels**, 8 waveforms, per-note effects (§8) |
 | Tick | **30 Hz** guaranteed; 60 Hz opt-in (§5) |
-| Language | **Lua 5.4**, sandboxed (§4) |
+| Language | **Lua 5.4**, sandboxed (§4); WebAssembly, an optional second binding (§16) |
 | Origin | top-left, `+x` right, `+y` down |
 
 The canvas defaults to **320 × 240**. A cart wanting a chunkier look may declare a
@@ -195,6 +196,9 @@ That folder is the whole format. How the folder *travels* — a zip, a tarball, 
 git clone, a directory on an SD card — is packaging, and this spec says nothing
 about it for the same reason it says nothing about filesystems (§0). A host that
 wants to accept an archive unpacks it and hands the console a folder.
+
+A compiled cart (§16) is the same folder with a WebAssembly module in place of its
+Lua; §16.1 says what changes.
 
 ### 3.1 manifest.json
 
@@ -629,8 +633,8 @@ These are **call-bounded**: cost scales with verbs issued, and the host owns
 every pixel. What the set does not cover is **step-bounded** work whose output is
 data-dependent per sample — voxel-terrain rendering (Comanche), general textured
 3D, per-pixel effects. No verb fixes those: the cost is the cart's own
-interpreted loop. They belong to a vendor extension (§10) or to a compiled-cart
-binding (§15), and a cart author should know that *before* building — which is
+interpreted loop. They belong to a vendor extension (§10) or to a compiled cart
+(§16), and a cart author should know that *before* building — which is
 what this table is for.
 
 **The gates they cleared**, kept because they are the bar the next candidate
@@ -668,7 +672,7 @@ next reader does not re-derive them:
   ~74, a ~1.6× penalty too small for any iteration order to pay for itself.
 - **`raycast()` and other engine verbs** — resolved out on principle: a verb that
   takes a camera and returns a finished frame is an engine, and an engine behind
-  a verb is a vendor extension (§10) or a library inside a compiled cart (§15),
+  a verb is a vendor extension (§10) or a library inside a compiled cart (§16),
   never core. Core verbs are the primitives every genre shares.
 
 ---
@@ -1169,7 +1173,7 @@ render at a different depth, scale or byte order. This spec keeps the canvas opa
 covers the cases raw access was wanted for with shaped verbs instead (§6.1).
 **Cost:** effects whose *logic* is genuinely per-pixel — plasma, fire, tunnels — cannot
 be written as Lua carts. That is the deliberate boundary, and it is a statement about
-*this* binding: a compiled-cart binding (§15) is where that boundary would move, with
+*this* binding: the compiled-cart binding is where that boundary moves (§16.5), with
 a framebuffer in the cart's own linear memory rather than raw access to the host's.
 
 ### 12.7 — Cover art is deferred, and the icon is a pointer.
@@ -1237,28 +1241,460 @@ which point it moves to a neutral home with the implementers as maintainers. The
 reference implementation and the conformance suite are the deliverables; nobody is
 asked to adopt anyone's code.
 
-## 15. Future bindings
+## 15. Bindings
 
 The verb table above is the contract; Lua is the **first binding of it**, not its
-definition. A second binding (a `"runtime"` field in the manifest, as the reference
-implementation already does for its dual runtimes) can be added without a second
-document. What a host owes a binding it does not implement is settled in §3.1: a
-clean refusal, never an attempt to run the script anyway.
+definition. A binding is the language a cart's `main` is written in, and the
+manifest's `"runtime"` names it (§3.1): absent or `"lua"` is §4, `"wasm"` is §16.
+What a host owes a binding it does not implement is settled in §3.1: a clean
+refusal, never an attempt to run the file anyway.
 
-WebAssembly is the settled candidate, and it is settled on measurements rather than
-on taste: on reference hardware an interpreted WASM runtime does not pay for itself
-and an AOT-compiled one pays many times over. One consequence reaches back into this
-document, so it belongs here and not only there. A compiled cart brings its own
+**Lua is core; the WebAssembly binding is optional.** Every conforming host runs
+Lua carts. A host that implements §16 runs a compiled cart exactly as §16 says, and
+one that does not refuses it by name. A compiled cart therefore runs on every
+console that took the binding on and nowhere else — the trade an extension makes
+(§10), without a vendor namespace, because the binding is defined here rather than
+by one console.
+
+The second binding exists for the work the first cannot hold: **step-bounded**
+rendering (§6.1) — voxel terrain, general textured 3D, per-pixel effects,
+emulators — where the cost is the cart's own loop and no verb can absorb it.
+WebAssembly is the one compilation target every systems language shares, one
+artifact runs on every tier including the browser, and it is sandboxed by
+construction: linear memory is bounded and imports are the only capability
+surface, so the verb table literally is the sandbox. It is settled on
+measurements rather than on taste — on reference hardware an interpreted WASM
+runtime does not pay for itself and an AOT-compiled one pays many times over
+(RATIONALE.md, "The WebAssembly binding").
+
+One consequence reaches back into this document. A compiled cart brings its own
 rasterizer and needs the one thing the verb table cannot give it: a framebuffer in
-**the cart's own linear memory**, blitted once per frame. Reaching pixels through a
-per-pixel import instead pays a language-boundary trampoline 76,800 times a frame
-and is dead at any VM speed — so fast 3D is gated on that contract, not on the
-runtime. §12.6 declines to give a *Lua* cart a framebuffer; this is where that
-boundary moves, and it never exposes the **host's**.
+**the cart's own linear memory**, handed over once per frame (§16.5). Reaching
+pixels through a per-pixel import instead pays a language-boundary crossing 76,800
+times a frame and is dead at any VM speed. §12.6 declines to give a *Lua* cart a
+framebuffer; §16 is where that boundary moves, and it never exposes the **host's**.
 
-`proposals/wasm-runtime.md` is the rest of it, and the only copy: the measured
-numbers and the doctrine they force, the module shape, the import table, the
-framebuffer contract, the determinism profile, distribution, and the open items.
-Not part of 0.3. Until that proposal is promoted, `"wasm"` is a vendor runtime —
-the reference console and this repository's own players run it — and a host that
-does not implement it refuses it as §3.1 says.
+A Lua cart gets nothing from §16, deliberately: there is no path from Lua into the
+compiled tier, and a Lua cart that outgrows its budget is ported, keeping its verbs,
+its tick and its assets (RATIONALE.md says why).
+
+## 16. The WebAssembly binding
+
+A cart whose manifest says `"runtime": "wasm"` is a **compiled cart**: its `main`
+is a WebAssembly module, and this section is the contract it and a host meet at.
+Three executable copies of the contract sit beside it, each tested against the
+others:
+
+- **`wasm-imports.json`** — the import table as data, one row per import: its wasm
+  type, its WAMR signature string, the section of its verb, and the notes that say
+  how the verb's Lua forms become one wasm function.
+- **`libmoy/include/moy_cart.h`** — the same table as the C declarations a C or C++
+  cart includes.
+- **`libmoy/src/moy_wasm.c`** — the host's side of the table in C, over WAMR or
+  under a JavaScript embedder's own engine (libmoy's README says how).
+
+`moy check` holds a compiled cart's module to this section, its manifest and the
+table.
+
+### 16.1 The cart
+
+```json
+{ "format": "moy-1", "title": "…", "runtime": "wasm", "main": "main.wasm",
+  "memory": 64 }
+```
+
+`main` names the module, and for this runtime it defaults to `main.wasm`.
+`memory` is required: the cart's linear memory in 64 KiB pages (§16.7).
+`sources` does not apply — a compiled cart is one module — and a manifest that
+lists it is refused the way §4 refuses a broken one. Every other field keeps its
+§3.1 meaning, `canvas` and `fps` included, and every asset file is unchanged:
+`sprites.moygfx`, `map.moymap`, `flags.moyflags`, `sounds.json`, `config.json`.
+**The `.wasm` is the sole portable artifact.** How a host executes it is the
+host's own business (PORTING.md): a host may keep a compiled form of the module
+beside it — the reference console does, one per chip — but no other host reads
+one, and a cart is complete without it.
+
+Source is welcome beside the module — `src/` in the folder, or a `"source"`
+manifest field carrying a URL — and never required or verified. The
+always-readable tier is the Lua cart.
+
+### 16.2 Module shape
+
+- **Profile: wasm32 — the MVP, and three additions every engine that runs it
+  has:** an exported mutable global (`__stack_pointer`, §16.10), the
+  sign-extension operators, and the non-trapping float-to-int conversions. No WASI,
+  no threads, no SIMD, no bulk memory, no reference types, no GC proposal. The
+  profile is pinned so a 2026 toolchain and a 2030 one produce carts the same host
+  runs; extensions to it are a spec revision, not a toolchain default. A cart uses
+  more than one core through `par` (§16.10), never through threads.
+- **One linear memory, the module's own**, exported as `memory`, its minimum equal
+  to its maximum equal to the manifest's `memory`. Not imported, not shared, not
+  64-bit.
+- **Exports:** `_init()`, `_update(f32 dt)`, `_draw()` and `memory` — all four
+  required, at exactly those types; an empty hook is an empty function. The host
+  calls the three hooks as the §5 tick calls the Lua ones, with `dt` the tick
+  period. A cart that imports `par` also exports `_par(i32 i, i32 arg)` and its
+  stack pointer, the mutable `i32` global `__stack_pointer` (§16.10); a `_par` or a
+  `__stack_pointer` at another type is refused whether or not it does. Any other
+  export is ignored.
+- **No start function.** Nothing in the module runs before `_init`.
+- **Imports: functions from module `"moy"`, each a row of the import table at that
+  row's exact type.** A cart imports only the rows it uses. The Lua build is
+  `LUA_32BITS` (§4.2), so the two bindings already share a numeric world; nothing
+  widens.
+- **No other imports exist.** That sentence is the entire §4.1 sandbox for this
+  binding. A module that imports anything else — from another module, a memory, a
+  global, a table, a name outside the table, a row at the wrong type — is refused
+  before it runs.
+
+Any toolchain that emits that profile makes a cart, and none needs an SDK. For C
+and C++, `moy_cart.h` declares every import; with clang it is one command (the two
+memory sizes are `"memory": 64` in bytes):
+
+```sh
+clang --target=wasm32 -O2 -nostdlib -Wl,--no-entry \
+      -Wl,--export=_init,--export=_update,--export=_draw \
+      -Wl,--initial-memory=4194304,--max-memory=4194304 \
+      -o main.wasm main.c
+```
+
+`zig build-exe -target wasm32-freestanding` and Rust's `wasm32-unknown-unknown`
+produce the same shape.
+
+### 16.3 The import table
+
+**The import table is the verb table.** Every verb the Lua binding installs is one
+import of the same name and the same §6–§9 meaning, and six exist because this
+binding needs them: `blit` and `blit565` (the framebuffer, §16.5), `read` (the
+cart's own files, §16.6), `target` (drawing into a layer, §16.4), `snd` (the
+sample stream, §16.9) and `par` (the cart's own work across the cores, §16.10).
+`wasm-imports.json` lists every one; a verb the spec gains is a row there before it
+is anything else.
+
+`W` and `H` are not imports. The canvas is the manifest's (§1, §3.1) and a host
+runs the cart at exactly that size or refuses it, so a compiled cart knows both
+when it is compiled.
+
+### 16.4 Marshalling — one Lua verb, one wasm function
+
+A Lua verb is dynamically typed, takes optional arguments, overloads by argument
+count and returns several values; a wasm import has one fixed type. These rules
+close the gap, and every row's notes apply them.
+
+- **Numbers.** `i32` for integers, indices, colours, coordinates and booleans;
+  `f32` where the Lua verb takes or returns a fraction (`rnd`, `beep`, `flr`'s
+  argument, `_update`'s `dt`). A boolean is `i32` 1 or 0 in both directions, and
+  any non-zero argument reads as true.
+- **Every argument is passed.** Lua fills an absent argument with a default; a
+  wasm call has no absent arguments, so the cart passes the default. The table's
+  notes carry Lua's defaults.
+- **An overload by argument count is one import at the widest arity**, and the
+  narrower form is a sentinel in an argument it omits: a negative value where the
+  verb's own values are never negative (`pix`'s colour, the bit of `fget` and
+  `fset`, the code of `key` and `keyp`, the index of `pal` and `palt`,
+  `sound_stop`'s channel). Where no value is free, a last argument selects the
+  form (`pmem`'s `write`). A no-argument reset whose effect is an ordinary call is
+  that call: `camera()` is `camera(0, 0)`, `clip()` is `clip(0, 0, W, H)`,
+  `fillp()` is `fillp(0, -1)`.
+- **Several results** are written as consecutive `i32` at an out pointer passed as
+  the last argument, which may be 0 to discard them (`camera`'s previous offset,
+  `touch`'s four values).
+- **nil is a value the verb could not otherwise return**: 0 for a layer handle and
+  for `touch` with no pointer, -1 for an absent `cfg` key. A verb that already
+  answers an integer for "nothing" keeps it (`mget`'s -1).
+- **Strings are bytes in linear memory, passed as a pointer and a length** — no
+  terminator and no encoding, exactly the byte string a Lua string is (§6's
+  `print`). A name drawn from a closed set is its index in the order the spec lists
+  the set instead: `btn(0, p)` is `btn("left", p)`. A verb that answers a string
+  copies it into a buffer the cart supplies and returns its whole length, so a
+  short buffer is visible (`cfg`).
+- **Layers are handles.** `make_layer` returns a positive `i32` that names the
+  layer until the cart ends, or 0 where Lua returns nil. Where a Lua cart calls a
+  method, `ly:rect(…)`, a compiled cart points the drawing verbs at the layer —
+  `target(ly)` — draws, and points them back with `target(0)`. The verbs `target`
+  redirects are exactly the ones a Lua layer answers, a layer keeps its own draw
+  state as it does in Lua, and the target is the screen whenever the host calls an
+  export. A handle `make_layer` never returned is a trap, as a method call on
+  something that is not a layer is an error in Lua. Nothing frees a layer: it lives
+  until the cart ends, where Lua's collector may end it sooner.
+- **Pointers are offsets into linear memory**, checked on every call; a range that
+  leaves the memory is a trap. 0 means "none" wherever a pointer is optional, since
+  no toolchain places an object at address 0.
+- **`time()` is the clock.** There is no clock import: §9's `time()` answers
+  milliseconds since the cart started, which is all a cart needs to measure. It
+  paces itself by returning from `_update`, and §5 calls it again.
+- **No import blocks.** Every import completes in time bounded by its arguments —
+  `read` by its length, `blit` by the frame, `snd` by its count, `par` by the
+  cart's own items — and none waits for input, a timer, the display, the audio
+  output or the network. There is no sleep and no vsync wait: a cart waits by
+  returning.
+- **`quit()` does not return.** The host unwinds the cart as it would for a trap
+  and treats the unwinding as the cart ending itself (§9), with no report.
+
+### 16.5 The framebuffer — `blit` and `blit565`
+
+A compiled cart reaching pixels through the `pix` import would pay a crossing per
+pixel, 76,800 a frame. So it hands over a whole frame at once:
+
+```c
+void blit(i32 frame, i32 pal);   /* frame: W x H bytes in linear memory, one
+                                    palette index per pixel, row-major.
+                                    pal: 0 for the cart's own palette, or 768
+                                    bytes of RGB -- a 256-entry palette
+                                    presented with THIS frame */
+```
+
+`W × H` is the declared canvas (§1), 76,800 bytes at the default 320 × 240. With
+`pal` 0 an index names the cart's §2.2 palette entry, modulo 64; otherwise it names
+one of the 256 entries at `pal`. The frame covers the whole screen and ignores the
+draw state — camera, clip, both palettes, `palt`, `fillp` — and the target: like
+`cls` it composites rather than draws. It is legal only inside `_draw`, at most
+once per `_draw` counting `blit565`; a call anywhere else, or a second one, is a
+trap. A cart may freely mix `blit` with ordinary verbs; draw order is call order,
+so a HUD drawn after the blit lands on top of it.
+
+**The frame stays as blitted until `_draw` returns.** A host may present it
+straight from the cart's memory — a panel flush that resolves the palette as it
+ships the frame, say — and so read it after the call rather than during it. A cart
+therefore leaves the frame it handed over, and its palette, unchanged for the rest
+of that `_draw`; from its next hook the memory is its own again. What the cart
+draws is the same either way: a verb drawn over the frame, or a pixel read from it,
+meets the frame as it was blitted.
+
+A frame a palette blit wrote holds up to 256 colours, which the 64 indices of an
+indexed canvas cannot represent, so a host running this binding keeps the screen in
+direct colour while a compiled cart runs — the choice §1.1 already allows. What
+`pix` reads back from a pixel a palette blit wrote is host-dependent (an index
+0–63), and no conformance scene reads one.
+
+**The per-frame palette does not reopen §12.1.** That decision forbids
+retroactively re-meaning pixels already drawn on a retained canvas; a `blit` is a
+complete frame delivered together with its own palette — nothing is retained,
+nothing re-meant, and the host's cost is rebuilding a 256-entry table per frame,
+which is noise. It buys the runtime-palette work the fixed §2.2 table cannot
+express: fades and flashes, palette cycling, and the emulators and ports whose
+palette changes at runtime or brings more than 64 entries of its own. Per-scanline
+palettes remain a bridge deliberately not crossed.
+
+Nor does it reopen §12.6: the cart writes *its own* memory, the host's framebuffer
+stays opaque, and hosts keep every freedom of depth, scale and byte order. Assets
+stay host-side as well: `spr`, `map` and `sspr` render the cart's sheet and map as
+ever, and a cart that wants its files' bytes reads them (§16.6).
+
+```c
+void blit565(i32 frame);   /* frame: W x H RGB565 words in linear memory,
+                              LITTLE-ENDIAN, row-major -- 153,600 bytes at
+                              320 x 240 */
+```
+
+`blit565` is the second submission format, alongside `blit` and never replacing
+it, for content that was never palettized — gradients, shaded 3D, photographic art
+— which `blit` would make the cart quantize or dither first. Exactly `blit`'s rules
+apply: only inside `_draw`, at most once counting `blit`, the whole screen whatever
+the draw state, and the result treated exactly as a §6-drawn frame, freely mixed
+with ordinary verbs in call order.
+
+**The byte order is fixed here, and is not "whatever the panel wants."** The
+moment the submitted layout tracks the display, a cart writes to *that*
+framebuffer rather than *a* framebuffer and §12.6 is quietly reopened. A host with
+a byte-swapped 16-bit panel swaps; a browser expands to RGBA8888; a desktop player
+expands to RGB888. Pinning the order also keeps this tier golden-checkable
+(§16.11).
+
+**A cart that could have been indexed should stay indexed.** Two bytes a pixel is
+twice the store traffic of one, and a software rasterizer is store-bound: on the
+reference console's boards `blit565` costs the cart more than it saves the host,
+and on the floor board several times more (RATIONALE.md has the measurements). It
+is for pixels that are direct-colour by nature, where the indexed route would cost
+a quantization pass rather than save a store.
+
+### 16.6 The cart's own files — `read`
+
+```c
+i32 read(i32 name, i32 name_len, i32 offset, i32 dst, i32 len);
+```
+
+Copies up to `len` bytes of the cart's own file `name`, starting at byte `offset`,
+into linear memory at `dst`, and returns how many it copied. With `len` 0 it
+copies nothing and returns how many bytes remain from `offset` — at offset 0, the
+file's size.
+
+`name` is a path relative to the cart's folder: bytes, `/`-separated, every
+segment non-empty and neither `.` nor `..`, with no `\` and no NUL. A name that is
+absent, or that breaks that rule, reads 0, and so does an offset at or past the end
+— so a cart cannot tell a missing file from an empty one, and cannot reach
+anything outside its folder. That is as far as §0's "no filesystem access"
+stretches: the folder already is the cart. Every file in it is readable, the
+manifest and the module included; nothing is writable, and `pmem` (§9) stays the
+only state a cart keeps.
+
+It exists because a ported engine needs its own data and the sprite sheet cannot
+carry it — Doom reads a 4 MB WAD. The read is synchronous and bounded by `len`: a
+host whose carts live on slow storage makes it slow, and never makes it wait on
+anything else. A user's own files — a document the cart did not ship — are a
+different capability and would be a different import, so this one never widens
+past the cart's folder.
+
+### 16.7 Memory — one fixed block, checked before it exists
+
+A compiled cart's memory is one block, sized by its manifest and never grown.
+`"memory": N` declares N pages of 64 KiB (65,536 bytes each), and it covers
+everything the cart has: its data, its stack, its heap, any frame it blits from.
+The module's memory minimum and maximum are both N, so `memory.grow` answers -1, as
+wasm specifies, and a cart plans for that rather than trapping on it.
+
+A host checks this **before it allocates anything.** A manifest without `memory`,
+or a module whose memory disagrees with it, is refused — §3.1's clean refusal —
+before the module is instantiated: never half-loaded, never grown to fit. So is a
+cart whose whole load footprint — the declared memory, the module's code and the
+engine's working pool — is more than the host can give it, and that refusal is a
+plain notice to the player naming both figures, never an error report or a crash.
+
+**§1.1's ≈ 400 KB does not apply to this binding.** It is the script tier's floor,
+stated for a host that owns every pixel; a host implementing this binding already
+carries a WebAssembly runtime and the memory a module and its linear memory load
+into, and a `blit565` frame alone is 153,600 bytes. **This binding's floor is the
+floor board's**: the reference implementation's smallest board's share of its
+cart-runtime reserve with the runtime resident, so a compiled cart within it runs
+on every board of that lineup — the no-fragmentation rule §1.1 enforces for
+scripts. A cart above it is allowed: it runs only on consoles with more memory, and
+a console that cannot fit it refuses it at launch with the notice above. Like
+§1.1's floor it is checkable before any host sees the cart, and `moy check` reports
+a manifest above it as a warning that names the floor, never a refusal. A host that
+cannot give a cart within the floor its pages is short of the floor, and fixing
+that is the host's problem, as §1.1 makes its own floor the implementer's. What the
+floor bounds is the whole load footprint, not `"memory"` alone. The figure is not
+yet measured (`proposals/wasm-runtime.md`, open item 8); until it is, `moy check`
+carries it as a named constant with no value and warns about nothing on size.
+
+### 16.8 Traps
+
+A trap ends the cart the way a Lua error does (§4.3). Whatever makes wasm trap —
+`unreachable`, an out-of-bounds access, an integer division by zero, a stack
+overflow — traps the cart, and so does everything this section calls a trap: an
+import handed a range outside linear memory, a layer handle `make_layer` never
+returned, a `blit` outside `_draw` or a second one inside it, an import called from
+one of `par`'s items, and `par` handed a negative count or stacks outside memory or
+off 16-byte alignment. The host reports it — the trap's message, and whatever
+location the module lets it recover — and goes back to where the player launched
+the cart. **The frame the trap interrupted is never presented**: the player sees
+the last whole frame, then the report. A trapped instance is never called again,
+and a host keeps a trap from passing silently exactly as §4.3 requires of a Lua
+error.
+
+`quit()` unwinds the same way and is not a trap (§16.4).
+
+### 16.9 Sample audio — `snd`
+
+§8 is a tracker-shaped data model, which is right for authored carts and useless
+for an emulated sound chip or a ported engine's mixer: those produce a sample
+stream. So this binding's own audio surface is **samples, not the §8 data model**.
+The §8 verbs stay in the table, and a cart may use both.
+
+```c
+i32 snd(i32 pcm, i32 nframes);   /* pcm: nframes of signed 16-bit mono,
+                                    LITTLE-ENDIAN, at 22,050 Hz. Queues what
+                                    the host has room for and returns how
+                                    many; with nframes 0 it reads nothing and
+                                    returns the room */
+```
+
+**22,050 Hz, mono, 16-bit** — the rate §8.3's synthesis is defined at. A browser or
+desktop resamples to its device, which is `blit565`'s position again: the format
+is fixed here and the host converts, never the cart tracking the device.
+
+**The host holds 2,048 frames**, about 93 ms: that many frames the cart handed over
+and the output has not yet taken. The cart refills the queue once per frame, so it
+has to outlast the gap between two frames with room for a slow one. The depth is
+also the most latency the queue adds; what an output does after it takes frames —
+a DMA ring, a browser's audio thread — is its own latency, like a panel's, and does
+not count against the 2,048.
+
+**The return value is the clock.** The output drains the queue at its rate and the
+cart fills it at its own pace, and neither may assume the other's: a cart that
+makes a fixed count per tick drifts against the output, because two clocks never
+agree, and starves it or overflows it. A cart that asks for the room (`snd(0, 0)`)
+and fills it — or offers what it has and keeps what was not taken — tracks the
+output exactly, whatever its frame rate. 0 means the queue is full for now;
+nothing blocks (§16.4).
+
+**Silence drains at the rate.** §8.3 already makes silence a valid rendering, so a
+host without audio accepts and drops — and its queue still drains by the console's
+clock, 22,050 frames a second, so the cart meets the backpressure it would meet
+where the frames are played. A cart that paces itself on the stream, an emulator
+syncing to its sound chip, runs at speed on a silent host. The cart cannot tell,
+exactly as with `sfx`.
+
+How the stream meets the console's own sound is the host's. libmoy's `moy_stream`
+(`moy_audio.h`) is a queue mixed into the §8 synth's output after its channels and
+under its master level. A `pcm` range outside linear memory is a trap, and a
+negative `nframes` is such a range. Audio has no goldens (§8.3); what conformance
+holds is the counts, which a stopped clock makes exact.
+
+### 16.10 The cart's own work across the cores — `par`
+
+```c
+void par(i32 n, i32 arg, i32 stacks, i32 size);
+    /* _par(i, arg) for every i in [0, n), across the host's cores; returns
+       when every item has. Item i's C stack is the `size` bytes below
+       stacks + (i + 1) * size */
+```
+
+A compiled cart's cost is its own loops, and the consoles that run it have more
+than one core. `par` hands the host `n` items of that work — a band of a frame's
+rows, a range of vertices — and returns when all are done. The host runs them on
+the cores it gives the cart, the calling one included, at once and in any order. A
+host with one core, or one that gives the cart only the calling core (a browser
+page without cross-origin isolation), runs them there one after another, in order.
+The cart cannot tell which, and its frame is the same either way.
+
+**What the cart provides.** The export `_par(i32 i, i32 arg)` runs item `i`; `arg`
+is `par`'s own, passed through, typically a pointer to the job. The cart also
+exports its stack pointer as `__stack_pointer`, the mutable `i32` global that C,
+C++, Rust and Zig all move their stack with (`-Wl,--export=__stack_pointer` with
+clang). The host sets it to `stacks + (i + 1) × size` for item `i`, so every item
+has a stack of its own whichever core runs it, and puts it back when the item
+returns. `stacks` and `size` are multiples of 16 and the `n × size` bytes from
+`stacks` lie in linear memory; otherwise `par` traps. A module that imports `par`
+without both exports is refused before it runs.
+
+**What an item may do** is compute over the cart's memory. It calls no import: one
+that does traps, `par` included, so items do not nest. It writes no memory another
+item reads or writes, and it uses no mutable global but its stack pointer: an item
+on another core runs in an instance of its own, whose globals are as the module
+declares them, so what the cart has to hand an item it hands over in memory.
+Within those rules the result depends neither on the order nor on how many cores
+ran it, which keeps a compiled cart's frames identical on every host (§16.11); an
+item that breaks them makes the result host-dependent, as a NaN payload is.
+Everything the cart wrote before calling `par` is visible to every item, and
+everything the items wrote is visible when `par` returns: the host's join is the
+only synchronisation a cart needs, so the profile stays without threads or
+atomics.
+
+**A trap** in any item traps the call to `par` with the message of the
+lowest-numbered item that trapped, which is the one a host running them in order
+stops at. A host lets every item it started finish first; items above the lowest
+trap may or may not have run.
+
+How many cores a host gives a cart, and how it shares the items among them, is
+host policy. Why fork-join rather than threads is RATIONALE.md's.
+
+### 16.11 Determinism
+
+WebAssembly is deterministic except NaN bit patterns. The binding pins it with one
+rule: **a conforming host may canonicalize NaNs; a conforming cart must not depend
+on NaN payloads.** Everything else — integer arithmetic, `f32` rounding, linear
+memory — is bit-identical across engines by the WebAssembly specification itself,
+which makes this binding *easier* to hold to golden frames than Lua was: the frame
+a cart blits is the frame the suite diffs, on every host. `par` keeps that: items
+that follow its rules leave the same memory whatever their order and however many
+cores ran them.
+
+**This binding's goldens are RGB565 frames.** The palette-index goldens of §11
+cannot represent a palette blit's 256 colours, so a compiled cart's scene is judged
+on the frame as shown, reduced to RGB565 — each channel's high bits, `r >> 3`,
+`g >> 2`, `b >> 3`, row-major, little-endian. It is the finest form every host
+reproduces exactly: a direct-colour host holds it and an RGB888 host reduces to
+it. Verbs reduce through the cart's palette, a `blit` through the palette it was
+handed, and a `blit565` frame is already in the golden's form.
+`conformance/wasm_run.py` holds a host to these scenes and to the refusals.

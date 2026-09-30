@@ -45,7 +45,7 @@ typedef struct {
 } wasm_cart_config;
 
 /* Check the cart and load it: its footprint against cfg->limit, then its
- * module against the proposal's shape, before its memory exists. NULL with
+ * module against SPEC.md 16's shape, before its memory exists. NULL with
  * the refusal in `err` -- a plain sentence for the player. */
 wasm_cart *wasm_cart_open(const wasm_cart_config *cfg, char *err, size_t errlen);
 

@@ -1,4 +1,4 @@
-;; target (proposals/wasm-runtime.md, "Marshalling"): a compiled cart's
+;; target (SPEC.md 16.4, "Marshalling"): a compiled cart's
 ;; receiver for a Lua layer's methods. The scene holds one full-screen layer,
 ;; the one SPEC.md 1.1 guarantees, and holds a host to:
 ;;

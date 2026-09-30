@@ -40,8 +40,7 @@ Before you ship, and to work with the art tools you already own:
                                  from a laptop instead of from a handheld you
                                  do not own. A "runtime": "wasm" cart has its
                                  module checked against the import table,
-                                 exports and memory proposals/wasm-runtime.md
-                                 pins
+                                 exports and memory SPEC.md 16 pins
     moy.py pack <cart.moy>       the folder -> ONE file you can attach, link or
                                  list. Deterministic: same folder, same bytes
     moy.py unpack <cart.moyc>    ... and back to a folder
@@ -525,7 +524,7 @@ def cmd_check(args):
     if isinstance(manifest, dict) and manifest.get("runtime") == "wasm":
         # A compiled cart's main is a module, not a script, so it never
         # becomes a Cart: its checks read the module's own sections against
-        # proposals/wasm-runtime.md and its import table.
+        # SPEC.md 16 and its import table.
         findings = _check.check_wasm_files(files)
         title = manifest.get("title")
     else:

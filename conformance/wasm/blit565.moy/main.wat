@@ -1,7 +1,7 @@
-;; blit565 (proposals/wasm-runtime.md, "Full colour"): a direct-colour frame of
+;; blit565 (SPEC.md 16.5): a direct-colour frame of
 ;; little-endian RGB565 words, every channel ramped across the screen. It is
 ;; already in the golden's form, so the scene holds a host to showing exactly
-;; the words it was handed: the byte order is the proposal's, not the panel's.
+;; the words it was handed: the byte order is the spec's, not the panel's.
 ;; The circle drawn before it is gone; the ring and the text drawn after it
 ;; are on top.
 ;;

@@ -196,7 +196,7 @@ p8-test: $(RUNCART) $(FLOATFOLD)
 	python3 test/p8_first_draw.py
 	python3 test/p8_port_check.py
 
-# The wasm binding (src/moy_wasm.c, proposals/wasm-runtime.md) under WAMR.
+# The wasm binding (src/moy_wasm.c, SPEC.md 16) under WAMR.
 # WAMR is the one thing here fetched from the network, by this target and by
 # `play`: it is not a libmoy dependency and is not vendored, so this clones the
 # fork the reference console pins, AT THE PIN, into build/wamr/ (gitignored,
@@ -315,14 +315,14 @@ $(PLAY): port/sdl2/main.c port/sdl2/wasm_cart.h port/moy_manifest.h src/moy_lua.
 
 play: $(PLAY)
 
-# `moy check` on compiled carts (proposals/wasm-runtime.md): the fixtures in
+# `moy check` on compiled carts (SPEC.md 16): the fixtures in
 # test/wasm/ are WAT source, assembled by tools/wat.py with nothing but
 # Python, and each is refused -- or, for hello.moy, passed -- through the real
 # CLI. No WAMR and no compiler: this is the half every checkout can run.
 wasm-check:
 	python3 test/wasm_check_test.py
 
-# The wasm import table (proposals/wasm-imports.json) is the verb table the Lua
+# The wasm import table (wasm-imports.json) is the verb table the Lua
 # binding installs plus the wasm binding's own six, and src/moy_wasm.c
 # registers exactly its rows at its signatures. Parsed, not compiled, so it
 # needs no WAMR.

@@ -1,14 +1,14 @@
-"""The compiled-cart scenes (proposals/wasm-runtime.md), and what each must draw.
+"""The compiled-cart scenes (SPEC.md 16), and what each must draw.
 
 Every scene is a runtime "wasm" cart under conformance/wasm/<name>.moy, its
 module committed as WAT source (tools/wat.py assembles it), and a Python twin
-here that renders the frame the proposal's rules say it draws: the blit's
+here that renders the frame SPEC.md 16's rules say it draws: the blit's
 palette and bytes applied by hand, and every ordinary verb drawn by moycore,
 the raster the suite's goldens come from. `conformance/wasm_run.py --build`
 writes the goldens from these twins and `conformance/wasm_run.py` holds every
 host to them.
 
-A wasm golden is an RGB565 frame (the proposal's Determinism section): W x H
+A wasm golden is an RGB565 frame (SPEC.md 16.11): W x H
 little-endian words, each colour's high bits, so a palette blit's 256 colours
 and a blit565 frame are both representable and a verb's colour is its palette
 entry reduced the same way.
@@ -107,7 +107,7 @@ def blit565():
 
 
 def _read(files, name, offset, n):
-    """proposals/wasm-runtime.md's read, from the rule: (answer, bytes)."""
+    """SPEC.md 16.6's read, from the rule: (answer, bytes)."""
     segs = name.split("/")
     if (not name or "\\" in name or "\0" in name
             or any(s in ("", ".", "..") for s in segs) or name not in files):
@@ -182,7 +182,7 @@ def trap():
     return [MOY565[v] for v in c.buf]
 
 
-SND_RATE, SND_DEPTH = 22050, 2048       # proposals/wasm-runtime.md, "PCM audio"
+SND_RATE, SND_DEPTH = 22050, 2048       # SPEC.md 16.9
 
 
 def snd():
@@ -380,7 +380,7 @@ def trace_golden(name):
 
 def trace_calls(name):
     """Scene `name`'s trace in the import table's own forms: each short Lua
-    form spelled out with the sentinel proposals/wasm-imports.json gives it."""
+    form spelled out with the sentinel wasm-imports.json gives it."""
     with open(os.path.join(HERE, "traces", name + ".json")) as f:
         calls = json.load(f)
     size = {0: (W, H)}
@@ -455,7 +455,7 @@ def module_wat(calls, source, note, blit_first):
     """A scene's module from its calls, each at the import table's own type;
     with blit_first, after a frame of x xor y blitted through the cart's own
     palette."""
-    with open(os.path.join(ROOT, "proposals", "wasm-imports.json")) as f:
+    with open(os.path.join(ROOT, "wasm-imports.json")) as f:
         table = dict((r["name"], r) for r in json.load(f)["imports"])
     used, strings, body = [], {}, []
     at = [1024]

@@ -28,9 +28,8 @@ Status: **draft 0.3, unstable.** Names and values will still move.
   same pair, `moy` and `moy-play`. The macOS build is Apple Silicon and
   unsigned — first run is right-click → Open.
 
-`moy-play` and the browser player also run compiled carts
-([`proposals/wasm-runtime.md`](proposals/wasm-runtime.md)), a draft on top of
-core.
+`moy-play` and the browser player also run compiled carts — WebAssembly, the
+spec's optional second binding (SPEC.md §16).
 
 No Python, no install. From a checkout of this repository, every command below
 also runs as `python3 moy.py …` — Python 3.8+ and nothing else.
@@ -122,7 +121,7 @@ never fire. What is left for an extension is hardware a cart cannot paper over
 | [examples/](examples/) | `brick_siege.moy`, a complete game in core only, written to be read; `verbs.moy`, one screen per verb group |
 | [moybyte](https://github.com/moybyte-org/moybyte) | the reference implementation: a PC simulator and two ESP32 handhelds |
 | [PURR OS](https://github.com/PastorCatto/PURR-OS-ESP32) | an ESP32 operating system that runs carts from a hand-written console — its own raster, cart loader and Lua binding, no libmoy. The first host outside this repository, and the only one that shares no code with it |
-| [proposals/](proposals/) | drafts on top of core: single-file carts (`moy pack`), compiled carts (WASM), sideload, the p8/TIC-80 verb gaps |
+| [proposals/](proposals/) | drafts on top of core: single-file carts (`moy pack`), sideload, the p8/TIC-80 verb gaps; and the compiled-cart binding's open items, the binding itself being SPEC.md §16 |
 | [THIRD_PARTY.md](THIRD_PARTY.md) | attribution that travels with the normative data files |
 
 The known gaps: audio authoring (sprites and maps round-trip through PNG and

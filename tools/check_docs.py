@@ -193,10 +193,10 @@ SINGLE_HOME = {
     "the all-PSRAM heap slowdown": r"(2×|2x|roughly 2) slower",
     "the narrow-span per-pixel cost": r"\d{2,3} ?ns/px",
     "libmoy's Lua flash cost": r"140 KB of flash",
-    # SPEC.md 15 and proposals/wasm-runtime.md carried these three side by side,
-    # with the "Lua does not compile into the fast tier" paragraph near-verbatim
-    # in both. The proposal owns them; the spec states the one consequence that
-    # reaches back into its own text and points at the rest.
+    # The WebAssembly binding's evidence. SPEC.md 15 and the wasm proposal once
+    # carried these three side by side, with the "Lua does not compile into the
+    # fast tier" paragraph near-verbatim in both. RATIONALE.md owns them; SPEC.md
+    # 15-16 state each decision and point there.
     "the WASM interpreter ratio": r"1\.09\s?×",
     "the WASM AOT ratio": r"(16|16\.3)\s?×",
     "the straight-line arithmetic ratio": r"91\s?×",
@@ -232,7 +232,6 @@ DUP_BUDGET = {
     ("SPEC.md", "libmoy/README.md"): 6,           # quotes 1.1 on the pixel format
     ("SPEC.md", "conformance/README.md"): 5,      # quotes 11 as its epigraph
     ("RATIONALE.md", "SPEC.md"): 4,               # topic sentences + one attributed rule
-    ("SPEC.md", "proposals/wasm-runtime.md"): 1,  # 12.6's phrasing, deliberately
 }
 DUP_FLOOR = 3          # an unlisted pair may share this many runs incidentally
 SHINGLE = 9

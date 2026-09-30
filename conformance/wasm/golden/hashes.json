@@ -1,5 +1,5 @@
 {
-  "about": "proposals/wasm-runtime.md's compiled-cart scenes: each golden is the RGB565 frame, little-endian, whose sha256 and CRC32 are below; the PNG beside it is that frame with each channel's bits repeated. Written by conformance/wasm_run.py --build.",
+  "about": "SPEC.md 16's compiled-cart scenes: each golden is the RGB565 frame, little-endian, whose sha256 and CRC32 are below; the PNG beside it is that frame with each channel's bits repeated. Written by conformance/wasm_run.py --build.",
   "frames": 2,
   "scenes": {
     "blit": {

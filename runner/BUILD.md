@@ -55,7 +55,7 @@ not restate it.
 
 ## Compiled carts run beside it, never inside it
 
-A `"runtime": "wasm"` cart (`proposals/wasm-runtime.md`) is a WebAssembly module
+A `"runtime": "wasm"` cart (SPEC.md §16) is a WebAssembly module
 of its own, and the browser already has the fastest engine there is for one. So
 `cart.js` instantiates the cart's `main.wasm` as a SIBLING of `moy.wasm`, and
 every import it declares from `"moy"` is a JavaScript adapter over libmoy's wasm

@@ -507,7 +507,7 @@ KEEP int moy_web_boot(uint32_t seed)
     /* SPEC.md 4: the whole load order, refused rather than ignored -- a cart
      * run without its prologue fails inside the author's own code. A compiled
      * cart is one module, and a manifest that lists `sources` for it is
-     * refused the same way (proposals/wasm-runtime.md). */
+     * refused the same way (SPEC.md 16.1). */
     cart_pal_ok = moy_manifest_palette(manifest, cart_pal);
     nsrc = moy_manifest_sources(manifest, mainfile, srcname, MOY_SOURCES_MAX);
     if (is_wasm && manifest && strstr(manifest, "\"sources\"")) nsrc = -1;

@@ -1049,6 +1049,6 @@ int main(int argc, char **argv)
         printf("wasm test: %d failure%s\n", failures, failures == 1 ? "" : "s");
         return 1;
     }
-    printf("wasm test: the binding runs, refuses and traps as the proposal says\n");
+    printf("wasm test: the binding runs, refuses and traps as SPEC.md 16 says\n");
     return 0;
 }

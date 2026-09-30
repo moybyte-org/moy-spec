@@ -63,7 +63,7 @@ function params(sig) {
 }
 
 /* Boot a compiled cart the console has already checked and bound
- * (moy_web_boot, which refuses a module the proposal's shape does not allow
+ * (moy_web_boot, which refuses a module SPEC.md 16's shape does not allow
  * before anything here runs). Instantiates it and runs _init. Resolves to
  * the cart, or rejects with the reason it did not start. */
 export async function startCart(M) {

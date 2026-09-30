@@ -1,6 +1,6 @@
-;; blit with a 256-entry palette (proposals/wasm-runtime.md, "The framebuffer
-;; contract"). Every one of the 256 indices is on screen, each through the
-;; palette handed over with the frame. What the scene holds a host to:
+;; blit with a 256-entry palette (SPEC.md 16.5, "The framebuffer"). Every
+;; one of the 256 indices is on screen, each through the palette handed over
+;; with the frame. What the scene holds a host to:
 ;;
 ;;   - the blit replaces the whole screen, so the cls and the rect drawn
 ;;     before it are gone;

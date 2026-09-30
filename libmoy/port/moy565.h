@@ -2,7 +2,7 @@
  * builds of libmoy.
  *
  * A player that runs Lua carts on the index build (SPEC.md 1) and compiled
- * carts on the direct-colour one (proposals/wasm-runtime.md: a palette blit's
+ * carts on the direct-colour one (SPEC.md 16.5: a palette blit's
  * 256 colours do not fit 64 indices) compiles src/moy_canvas.c and
  * src/moy_sprite.c twice. The second copy, and every file that calls it, is
  * built with
