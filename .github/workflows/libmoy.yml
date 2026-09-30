@@ -176,7 +176,7 @@ jobs:
           path: ~/.local/share/moy/toolchain
           key: wasi-sdk-${{ runner.os }}-${{ hashFiles('compiled.py') }}
 
-      - name: Compiled carts (new, build, play, push)
+      - name: Compiled carts (new, build, play, index, install)
         run: make compiled-test
         working-directory: libmoy
 

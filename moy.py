@@ -68,6 +68,17 @@ Before you ship, and to work with the art tools you already own:
                                  found, --to skips probing (a directory, a
                                  port, or a URL)
 
+Carts other people publish, from a carts repository's index.json:
+
+    moy.py install --index <url|file> --list
+    moy.py install --index <url|file> <id> <carts folder>
+                                 fetch a cart and every file it needs, each
+                                 checked by sha256, asking before any file
+                                 under another licence; --build DIR installs
+                                 your own build of it instead
+    moy.py index [repo]          write a carts repository's index.json from
+                                 its carts/*/cart.json and its builds
+
 Pure Python stdlib, no dependencies. The player it wraps is runner/ -- libmoy
 compiled to WebAssembly (see runner/BUILD.md); the spec it implements is
 SPEC.md; the console as a library is moycore/.
@@ -1182,12 +1193,27 @@ def cmd_push(args):
         die(str(exc))
 
 
+def cmd_install(args):
+    """A cart from a carts repository's index (cartindex.py)."""
+    sys.path.insert(0, HERE)
+    import cartindex
+    sys.exit(cartindex.main_install(args, prog=PROG + " install"))
+
+
+def cmd_index(args):
+    """A carts repository's index.json (cartindex.py)."""
+    sys.path.insert(0, HERE)
+    import cartindex
+    sys.exit(cartindex.main_index(args, prog=PROG + " index"))
+
+
 def main():
     cmds = {"new": cmd_new, "play": cmd_play, "web": cmd_web,
             "export": cmd_export, "port": cmd_port, "demo": cmd_demo,
             "check": cmd_check, "pack": cmd_pack, "unpack": cmd_unpack,
             "gfx": cmd_gfx, "map": cmd_map, "conform": cmd_conform,
-            "player": cmd_player, "push": cmd_push, "build": cmd_build}
+            "player": cmd_player, "push": cmd_push, "build": cmd_build,
+            "install": cmd_install, "index": cmd_index}
     # `run` was the browser and `play` was the window, which nobody could keep
     # straight -- and now that the window hot-reloads there is nothing left for
     # two names to mean. Say so rather than printing the whole help.

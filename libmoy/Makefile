@@ -329,8 +329,8 @@ wasm-check:
 wasm-table:
 	python3 test/wasm_table_check.py
 
-# The compiled-cart authoring loop (compiled.py): `moy new --wasm`, `moy
-# pack` and `moy push` to a stand-in console with Python alone, then
+# The compiled-cart authoring loop (compiled.py, cartindex.py): `moy new
+# --wasm`, `moy pack`, `moy index` and `moy install` with Python alone, then
 # both starters built with the pinned wasi-sdk (fetched by sha256 once, into
 # moy's data directory), held to SPEC.md 16 and played in moy-play when it is
 # built, and `moy build` refusing what it should. `compiled-test-offline` is

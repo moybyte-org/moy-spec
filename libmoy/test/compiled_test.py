@@ -6,8 +6,10 @@
 
 Offline, it needs nothing but Python: `moy new --wasm` scaffolds a cart whose
 header is libmoy's own moy_cart.h; `moy pack` takes a compiled cart; `moy
-push` over serial sends a compiled cart without its src/ and shows what the
-console notes.
+index` writes a carts repository's index and `moy install` installs from it,
+refusing an asset that is not the one the index names and leaving the
+destination untouched; `moy push` over serial sends a compiled cart without
+its src/ and shows what the console notes.
 
 With the toolchain -- $WASI_SDK_PATH, or the pinned wasi-sdk `moy build
 --toolchain` fetches -- it builds both starters (`--jet` fetches Jet at its
@@ -26,6 +28,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 LIBMOY = os.path.dirname(HERE)
@@ -100,6 +103,76 @@ def pack_compiled(tmp):
     if rc == 0 or "wasm.import" not in out:
         return fail("moy pack took a compiled cart that does not load: %s" % out)
     ok("moy pack takes a compiled cart and refuses one SPEC.md 16 refuses")
+
+
+def carts_repo(tmp):
+    """A carts repository with one built cart, then index -> install."""
+    repo = os.path.join(tmp, "repo")
+    cart_dir = os.path.join(repo, "carts", "blink")
+    os.makedirs(cart_dir)
+    with open(os.path.join(cart_dir, "NOTICE"), "w") as f:
+        f.write("MIT, by the test.\n")
+    meta = {"id": "blink", "name": "Blink", "version": 1, "release": "blink-v1",
+            "folder": "blink.moy", "chips": [], "licence": {"spdx": "MIT", "file": "NOTICE"}}
+    with open(os.path.join(cart_dir, "cart.json"), "w") as f:
+        json.dump(meta, f)
+    files = {"manifest.json": b'{"format": "moy-1", "title": "Blink"}\n',
+             "main.lua": b"function _draw() cls(8) end\n"}
+    with open(os.path.join(cart_dir, "manifest.json"), "wb") as f:
+        f.write(files["manifest.json"])
+    dist = os.path.join(repo, "build", "dist", "blink")
+    os.makedirs(dist)
+    zpath = os.path.join(dist, "blink.moy.zip")
+    with zipfile.ZipFile(zpath, "w") as z:
+        for name, data in sorted(files.items()):
+            z.writestr("blink.moy/" + name, data)
+    with open(zpath, "rb") as f:
+        blob = f.read()
+    built = {"id": "blink", "commit": "0" * 40, "source": "https://example.invalid/blink",
+             "asset": {"name": "blink.moy.zip", "size": len(blob),
+                       "sha256": hashlib.sha256(blob).hexdigest()},
+             "files": {n: {"size": len(d), "sha256": hashlib.sha256(d).hexdigest()}
+                       for n, d in files.items()}}
+    with open(os.path.join(dist, "build.json"), "w") as f:
+        json.dump(built, f)
+
+    rc, out = moy("index", repo)
+    if rc == 0:
+        fail("moy index wrote a new index with no --name/--home: %s" % out)
+    rc, out = moy("index", repo, "--name", "Test carts",
+                  "--home", "https://example.invalid/carts")
+    if rc != 0:
+        return fail("moy index: %s" % out)
+    with open(os.path.join(repo, "index.json")) as f:
+        index = json.load(f)
+    entry = index["carts"][0]
+    if (index["name"], entry["id"], entry["runtime"], entry["licence"]["spdx"]) != \
+            ("Test carts", "blink", "lua", "MIT") or \
+            entry["assets"][0]["url"] != \
+            "https://example.invalid/carts/releases/download/blink-v1/blink.moy.zip":
+        fail("the index says %r" % entry)
+    rc, out = moy("index", repo)
+    if rc != 0:
+        fail("moy index again, from the index it wrote: %s" % out)
+    ok("moy index writes a carts repository's index.json")
+
+    dest = os.path.join(tmp, "card")
+    os.makedirs(dest)
+    idx = os.path.join(repo, "index.json")
+    rc, out = moy("install", "--index", idx, "--list")
+    if rc != 0 or "blink" not in out:
+        fail("moy install --list: %s" % out)
+    rc, out = moy("install", "--index", idx, "blink", dest, "--asset-dir", dist)
+    got = sorted(os.listdir(os.path.join(dest, "blink.moy"))) if rc == 0 else None
+    if got != sorted(files):
+        return fail("moy install: rc=%d %s %s" % (rc, got, out))
+    with open(zpath, "ab") as f:
+        f.write(b"tampered")
+    shutil.rmtree(os.path.join(dest, "blink.moy"))
+    rc, out = moy("install", "--index", idx, "blink", dest, "--asset-dir", dist)
+    if rc == 0 or "Refusing" not in out or os.listdir(dest):
+        return fail("moy install took an asset that is not the index's: %s" % out)
+    ok("moy install installs from an index and refuses an asset it does not name")
 
 
 class FakeConsole(object):
@@ -284,6 +357,7 @@ def main():
         print("compiled carts: offline")
         scaffold(tmp)
         pack_compiled(tmp)
+        carts_repo(tmp)
         push_over_serial(tmp)
         if offline:
             print("compiled carts: (skipping the toolchain half: --offline)")
@@ -301,7 +375,7 @@ def main():
         shutil.rmtree(tmp, ignore_errors=True)
     if FAILS:
         sys.exit("compiled carts: %d failure%s" % (len(FAILS), "" if len(FAILS) == 1 else "s"))
-    print("compiled carts: new, build, pack and push behave")
+    print("compiled carts: new, build, pack, index and install behave")
 
 
 if __name__ == "__main__":
