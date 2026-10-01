@@ -14,7 +14,11 @@ gpl-carts and mit-carts), and both use this one copy of the two tools:
 INSTALL reads the index (a URL or a local file), downloads the cart's release
 asset and every external file it needs, checks each against the size and
 sha256 the index gives, and writes the complete cart folder into the
-destination directory. Each licence is printed before the file it covers is
+destination directory. A release asset is a STORED zip -- uncompressed, its
+files under the cart's folder name: a console installs one as it streams,
+cutting out the files it keeps (Moybyte's Get Carts app keeps main.wasm and
+only its own chip's module), so a compressed member is refused here too and
+a repository finds that out from `moy install`, not from a console. Each licence is printed before the file it covers is
 fetched, and an external file is fetched only once its licence is accepted:
 at the prompt, or with --yes. Nothing is written into the destination until
 every file has been checked: any size or hash mismatch stops the install and
@@ -221,7 +225,12 @@ def unpack(data, cart, asset, staging):
                                   sorted(want - names) or "fewer files"))
         for fn in sorted(files):
             meta = files[fn]
-            if z.getinfo("%s/%s" % (folder, fn)).file_size != meta["size"]:
+            info = z.getinfo("%s/%s" % (folder, fn))
+            if info.compress_type != zipfile.ZIP_STORED:
+                raise InstallError("%s/%s is compressed; a release asset is a STORED zip, "
+                                   "which a console unpacks as it streams. Refusing it."
+                                   % (folder, fn))
+            if info.file_size != meta["size"]:
                 raise InstallError("%s/%s is not the size the index says" % (folder, fn))
             body = check(z.read("%s/%s" % (folder, fn)), meta["size"], meta["sha256"],
                          "%s/%s" % (folder, fn))

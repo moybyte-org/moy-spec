@@ -174,6 +174,25 @@ def carts_repo(tmp):
         return fail("moy install took an asset that is not the index's: %s" % out)
     ok("moy install installs from an index and refuses an asset it does not name")
 
+    # The same files, compressed: the index can name this asset exactly, and
+    # it is still refused, because a console unpacks a release as it streams.
+    packed = os.path.join(tmp, "packed")
+    os.makedirs(packed)
+    zpath = os.path.join(packed, "blink.moy.zip")
+    with zipfile.ZipFile(zpath, "w", zipfile.ZIP_DEFLATED) as z:
+        for name, data in sorted(files.items()):
+            z.writestr("blink.moy/" + name, data)
+    with open(zpath, "rb") as f:
+        blob = f.read()
+    entry["assets"][0].update(size=len(blob), sha256=hashlib.sha256(blob).hexdigest())
+    deflated = os.path.join(repo, "deflated.json")
+    with open(deflated, "w") as f:
+        json.dump(index, f)
+    rc, out = moy("install", "--index", deflated, "blink", dest, "--asset-dir", packed)
+    if rc == 0 or "STORED" not in out or os.listdir(dest):
+        return fail("moy install took a compressed release asset: %s" % out)
+    ok("moy install refuses a release asset that is not a STORED zip")
+
 
 class FakeConsole(object):
     """A console answering proposals/sideload.md's tier 1, as a pyserial
