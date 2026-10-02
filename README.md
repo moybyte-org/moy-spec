@@ -5,8 +5,8 @@ sound, a little saved state — plays on an ESP32 handheld, a PC or a browser
 tab, and the spec is exact enough for those to render it pixel-identically.**
 
 A cart is a folder: a manifest, a Lua script, a sprite sheet, a tilemap, a
-sound bank. You hand it to a console and it plays. No install, no build step,
-no per-device binary.
+sound bank, and a cover to show it by. You hand it to a console and it plays.
+No install, no build step, no per-device binary.
 
 - **[SPEC.md](SPEC.md)** — the console: raster, palette, verb table, cart format
 - **[GUIDE.md](GUIDE.md)** — writing games: a first cart, then a handbook
@@ -118,7 +118,7 @@ never fire. What is left for an extension is hardware a cart cannot paper over
 | [moycore/](moycore/) | the console as a Python library — stdlib-only: raster, palette, font, cart format, verb table |
 | [libmoy/](libmoy/) | the console as a C99 library — no dependencies, no allocation, §4.1-sandboxed Lua binding, and three ports: SDL2 desktop, ESP-IDF component, WebAssembly |
 | [runner/](runner/) | the web player: libmoy compiled to WebAssembly, under 450 KB of static files, built by `libmoy/port/wasm` |
-| [conformance/](conformance/) | the suite that keeps them honest — one scene per area, each a real cart with a golden frame, and a runner that takes any player. Every build here renders every scene pixel-identically, and an ESP32-P4 over serial matched every scene it has run — but all of them descend from one raster, and its README is candid about what that costs |
+| [conformance/](conformance/) | the suite that keeps them honest — one scene per area, each a real cart with a golden frame, and a runner that takes any player; and the PNG files a cover reader is held to. Every build here renders every scene pixel-identically, and an ESP32-P4 over serial matched every scene it has run — but all of them descend from one raster, and its README is candid about what that costs |
 | [examples/](examples/) | `brick_siege.moy`, a complete game in core only, written to be read; `verbs.moy`, one screen per verb group |
 | [moybyte](https://github.com/moybyte-org/moybyte) | the reference implementation: a PC simulator and two ESP32 handhelds |
 | [PURR OS](https://github.com/PastorCatto/PURR-OS-ESP32) | an ESP32 operating system that runs carts from a hand-written console — its own raster, cart loader and Lua binding, no libmoy. The first host outside this repository, and the only one that shares no code with it |

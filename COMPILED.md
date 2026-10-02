@@ -76,6 +76,11 @@ moy pack plasma.moy      # the folder as one file
 
 Only `main.wasm` and the cart's data travel; `src/` is yours to share or not.
 
+A compiled cart has no sprite sheet for an icon to point into, so give it a
+cover: press **F7** while `moy play` runs it, and the frame on screen becomes
+`cover.png`, its centre square at 128 × 128 (SPEC.md §3.6). A cover painted
+elsewhere works too; `moy build` brings it into that shape.
+
 ## 4. On a board
 
 A console runs a compiled cart only if it implements SPEC.md §16; one that does

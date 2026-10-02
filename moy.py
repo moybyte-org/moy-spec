@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """moy -- the cart developer CLI: scaffold, play, publish.
 
-A moy cart is a folder of text files, so your own editor, git and your own
-art tools already work; this CLI supplies the loop around them.
+A moy cart is a folder of ordinary files -- text, a compiled cart's module, a
+PNG cover -- so your own editor, git and your own art tools already work; this
+CLI supplies the loop around them.
 
     moy.py new <name>            scaffold a Lua cart (manifest + main.lua +
                                  moy-api.lua editor stubs -- the Lua language

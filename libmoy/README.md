@@ -130,11 +130,13 @@ make test           # all of the above that does not need SDL2
 (`port/sdl2/main.c`, down to the "hot reload" comment), and that file is the
 porting layer as a worked example rather than a description. Everything past
 that comment is dev-loop convenience: `moy-play --watch mygame.moy` rebuilds
-the Lua state whenever the cart's bytes change, which is what `moy play` runs.
+the Lua state whenever the cart's bytes change, and F7 writes the frame on
+screen as the cart's `cover.png` (SPEC.md 3.6), which is what `moy play` runs.
 It is opt-in, so the default is still a console -- and a platform owes the
 console none of it. `moy-play mygame.moy --dump out.bin` is the same console
 with no window: the clock stopped, the last finished frame written, which is how
-CI runs SPEC.md 11 through it. What a platform owes libmoy is four things:
+CI runs SPEC.md 11 through it; `--cover` writes that frame as F7's cover
+instead. What a platform owes libmoy is four things:
 
 | | |
 |---|---|

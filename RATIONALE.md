@@ -9,8 +9,8 @@ most worth re-opening.
 **One argument, one home.** This file owns the reasoning behind the spec's fixed
 values; SPEC.md states each decision and its cost and points here. Three decisions run
 the other way — `btnp` without autorepeat, no framebuffer access, and cover art as a
-fixed-shape PNG — and are argued in SPEC.md §12.2, §12.6 and §12.7 because that is where they are
-cited from; §12.1 records the one that was reversed, the screen palette. Either way there is one copy. When a
+fixed-shape PNG — and are argued in SPEC.md §12.2, §12.6 and §12.7 because that is
+where they are cited from; §12.1 records the one that was reversed, the screen palette. Either way there is one copy. When a
 measurement changes, the doc that owns it is the only one to edit; `tools/check_docs.py`
 is what notices when that stops being true.
 

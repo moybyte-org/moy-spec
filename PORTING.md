@@ -119,6 +119,7 @@ they are not symmetric:
 | `"canvas"` outside the closed set | **refuse the cart** (§1) — running at a size it did not ask for breaks every coordinate |
 | `"sources"` listing several scripts | **run them all, in order, each its own chunk** (§4); refuse a list that omits `main` or names a file the folder lacks |
 | an `"icon"` out of range or past the sheet | **ignore it** and choose your own (§3.4) |
+| a `cover.png` outside §3.6's profile, or one that fails to decode | **ignore it**: draw the cart as if it had none (§3.6) |
 | a map larger than the format allows | **reject it** rather than allocating past your budget (§3.3) |
 
 The line, in §3.4's words, is that capability fields refuse and cosmetic ones
@@ -446,8 +447,17 @@ reserved tiles, and bounded so that a grid of thirty carts cannot cost you
 megabytes you never budgeted for. Honour the aspect ratio, scale by integer
 factors, and fall back to your own choice when it is absent or out of range.
 
-Cover art — the big authored promotional image — is deliberately not in core
-(§12.7). If you want it, that is your shelf's business, not the cart format's.
+A cart may also carry `cover.png` (§3.6), its author's picture of it: a PNG,
+8-bit, non-interlaced, indexed or RGB, opaque, exactly 128 × 128 and at most
+65,536 bytes. A reader is an inflater, the five scanline filters and a palette
+lookup, and it decodes into a fixed 48 KB, so a screenful of covers is a budget
+you can write down. Scale it to your card — by integer factors where you can,
+centre-cropping when the card is not square — and draw it where the icon is
+absent too: a compiled cart has no sheet, so the cover is the only art it has.
+Anything outside the profile, or anything that does not decode, you ignore: the
+cart shows as if it had no cover and is never refused for it.
+`conformance/covers/` is the reader's suite — PNG files and the verdict on each
+(conformance/README.md, "Covers").
 
 ## The checklist
 
@@ -459,6 +469,7 @@ Before you claim conformance:
 - [ ] An unknown `extensions` entry refuses the cart by name, before a frame
 - [ ] An unknown `runtime` refuses it too, rather than reaching for the Lua VM
 - [ ] A `canvas` outside the set refuses; an out-of-range `icon` is ignored
+- [ ] If you show covers: every file in `conformance/covers/` gets the verdict its `expected.json` gives, and an ignored cover never refuses its cart
 - [ ] Unknown manifest fields are ignored, not fatal
 - [ ] A cart listing several `sources` runs them in order, and a `local` in one is invisible in the next
 - [ ] 30 Hz holds; a `"fps": 60` cart ticks at 60, drawing on a divisor if it must

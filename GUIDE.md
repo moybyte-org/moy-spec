@@ -346,15 +346,34 @@ console.
 | `map.moymap` | optional | the tilemap, as text (§3.3) |
 | `sounds.json` | optional | effects and music (§8.1) |
 | `config.json` | optional | your own tuning values, read by `cfg` |
+| `cover.png` | optional | the cart's picture in a list, 128 × 128 (§3.6) |
 | `moy-api.lua` | never shipped | editor stubs; `moy pack` drops it for you |
 
-Everything is text, so every one of these diffs, merges and reviews like
-source. That is the reason for the formats, not an accident of them.
+Everything but the cover is text, so every one of these diffs, merges and
+reviews like source. That is the reason for the formats, not an accident of
+them.
 
 The manifest fields worth knowing on day one: `title`, `fps` (30 or 60),
 `canvas`, `input`, and `icon` — the last names tiles from your own sheet for a
 launcher to draw the cart by (§3.4). A host ignores manifest keys it does not
 know, so vendor tools can annotate your cart without breaking it anywhere else.
+
+### The cover
+
+A host that lists carts — a launcher, a store — can show a picture of yours:
+`cover.png`, beside the manifest (§3.6). You choose it. The quickest way is a
+frame of the game: play it with `moy play`, and when the screen looks like your
+game at its best, press **F7**. The frame on screen becomes `cover.png`, and the
+terminal says so.
+
+A cover is exactly 128 × 128, so F7 takes the centre square of your canvas and
+scales it down — a 320 × 240 cart loses 40 columns each side, so keep the
+subject in the middle. Paint one instead if you like, at 128 × 128 or any
+multiple of it; `moy build` brings any PNG into the cover's shape — the centre
+square scaled to 128 × 128, transparency flattened onto black, the file made as
+small as it goes — and says what it changed. A cover a host cannot read is
+ignored, never fatal, and `moy check` warns you first. The `icon` above is the
+small picture; a host may draw the cover where there is no icon.
 
 ### The loop, and time
 
@@ -585,8 +604,8 @@ Three levels, and the distinction is the useful part:
   than the format allows, a cart that cannot be played with buttons alone, a
   `textmode` cart with no `quit()`.
 - **warn** — it will run, but not everywhere or not as you meant. An input kind
-  you read but did not declare, an icon pointing past your sheet, a tile id the
-  map cannot hold.
+  you read but did not declare, an icon pointing past your sheet, a cover a
+  host would ignore, a tile id the map cannot hold.
 - **info** — sizes and fixed allocations, for orientation.
 
 Anything it cannot decide from your bytes — whether the heap fits at level 7,

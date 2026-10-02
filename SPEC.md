@@ -1146,6 +1146,10 @@ CI job over the C core) and taken on trust elsewhere. Audio is excluded (§8.3).
 §6.1 verbs are counted like any other since 0.3, in the `provisional` and
 `provisional_tline` scenes that keep their names.
 
+A host that shows covers (§3.6) is held to `conformance/covers/` as well: its
+reader must reach the verdict each file names there, and for a cover, the same
+pixels.
+
 ---
 
 ## 12. Decisions worth arguing with
@@ -1364,7 +1368,8 @@ table.
 `sources` does not apply — a compiled cart is one module — and a manifest that
 lists it is refused the way §4 refuses a broken one. Every other field keeps its
 §3.1 meaning, `canvas` and `fps` included, and every asset file is unchanged:
-`sprites.moygfx`, `map.moymap`, `flags.moyflags`, `sounds.json`, `config.json`.
+`sprites.moygfx`, `map.moymap`, `flags.moyflags`, `sounds.json`, `config.json`,
+`cover.png`.
 **The `.wasm` is the sole portable artifact.** How a host executes it is the
 host's own business (PORTING.md): a host may keep a compiled form of the module
 beside it — the reference console does, one per chip — but no other host reads
