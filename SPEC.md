@@ -189,6 +189,7 @@ mygame.moy/
   flags.moyflags     optional — one flag byte per tile
   sounds.json        optional — the audio bank
   config.json        optional — author-exposed tuning values
+  cover.png          optional — the cart's picture in a list (§3.6)
   …more .lua         optional — further scripts, listed in `sources` (§4)
 ```
 
@@ -308,7 +309,7 @@ required to honour it.
 the field safe to honour: a launcher decodes *many* icons at once, and an unbounded
 block would let one cart name the whole 128 × 256 sheet, turning a grid of thirty
 carts into megabytes a host never budgeted for (§1.1). At the ceiling, thirty icons
-are 30 KB. Anything larger is asking for cover art, which §12.7 defers on purpose.
+are 30 KB. Anything larger is asking for a cover (§3.6).
 
 An icon outside that range, or naming tiles past the sheet, is **ignored** — the host
 falls back to choosing for itself. It is not refused: a cart with a bad icon is still
@@ -328,8 +329,8 @@ is blank by convention across the entire PICO-8 catalogue — that convention is
 map cell `00` means empty (§3.3) — so a rule resolving to tile 0 would render nothing
 for every converted cart. A field that must be named cannot be silently wrong.
 
-Cover art — the large, authored, promotional image a store would show — is
-deliberately **not** here. See §12.7.
+A host may draw the cart's cover (§3.6) where the icon is absent: that is how a
+compiled cart, which has no sprite sheet to point into, gets shelf art.
 
 ### 3.5 flags.moyflags
 
@@ -345,6 +346,52 @@ shape, and rather than a block in `sprites.moygfx` because that file has one
 concern already. How a host lets an author set the bits — dots in a sprite
 inspector, a text editor — is the host's business, like every other authoring
 surface.
+
+### 3.6 cover.png
+
+A cart may carry a picture of itself: `cover.png`, in the folder's root beside the
+manifest. A host that shows carts — a launcher, a shelf, a store — may draw it.
+It is optional, and nothing about running the cart depends on it.
+
+**The profile.** A host must read covers of exactly this shape:
+
+- PNG, non-interlaced, bit depth 8;
+- colour type 3 (indexed, with a PLTE of 1 to 256 entries before the image data)
+  or colour type 2 (RGB);
+- no `tRNS` chunk — a cover is opaque;
+- **exactly 128 × 128 pixels**;
+- **at most 65,536 bytes** as a file.
+
+A reader handles all five scanline filters, skips every ancillary chunk — and a
+PLTE in an RGB image, which PNG allows as a suggestion — and may skip CRC checks.
+Image data that does not inflate to exactly 128 rows, a filter type above 4, or a
+pixel naming an entry past the PLTE fails to decode.
+
+**Outside the profile, the cover is ignored.** A cover that breaks any rule above,
+or fails to decode, is drawn as if the cart had none, and the cart is never
+refused for it — the doctrine of §3.4's icon: cosmetic fields degrade, capability
+fields refuse.
+
+**One size, for four reasons.** One shape for every shelf and store row, so no host
+has to choose between letterboxing an author's art and cropping it. A PICO-8
+label is exactly 128 × 128, so a converted cart's cover is its label pixel for
+pixel (PICO8.md). Decode memory is fixed and small: at most 48 KB of pixels, so
+a host can decode a screenful of covers without a budget question (§1.1). And a
+store's list stays cheap to download. The byte cap sits above the largest
+encoding there is: a 128 × 128 RGB cover in stored, uncompressed deflate blocks
+is 49,348 bytes, so a writer needs no compressor to stay inside it.
+
+How large a cover is drawn is the host's business, like everything else about a
+shelf: it scales the cover to its card, centre-cropping when the card is not
+square, and SHOULD scale by integer factors where it can, since most covers are
+pixel art.
+
+**The author chooses the picture** — drawn in a paint program, or a frame they
+picked while playing (moy-spec's `moy play` writes the frame on screen when they
+press F7). A host never makes one up: §12.7.
+
+`conformance/covers/` holds PNG files and the verdict a reader must reach on each:
+a cover, with the sha256 of its pixels, or ignored.
 
 ---
 
@@ -1176,33 +1223,42 @@ be written as Lua carts. That is the deliberate boundary, and it is a statement 
 *this* binding: the compiled-cart binding is where that boundary moves (§16.5), with
 a framebuffer in the cart's own linear memory rather than raw access to the host's.
 
-### 12.7 — Cover art is deferred, and the icon is a pointer.
+### 12.7 — Covers are a fixed-shape PNG, and the icon is a pointer.
 
-PICO-8's `__label__` is tempting to copy and answers a different problem: it exists
-because a PICO-8 cart **is** a PNG, so the label is the picture of the thing you
-distribute. A moy cart is a folder, and the medium that forced the feature isn't
-there.
+*Decided 2026-10-02.* Until then this section deferred cover art, on the grounds
+that every way to spec one was a bad trade until there was a catalogue, and that an
+image format should be settled with a second implementer. Five things changed the
+answer:
 
-Under the one word "thumbnail" are two requirements with opposite costs. An **icon**
-must exist for every cart or lists have holes in them, and §3.4 buys that for one
-optional manifest field. A **cover** is promotional, optional, and only pays for
-itself once there is a catalogue to browse — while every way to spec one today is a
-bad trade: hex nibbles are 16 colors and uncompressed (a full-screen image is 75 KB of
-text against §12.4's floor), indexed-plus-RLE makes every implementer write a second
-codec, and PNG puts a zlib decoder on a microcontroller in a format whose data files
-are otherwise all readable text. §14 moves this document to a neutral home once a
-second implementation passes conformance, and an image format is exactly what should
-be settled *with* that implementer instead of guessed at alone. Until then it is an
-extension.
+- **An icon cannot serve a compiled cart.** §3.4 points into the sprite sheet, and a
+  compiled cart (§16) has none — its art is in its module and its own files — so
+  the carts with the most to show had nothing to show.
+- **There is a catalogue.** The carts repositories publish carts with an index on
+  their Pages sites, and a console has a store that lists them. A cover pays for
+  itself once there is a catalogue to browse, which was the condition.
+- **Every console already carries an inflater**, so the zlib decoder this section
+  once counted against a microcontroller is already on it.
+- **PNG is the format every author's tools and every browser already have.** A
+  custom codec — hex nibbles, indexed-plus-RLE — was the thing to avoid: every
+  implementer writes a second decoder and every author converts. PNG asks for
+  neither, and the narrow profile (§3.6) keeps the reader to an inflater and a
+  page of code, with conformance vectors pinning its edges.
+- **"Every data file is readable text" had already given way** when compiled carts
+  started shipping binaries: a module, and the data it `read`s (§16.6).
+
+The second implementer §14 waits for has not arrived; the format chosen is the one
+least in need of negotiating, since any implementer already has it.
 
 **Ruled out permanently:** a host-captured screenshot as a format feature. A host can
 already run a cart and cache a frame, so it needs no spec — and it is the wrong
 artefact, because an automatic frame is arbitrary and the author should choose how
-their game is represented.
+their game is represented. F7 in `moy play` is not that: it is the author choosing a
+frame while they make the cart, and the file it writes is theirs to keep, edit or
+replace.
 
-**Cost:** a store built on 0.3 lays out 8 × 8 tile art and will look sparse beside a
-storefront with key art. Right way round: a missing cover is a design problem later, a
-wrong image format is a compatibility problem forever.
+**Cost:** a host that shows covers carries a PNG reader, and a cart that has a cover
+carries a binary file. A cart without one costs nothing, and the icon stays what it
+was: shelf art for one manifest field, for every cart with a sheet.
 
 ### 12.8 — Several files, several chunks — not one program pasted together.
 

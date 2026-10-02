@@ -79,6 +79,7 @@ wasm_run.py          the compiled-cart runner (below)
 wasm_scenes.py       the compiled-cart scenes' twins
 wasm/<name>.moy/     a compiled cart per scene, its module as WAT
 wasm/golden/         their RGB565 goldens
+covers/              cover files and the verdict a reader must reach (below)
 ```
 
 | scene | what fails here and nowhere else |
@@ -284,3 +285,32 @@ sibling module on node's engine, its imports adapted onto the same C). Two
 engines, one binding: they agree on every scene, and that is a statement about
 `libmoy/src/moy_wasm.c` and about the adapters, not an independent witness to
 §16 — the lineage caveat above applies here too.
+
+## Covers: `covers/`
+
+A host that shows covers reads `cover.png` (SPEC.md §3.6), and `covers/` is
+that reader's suite: PNG files, and `expected.json` giving the verdict on each
+— `cover`, with the sha256 of its 128 × 128 pixels as R, G, B bytes, row-major
+from the top-left, or `ignored`. Hand your reader each file's bytes and compare.
+No player and no cart are involved.
+
+The covers take both colour types through every scanline filter, singly and
+mixed, with palettes of one and 256 entries, ancillary chunks on both sides of
+the image data, the zlib stream split over several `IDAT` chunks, stored deflate
+blocks, and a file of exactly 65,536 bytes. The ignored files are the profile's
+edges — 127 × 128, 128 × 129, 1 × 1, 512 × 512, 65,537 bytes, interlaced,
+16-bit, RGBA, greyscale, 4-bit indexed, `tRNS` — and the broken ones: image
+data cut short, a reserved deflate block type, filter type 5, a pixel past the
+PLTE, an indexed file with no PLTE, and a file that is not a PNG.
+
+```
+python3 conformance/covers/build.py            # rewrite the files
+python3 conformance/covers/build.py --check    # expected.json is current
+make -C libmoy cover-test                      # moycore's reader against them
+```
+
+`build.py` writes each file chunk by chunk, so a vector stays the case its name
+says, and takes each cover's hash from the picture it drew rather than from a
+decoder. The files hold a zlib stream, and zlib's output differs between
+versions, so a rebuild elsewhere may differ in bytes while saying the same
+thing; the verdicts and hashes do not.

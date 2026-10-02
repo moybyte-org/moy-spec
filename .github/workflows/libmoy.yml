@@ -133,6 +133,12 @@ jobs:
         run: make wasm-check
         working-directory: libmoy
 
+      # SPEC.md 3.6's covers: the reference reader against the vectors in
+      # conformance/covers/, and the writer and squaring the CLI builds on.
+      - name: Covers
+        run: make cover-test
+        working-directory: libmoy
+
       # The import table is the verb table: the Lua binding's globals plus the
       # wasm binding's six, and moy_wasm.c's NativeSymbol rows and moy_cart.h's
       # declarations are the table's.

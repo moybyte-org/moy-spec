@@ -1,13 +1,18 @@
 """A minimal PNG codec (stdlib zlib only).
 
 moy has no dependencies and is not about to grow one for image I/O. This is
-enough PNG for the two jobs the project actually has:
+enough PNG for the three jobs the project actually has:
 
   * WRITE golden frames and sheet exports (indexed PNG, so a golden is one byte
     per pixel and a diff is meaningful rather than a JPEG-ish smear).
   * READ a sheet back from whatever the artist drew it in. Aseprite, GIMP,
     Piskel and Photoshop all export 8-bit palette or RGB/RGBA PNGs; those are
-    supported. Interlaced and 16-bit-per-channel are not, and say so.
+    supported by `read_rgb`. Interlaced and 16-bit-per-channel are not, and say
+    so.
+  * COVERS (SPEC.md 3.6, moycore/cover.py): `decode` reads any PNG a paint
+    program writes -- every colour type, bit depth and Adam7 -- so `moy build`
+    can rewrite one into the profile, and `encode` writes the smallest PNG it
+    can find for a picture.
 """
 
 import struct
@@ -166,3 +171,306 @@ def nearest_index(rgb, palette, limit=None):
             if d == 0:
                 break
     return best
+
+
+# --- any PNG, decoded --------------------------------------------------------
+
+SIGNATURE = b"\x89PNG\r\n\x1a\n"
+CRITICAL = (b"IHDR", b"PLTE", b"IDAT", b"IEND")
+_CHANNELS = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}
+_DEPTHS = {0: (1, 2, 4, 8, 16), 2: (8, 16), 3: (1, 2, 4, 8), 4: (8, 16), 6: (8, 16)}
+# Adam7: (x0, y0, dx, dy) for each of the seven passes.
+_ADAM7 = ((0, 0, 8, 8), (4, 0, 8, 8), (0, 4, 4, 8), (2, 0, 4, 4),
+          (0, 2, 2, 4), (1, 0, 2, 2), (0, 1, 1, 2))
+
+
+def chunks(data):
+    """[(tag, body), ...] for a PNG's bytes, through IEND. CRCs are not
+    checked. Raises PngError on a bad signature or a chunk that runs past the
+    end of the data."""
+    if data[:8] != SIGNATURE:
+        raise PngError("not a PNG (bad signature)")
+    out = []
+    pos = 8
+    while True:
+        if pos + 8 > len(data):
+            raise PngError("the file ends before IEND")
+        (length,) = struct.unpack(">I", data[pos:pos + 4])
+        tag = bytes(data[pos + 4:pos + 8])
+        if pos + 12 + length > len(data):
+            raise PngError("the %s chunk runs past the end of the file"
+                           % tag.decode("latin-1"))
+        out.append((tag, bytes(data[pos + 8:pos + 8 + length])))
+        pos += 12 + length
+        if tag == b"IEND":
+            return out
+
+
+def _inflate(idat, want):
+    """Exactly `want` bytes from a zlib stream, or PngError."""
+    d = zlib.decompressobj()
+    try:
+        raw = d.decompress(idat, want + 1)
+        raw += d.flush()
+    except zlib.error as exc:
+        raise PngError("the image data does not inflate: %s" % exc)
+    if len(raw) < want:
+        raise PngError("the image data is short: %d bytes of %d" % (len(raw), want))
+    if len(raw) > want or not d.eof:
+        raise PngError("the image data is not one complete zlib stream of %d bytes"
+                       % want)
+    return raw
+
+
+def _samples(raw, w, h, depth, channels):
+    """Unfiltered scanlines -> one int per sample, row-major."""
+    bits = depth * channels
+    stride = (w * bits + 7) // 8
+    if bits >= 8:
+        out = _unfilter(raw, w, h, bits // 8)
+    else:
+        out = _unfilter(raw, stride, h, 1)
+    n = w * channels
+    if depth == 8:
+        return out
+    if depth == 16:
+        return [(out[i] << 8) | out[i + 1] for i in range(0, len(out), 2)]
+    mask = (1 << depth) - 1
+    vals = []
+    for y in range(h):
+        row = out[y * stride:(y + 1) * stride]
+        for i in range(n):
+            bit = i * depth
+            vals.append((row[bit >> 3] >> (8 - depth - (bit & 7))) & mask)
+    return vals
+
+
+class Decoded(object):
+    """A PNG, decoded. `rgb` is every pixel as 8-bit R, G, B with any alpha
+    flattened onto black; `indices` and `palette` are the file's own when it is
+    colour type 3 with no transparency (None otherwise); `ancillary` lists the
+    tags of the chunks a decoder may skip."""
+
+    def __init__(self, w, h, depth, ctype, interlace, rgb, indices, palette,
+                 has_alpha, ancillary):
+        self.w = w
+        self.h = h
+        self.depth = depth
+        self.ctype = ctype
+        self.interlace = interlace
+        self.rgb = rgb
+        self.indices = indices
+        self.palette = palette
+        self.has_alpha = has_alpha
+        self.ancillary = ancillary
+
+
+def decode(data):
+    """Any valid PNG -> Decoded. Raises PngError naming what is wrong."""
+    parts = chunks(data)
+    if not parts or parts[0][0] != b"IHDR" or len(parts[0][1]) != 13:
+        raise PngError("the first chunk is not a 13-byte IHDR")
+    w, h, depth, ctype, comp, filt, interlace = struct.unpack(">IIBBBBB", parts[0][1])
+    if w < 1 or h < 1:
+        raise PngError("the image is %dx%d" % (w, h))
+    if ctype not in _CHANNELS or depth not in _DEPTHS[ctype]:
+        raise PngError("colour type %d at bit depth %d is not a PNG format"
+                       % (ctype, depth))
+    if comp or filt or interlace > 1:
+        raise PngError("unknown compression, filter or interlace method")
+    plte = trns = None
+    idat = bytearray()
+    ancillary = []
+    for tag, body in parts[1:]:
+        if tag == b"PLTE":
+            if len(body) % 3 or not 3 <= len(body) <= 768:
+                raise PngError("PLTE holds %d bytes, not 1-256 entries" % len(body))
+            plte = body
+        elif tag == b"IDAT":
+            idat.extend(body)
+        elif tag == b"tRNS":
+            trns = body
+            ancillary.append(tag)
+        elif tag == b"IHDR" or not (tag[0] & 0x20):
+            if tag not in CRITICAL:
+                raise PngError("unknown critical chunk %s" % tag.decode("latin-1"))
+        else:
+            ancillary.append(tag)
+    if ctype == 3 and plte is None:
+        raise PngError("a palette image with no PLTE")
+    channels = _CHANNELS[ctype]
+    bits = depth * channels
+    if interlace:
+        passes = []
+        want = 0
+        for x0, y0, dx, dy in _ADAM7:
+            pw, ph = (w - x0 + dx - 1) // dx, (h - y0 + dy - 1) // dy
+            if pw and ph:
+                passes.append((x0, y0, dx, dy, pw, ph))
+                want += ph * (1 + (pw * bits + 7) // 8)
+        raw = _inflate(bytes(idat), want)
+        samples = [0] * (w * h * channels)
+        pos = 0
+        for x0, y0, dx, dy, pw, ph in passes:
+            size = ph * (1 + (pw * bits + 7) // 8)
+            sub = _samples(raw[pos:pos + size], pw, ph, depth, channels)
+            pos += size
+            for py in range(ph):
+                for px in range(pw):
+                    s = (py * pw + px) * channels
+                    d = ((y0 + py * dy) * w + x0 + px * dx) * channels
+                    samples[d:d + channels] = sub[s:s + channels]
+    else:
+        raw = _inflate(bytes(idat), h * (1 + (w * bits + 7) // 8))
+        samples = _samples(raw, w, h, depth, channels)
+    return _to_rgb(w, h, depth, ctype, interlace, samples, plte, trns, ancillary)
+
+
+def _to_rgb(w, h, depth, ctype, interlace, samples, plte, trns, ancillary):
+    top = (1 << depth) - 1
+    n = w * h
+    rgb = bytearray(n * 3)
+    alpha = [255] * n
+    if ctype == 3:
+        entries = len(plte) // 3
+        ta = bytearray(trns or b"")[:entries]
+        for i in range(n):
+            v = samples[i]
+            if v >= entries:
+                raise PngError("pixel %d names palette entry %d of %d" % (i, v, entries))
+            rgb[i * 3:i * 3 + 3] = plte[v * 3:v * 3 + 3]
+            if v < len(ta):
+                alpha[i] = ta[v]
+        has_alpha = any(a != 255 for a in ta)
+        palette = None if has_alpha else [tuple(plte[j * 3:j * 3 + 3])
+                                          for j in range(entries)]
+        indices = None if has_alpha else bytes(samples)
+    else:
+        channels = _CHANNELS[ctype]
+        key = None
+        if trns is not None and ctype in (0, 2):
+            key = struct.unpack(">%dH" % (len(trns) // 2), trns)
+        for i in range(n):
+            s = samples[i * channels:(i + 1) * channels]
+            if key is not None and tuple(s) == key:
+                alpha[i] = 0
+            if ctype in (0, 4):
+                v = (s[0] * 255 + top // 2) // top
+                rgb[i * 3] = rgb[i * 3 + 1] = rgb[i * 3 + 2] = v
+            else:
+                for c in range(3):
+                    rgb[i * 3 + c] = (s[c] * 255 + top // 2) // top
+            if ctype in (4, 6):
+                alpha[i] = (s[-1] * 255 + top // 2) // top
+        has_alpha = any(a != 255 for a in alpha)
+        palette = indices = None
+    if has_alpha:
+        for i in range(n):
+            a = alpha[i]
+            if a != 255:
+                for c in range(3):
+                    rgb[i * 3 + c] = (rgb[i * 3 + c] * a + 127) // 255
+    return Decoded(w, h, depth, ctype, interlace, bytes(rgb), indices, palette,
+                   has_alpha, ancillary)
+
+
+# --- the smallest PNG for a picture ------------------------------------------
+
+def _filter_row(ft, line, prev, bpp):
+    """One scanline under filter `ft`, as the bytes that follow its filter
+    byte. `prev` is the unfiltered row above (zeros for the first)."""
+    out = bytearray(len(line))
+    for i in range(len(line)):
+        a = line[i - bpp] if i >= bpp else 0
+        b = prev[i]
+        if ft == 0:
+            p = 0
+        elif ft == 1:
+            p = a
+        elif ft == 2:
+            p = b
+        elif ft == 3:
+            p = (a + b) >> 1
+        else:
+            c = prev[i - bpp] if i >= bpp else 0
+            q = a + b - c
+            pa, pb, pc = abs(q - a), abs(q - b), abs(q - c)
+            p = a if (pa <= pb and pa <= pc) else (b if pb <= pc else c)
+        out[i] = (line[i] - p) & 0xFF
+    return out
+
+
+def filtered(rows, bpp, choose):
+    """The filtered image data for `rows` (each the unfiltered bytes of one
+    scanline). `choose` is a filter type 0-4 for every row, or None for the
+    usual heuristic: per row, the filter whose bytes, read as signed, sum
+    smallest."""
+    out = bytearray()
+    prev = bytearray(len(rows[0]))
+    for line in rows:
+        if choose is None:
+            best = None
+            for ft in range(5):
+                cand = _filter_row(ft, line, prev, bpp)
+                cost = sum(v if v < 128 else 256 - v for v in cand)
+                if best is None or cost < best[0]:
+                    best = (cost, ft, cand)
+            ft, data = best[1], best[2]
+        else:
+            ft, data = choose, _filter_row(choose, line, prev, bpp)
+        out.append(ft)
+        out.extend(data)
+        prev = line
+    return bytes(out)
+
+
+def _deflate(raw, strategy):
+    z = zlib.compressobj(9, zlib.DEFLATED, 15, 9, strategy)
+    return z.compress(raw) + z.flush()
+
+
+def encode(w, h, rgb=None, indices=None, palette=None):
+    """The smallest 8-bit non-interlaced PNG this module can write for a
+    picture, with no ancillary chunks: colour type 3 from `indices` and
+    `palette` [(r, g, b), ...], or colour type 2 from `rgb` (R, G, B bytes,
+    row-major). Every filter choice is tried under zlib's two useful
+    strategies at level 9, and the smallest wins; the choice is deterministic,
+    so the same picture always encodes to the same bytes."""
+    if indices is not None:
+        ctype, bpp, src = 3, 1, indices
+    else:
+        ctype, bpp, src = 2, 3, rgb
+    stride = w * bpp
+    rows = [bytearray(src[y * stride:(y + 1) * stride]) for y in range(h)]
+    best = None
+    for choose in (0, 1, 2, 3, 4, None):
+        raw = filtered(rows, bpp, choose)
+        for strategy in (zlib.Z_DEFAULT_STRATEGY, zlib.Z_FILTERED):
+            body = _deflate(raw, strategy)
+            if best is None or len(body) < len(best):
+                best = body
+    out = SIGNATURE + _chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, ctype, 0, 0, 0))
+    if ctype == 3:
+        plte = bytearray()
+        for r, g, b in palette:
+            plte.extend((r, g, b))
+        out += _chunk(b"PLTE", bytes(plte))
+    return out + _chunk(b"IDAT", best) + _chunk(b"IEND", b"")
+
+
+def palettize(rgb, limit=256):
+    """(indices, palette) for R, G, B bytes with at most `limit` distinct
+    colours, palette in order of first appearance; None when there are more."""
+    seen = {}
+    palette = []
+    indices = bytearray(len(rgb) // 3)
+    for i in range(len(indices)):
+        c = bytes(rgb[i * 3:i * 3 + 3])
+        j = seen.get(c)
+        if j is None:
+            if len(palette) == limit:
+                return None
+            j = seen[c] = len(palette)
+            palette.append((c[0], c[1], c[2]))
+        indices[i] = j
+    return bytes(indices), palette

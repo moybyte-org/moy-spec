@@ -32,7 +32,8 @@ buttons in, and a Lua VM. Everything between is here.
 | `wasm.py` | a `"runtime": "wasm"` cart's module, read and checked against SPEC.md §16 and `wasm-imports.json` |
 | `budget.py` | SPEC.md 1.1's memory floor, as numbers a tool can use |
 | `pack.py` | the single-file shipping form (a proposal — see `proposals/`) |
-| `png.py` | a minimal PNG codec for goldens and asset conversion |
+| `png.py` | a minimal PNG codec for goldens, asset conversion and covers |
+| `cover.py` | SPEC.md 3.6's `cover.png`: the profile's reference reader, and the writer and squaring behind F7, `moy build` and `moy check` |
 
 `palette.json` and `font.bin` are **not** copied in here. They are normative
 data that lives beside SPEC.md, and moycore reads them, so there is no second

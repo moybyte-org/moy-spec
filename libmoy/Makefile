@@ -35,7 +35,7 @@ LUA_OBJ  := $(LUA_SRC:.c=.o)
 LUA_CFLAGS := -std=c99 -O2 -w -I$(LUA_DIR)
 RUNCART  := build/run_cart
 
-.PHONY: all clean data conform conform-lua test lua play audio-test p8-carts float-fold sources-test wasm-check wasm-test wasm-table wamr compiled-test compiled-test-offline
+.PHONY: all clean data conform conform-lua test lua play audio-test p8-carts float-fold sources-test wasm-check wasm-test wasm-table wamr compiled-test compiled-test-offline cover-test
 
 all: $(LIB) $(REPLAY)
 
@@ -341,7 +341,13 @@ compiled-test:
 compiled-test-offline:
 	python3 test/compiled_test.py --offline
 
-test: conform conform-lua ext-test sources-test audio-test lowres spr-sweep p8-test p8-carts wasm-check wasm-table compiled-test-offline
+# SPEC.md 3.6's covers: moycore's reader against conformance/covers/, the
+# writer and the squaring the CLI's F7, `moy build` and the importer use.
+# Python only.
+cover-test:
+	python3 test/cover_test.py
+
+test: conform conform-lua ext-test sources-test audio-test lowres spr-sweep p8-test p8-carts wasm-check wasm-table compiled-test-offline cover-test
 
 clean:
 	rm -f $(OBJ) $(LUA_OBJ) src/moy_lua.o src/moy_p8.o $(LIB)
