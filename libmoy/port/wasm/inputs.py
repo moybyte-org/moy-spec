@@ -31,7 +31,7 @@ PATTERNS = (
     "libmoy/include/*.h",
     "libmoy/vendor/lua/*.c",
     "libmoy/vendor/lua/*.h",
-    "libmoy/port/wasm/*.c",         # main.c, and cart.c for compiled carts
+    "libmoy/port/wasm/*.c",         # main.c, and cart.c + embed.c for compiled carts
     "libmoy/port/wasm/*.h",
     "libmoy/port/*.h",              # the manifest scanner, the moy565_ names
     "libmoy/port/wasm/page/*",

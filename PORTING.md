@@ -341,7 +341,9 @@ the whole of the job:
 - **The web player** runs the cart as a sibling module on the browser's engine,
   never an engine inside the console: each import is a JavaScript adapter over
   the same C (`libmoy/port/wasm/cart.c`, `libmoy/port/wasm/page/cart.js`), and a
-  pointer into the cart's memory crosses as a copy.
+  pointer into the cart's memory crosses as a copy. What the binding asks of a
+  page in C is one file, `libmoy/port/wasm/embed.c`, which another page takes as
+  it is.
 
 ### How your host executes the module
 

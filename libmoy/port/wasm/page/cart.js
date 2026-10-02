@@ -3,7 +3,7 @@
  *
  * The browser's own engine instantiates the cart's main.wasm. Its imports
  * from "moy" are adapters over the import table libmoy's wasm binding exports
- * (src/moy_wasm.c, built into moy.wasm by cart.c): every verb the cart calls
+ * (src/moy_wasm.c, built into moy.wasm with embed.c): every verb the cart calls
  * is that C function, with the same marshalling, the same blit and read, the
  * same traps as on every other host. Never a wasm engine inside the wasm
  * console.
@@ -85,7 +85,7 @@ export async function startCart(M) {
   };
 
   /* The binding's two reaches into the cart's memory (moy_wasm_js_span and
-   * moy_wasm_js_store, cart.c). */
+   * moy_wasm_js_store, embed.c). */
   let instance;
 
   M.moyCart = {

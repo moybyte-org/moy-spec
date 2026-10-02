@@ -2,8 +2,8 @@
   "bundle": "moy web player (libmoy/port/wasm)",
   "files": {
     "cart.js": {
-      "bytes": 7278,
-      "sha256": "730dfa3e17ddf08e6cf0ed7fdddad893a4c84a0d17ff1dbf3ec98a65b961ea87"
+      "bytes": 7282,
+      "sha256": "48b7fb90293f8a4d451dd09056643bff1114b2353260725efd980220b6b2a419"
     },
     "index.html": {
       "bytes": 8572,
@@ -22,7 +22,7 @@
       "sha256": "22fa1f462f0d0cfe09275f0b2549503de00ae6f8e1fd31a88c39e3189175d416"
     }
   },
-  "inputs_sha256": "598d6db0be4aa2d03a10ed1b3e82c41a9a0e42fde68e05707e9cc8392a9c48dc",
+  "inputs_sha256": "34921c0ac34db9a3aeda7698e9e670d8bac6be5f4514a89aaf26d81993d69529",
   "source": {
     "branch": "",
     "commit": "",

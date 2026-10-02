@@ -204,8 +204,8 @@ the Lua binding and `wasm-imports.json` to one another.
 
 Three hosts here run it: the harness below, the desktop player
 (`port/sdl2/wasm_cart.c`, WAMR's interpreter) and the web player
-(`port/wasm/cart.c` and `page/cart.js`, the cart a sibling module on the
-browser's engine). The harness and the desktop player run `par` items on POSIX
+(`port/wasm/cart.c`, `embed.c` and `page/cart.js`, the cart a sibling module
+on the browser's engine). The harness and the desktop player run `par` items on POSIX
 lanes (`port/moy_lanes.c`); the web player, whose page has one thread to give a
 cart, runs them in order. `conformance/wasm_run.py` holds all three to the same
 RGB565 frames.

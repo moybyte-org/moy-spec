@@ -36,7 +36,7 @@ find "${OUT}" -maxdepth 1 -type f \
   ! -name VERSION ! -name BUILD.md ! -name THIRD_PARTY.md ! -name LICENSE.txt -delete
 
 # The exported surface, and nothing else: every name here is called by the page
-# and each one is in main.c or cart.c with EMSCRIPTEN_KEEPALIVE beside it.
+# and each one is in main.c or embed.c with EMSCRIPTEN_KEEPALIVE beside it.
 EXPORTS='["_main","_malloc","_free"'
 EXPORTS+=',"_moy_web_reset","_moy_web_file","_moy_web_boot","_moy_web_frame"'
 EXPORTS+=',"_moy_web_button","_moy_web_touch","_moy_web_key"'
@@ -47,7 +47,7 @@ EXPORTS+=',"_moy_web_audio","_moy_web_audio_rate","_moy_web_audio_wanted"'
 EXPORTS+=',"_moy_web_audio_skip","_moy_web_snd_counts"'
 EXPORTS+=',"_moy_web_pmem","_moy_web_pmem_moved","_moy_web_pmem_clean"'
 # ...and page/cart.js's, for a compiled cart: main.c's frame brackets, and
-# cart.c's reach to the import table and the hooks.
+# embed.c's reach to the import table and the hooks.
 EXPORTS+=',"_moy_web_runtime","_moy_web_binding","_moy_web_module"'
 EXPORTS+=',"_moy_web_wasm_tick","_moy_web_wasm_present","_moy_web_wasm_frame"'
 EXPORTS+=',"_moy_web_natives","_moy_web_begin","_moy_web_end","_moy_web_trapped"'
@@ -75,7 +75,7 @@ echo "== emcc $(emcc -dumpversion 2>/dev/null || true)"
 # because its flags differ; linked into the same module.
 OBJ="$(mktemp -d)"
 trap 'rm -rf "${OBJ}"' EXIT
-for f in src/moy_canvas.c src/moy_sprite.c src/moy_wasm.c port/wasm/cart.c; do
+for f in src/moy_canvas.c src/moy_sprite.c src/moy_wasm.c port/wasm/embed.c port/wasm/cart.c; do
   emcc -O3 -w -std=gnu99 -DMOY_PIXEL_RGB565 -DMOY_WASM_JS \
     -include "${LIBMOY}/port/moy565.h" -I"${LIBMOY}/include" \
     -c "${LIBMOY}/${f}" -o "${OBJ}/565_$(basename "${f}" .c).o"

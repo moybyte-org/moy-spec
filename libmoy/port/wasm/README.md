@@ -15,6 +15,7 @@ EMSDK=~/emsdk ./build.sh   # if emcc is not on PATH
 |---|---|
 | `main.c` | the host: cart loading, the console wiring, the entry points JS calls |
 | `cart.c` | a compiled cart's console: libmoy's wasm binding on the direct-colour raster |
+| `embed.c` | what the binding asks of a page in C: the reaches into the cart's memory, a `par` item, and the exports the adapters call |
 | `page/index.html` | the page |
 | `page/player.js` | the platform shim — input, audio, persistence, the rAF loop |
 | `page/cart.js` | a compiled cart's module, instantiated beside the console, its imports adapted onto the binding |
@@ -58,6 +59,11 @@ over that row's C function, generated from the row's signature:
   `blit565`, `camera`'s and `touch`'s out) is the binding's to reach, and it asks
   the page for it through `moy_wasm_js_span` and `moy_wasm_js_store`, which copy
   in and out the same way.
+
+Those two, `moy_wasm_js_item` below and the five exports the adapters call are
+`embed.c`, which is all the binding asks of a page in C and nothing of this
+player's: another page that embeds the binding in its own console links it as
+it is, and binds the cart to that console instead of `cart.c`'s.
 
 A trap raised by the binding is thrown back through the cart as an exception,
 which unwinds it exactly as a wasm trap does. The page calls the hooks between
