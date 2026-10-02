@@ -187,7 +187,8 @@ float-fold: $(FLOATFOLD)
 # which is the only place _draw can outrun _update (test/p8_first_draw.py).
 # p8_port_check.py is the PORTER's half: the statement shapes it folds, and the
 # near misses it must leave alone, which no corpus cart can be relied on to
-# contain.
+# contain. p8_label_check.py pins where a .p8.png keeps its label, which
+# becomes the port's cover.png.
 p8-test: $(RUNCART) $(FLOATFOLD)
 	./$(FLOATFOLD)
 	./$(RUNCART) test/p8mem.moy build/p8mem.bin --frames 2
@@ -195,6 +196,7 @@ p8-test: $(RUNCART) $(FLOATFOLD)
 	python3 test/p8_font_check.py
 	python3 test/p8_first_draw.py
 	python3 test/p8_port_check.py
+	python3 test/p8_label_check.py
 
 # The wasm binding (src/moy_wasm.c, SPEC.md 16) under WAMR.
 # WAMR is the one thing here fetched from the network, by this target and by

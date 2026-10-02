@@ -41,7 +41,7 @@ Two scripts, both in this repository:
 
 | | |
 |---|---|
-| `p8_import.py` | reads the cart. Parses `.p8` text and unpacks a `.p8.png` ROM (including the `pxa` and the older `:c:` code compression), and converts the sprite sheet, map, flags, sfx and music. |
+| `p8_import.py` | reads the cart. Parses `.p8` text and unpacks a `.p8.png` ROM (including the `pxa` and the older `:c:` code compression) and its label, and converts the sprite sheet, map, flags, sfx, music and label. |
 | `p8_lua_port.py` | writes the cart. Emits `p8.lua`, the data tables and the PICO-8 compatibility shim; `main.lua`, the cart's own code mechanically converted to Lua 5.4; one more script per PICO-8 **tab** past the first — plus the assets and a manifest listing them all in `sources` (SPEC.md 4). |
 
 The output is an ordinary `"runtime": "lua"` cart declaring a `128x128` canvas,
@@ -135,6 +135,19 @@ hides in the bottom half of `__gfx__`), sprite flags as `flags.moyflags`, all
 64 sfx with their per-sfx filters and custom instruments, and the music
 patterns. The manifest ships PICO-8's palette with its sixteen secret colours
 at 16–31, so `pal(c, 128 + i)` lands on the real colour.
+
+**The label, as the cover.** A PICO-8 label is 128 × 128, which is exactly a
+cover's size (SPEC.md §3.6), so it becomes `cover.png` pixel for pixel: indexed,
+its PLTE PICO-8's sixteen and then the secret sixteen — every colour a label can
+hold — in the label's own numbering. A `.p8` carries it as `__label__`; a
+`.p8.png` carries it as the picture itself, the 128 × 128 at (16, 24) of the
+160 × 205 cartridge, inside a one-pixel near-black frame. The cartridge's
+steganography owns each channel's two low bits, so a pixel is matched on the
+high six, and a cart saved before PICO-8 changed its green (`#00E756`) gets the
+nearest colour. `libmoy/test/p8_label_check.py` pins the region on a cartridge it
+builds and on every real one to hand. A cart with no label, or an all-black
+one, gets no cover, and the sheet's first non-blank tile stays its icon
+(SPEC.md §3.4) either way.
 
 **The dialect.** The cart's Lua is converted token by token, not by regex:
 
