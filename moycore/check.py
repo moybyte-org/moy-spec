@@ -20,6 +20,7 @@ Findings are (level, code, message):
 import json
 
 from . import budget
+from . import cover as _cover
 from . import palette as _palette
 from . import wasm as _wasm
 from .cart import (FORMAT, VALID_FPS, INPUT_KINDS, ICON_MAX_TILES, CANVAS_SIZES,
@@ -256,6 +257,7 @@ def check_cart(cart, files=None, findings=None):
     check_assets(cart.sheet, cart.tilemap, findings)
 
     if files:
+        check_cover(files, findings)
         total = 0
         for name in files:
             total += len(files[name])
@@ -302,6 +304,26 @@ def check_assets(sheet, tm, findings):
             findings.append(("warn", "map.tiles",
                              "the map places tile %d but the sheet holds %d; those cells "
                              "draw blank" % (highest, sheet.count)))
+    return findings
+
+
+def check_cover(files, findings):
+    """SPEC.md 3.6: a cover outside the profile is a warning, never an error --
+    a host ignores it and runs the cart."""
+    data = files.get(_cover.NAME)
+    if data is None:
+        return findings
+    why = _cover.problem(data)
+    if why:
+        findings.append(("warn", "cover",
+                         "%s is outside SPEC.md 3.6's profile, so hosts will ignore it: "
+                         "%s. `moy build` rewrites it into the profile"
+                         % (_cover.NAME, why)))
+    else:
+        indexed = data[25] == 3
+        findings.append(("info", "cover", "%s: %dx%d %s, %s"
+                         % (_cover.NAME, _cover.SIZE, _cover.SIZE,
+                            "indexed" if indexed else "RGB", budget.human(len(data)))))
     return findings
 
 
@@ -354,6 +376,7 @@ def check_wasm_files(files, findings=None):
     except (SheetError, ValueError) as exc:
         findings.append(("error", "assets", str(exc)))
     check_assets(sheet, tm, findings)
+    check_cover(files, findings)
 
     total = 0
     for name in files:

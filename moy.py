@@ -14,11 +14,14 @@ art tools already work; this CLI supplies the loop around them.
     moy.py build <cart.moy>      compile a compiled cart's src/ into main.wasm
           [--stack KB]           with a pinned wasi-sdk (fetched by sha256 the
                                  first time); `play` and `web` do this for
-                                 you, and again whenever you save
+                                 you, and again whenever you save. For every
+                                 cart, rewrite cover.png into SPEC.md 3.6's
+                                 profile: 128x128, no alpha, smallest PNG
     moy.py play <cart.moy>       play the cart in a window, with HOT RELOAD:
                                  save a file, the game restarts in under a
                                  second (moy-play, the C console -- it ships
-                                 beside moy in the release download)
+                                 beside moy in the release download). F7
+                                 writes the frame on screen as cover.png
     moy.py web <cart.moy> [port] the same cart in the BROWSER player instead:
                                  same hot reload, plus devtools, and it needs
                                  no moy-play built
@@ -1020,8 +1023,10 @@ def _native_player():
     return next((c for c in looked if os.path.isfile(c)), None), looked
 
 
-def _run_native(cart, extra=()):
-    """Hand a cart to moy-play, or die saying where we looked for it."""
+def _run_native(cart, extra=(), covers=False):
+    """Hand a cart to moy-play, or die saying where we looked for it. With
+    `covers`, the cover.png moy-play writes on F7 is rewritten smaller while
+    it plays (_CoverWatch)."""
     found, looked = _native_player()
     if found is None:
         hint = ("it ships beside moy in the release download" if FROZEN
@@ -1029,7 +1034,62 @@ def _run_native(cart, extra=()):
         die("moy-play not found (looked for %s) -- %s"
             % (", ".join(looked), hint))
     import subprocess
-    sys.exit(subprocess.call([found, cart] + list(extra)))
+    if not covers:
+        sys.exit(subprocess.call([found, cart] + list(extra)))
+    proc = subprocess.Popen([found, cart] + list(extra))
+    watch = _CoverWatch(cart)
+    while True:
+        try:
+            proc.wait(timeout=0.25)
+            break
+        except subprocess.TimeoutExpired:
+            watch.poll()
+        except KeyboardInterrupt:
+            pass                    # moy-play has the same Ctrl-C, and ends
+    watch.poll()
+    sys.exit(proc.returncode)
+
+
+class _CoverWatch(object):
+    """F7 in moy-play writes the frame on screen as cover.png (SPEC.md 3.6),
+    in one stored deflate block -- a player needs no compressor. Each time the
+    file changes, this rewrites it with moycore's encoder: the same pixels in
+    the smallest PNG it finds, as `moy build` would."""
+
+    def __init__(self, cart):
+        _moycore()
+        from moycore import cover
+        self.cover = cover
+        self.path = os.path.join(cart, cover.NAME)
+        self.seen = self._stat()
+
+    def _stat(self):
+        try:
+            st = os.stat(self.path)
+        except OSError:
+            return None
+        return (st.st_mtime_ns, st.st_size)
+
+    def poll(self):
+        now = self._stat()
+        if now is None or now == self.seen:
+            return
+        self.seen = now
+        try:
+            with open(self.path, "rb") as f:
+                data = f.read()
+            out, _notes = self.cover.rewrite(data)
+        except (OSError, self.cover.CoverError) as exc:
+            print("moy: %s: %s" % (self.cover.NAME, exc), file=sys.stderr)
+            return
+        if out == data:
+            return
+        with open(self.path + ".part", "wb") as f:
+            f.write(out)
+        os.replace(self.path + ".part", self.path)
+        self.seen = self._stat()
+        print("moy: %s rewritten smaller, %d -> %d bytes"
+              % (self.cover.NAME, len(data), len(out)), file=sys.stderr)
 
 
 def cmd_play(args):
@@ -1041,6 +1101,9 @@ def cmd_play(args):
     the other way -- a console that reloads while somebody is playing a game
     is a dev tool leaking into a product.
 
+    F7 writes the frame on screen as the cart's cover.png (SPEC.md 3.6),
+    which _run_native then rewrites smaller.
+
     `web` is the same loop through the browser player, for devtools or for a
     machine with no moy-play built."""
     if not args:
@@ -1049,7 +1112,7 @@ def cmd_play(args):
     if not os.path.isdir(src):
         die("no such cart: " + src)
     _build_and_watch(src)
-    _run_native(src, ["--watch"] + [a for a in args[1:] if a != "--watch"])
+    _run_native(src, ["--watch"] + [a for a in args[1:] if a != "--watch"], covers=True)
 
 
 def _build_and_watch(src):
@@ -1073,7 +1136,9 @@ def _build_and_watch(src):
 
 
 def cmd_build(args):
-    """Compile a compiled cart's src/ into its module (SPEC.md 16)."""
+    """Compile a compiled cart's src/ into its module (SPEC.md 16), and
+    rewrite its cover.png into SPEC.md 3.6's profile -- the second is all
+    there is to build for a Lua cart."""
     import compiled
     if "--toolchain" in args:
         try:
@@ -1096,21 +1161,50 @@ def cmd_build(args):
     src = cart_dir(args[0])
     if not os.path.isdir(src):
         die("no such cart: " + src)
-    try:
-        compiled.build(src, stack=stack)
-    except compiled.BuildError as exc:
-        die("build failed:\n%s" % exc)
-    # What `moy check` would say, so a module that builds but breaks SPEC.md
-    # 16 says so here rather than on a console.
+    if compiled.is_compiled(src):
+        try:
+            compiled.build(src, stack=stack)
+        except compiled.BuildError as exc:
+            die("build failed:\n%s" % exc)
+        # What `moy check` would say, so a module that builds but breaks
+        # SPEC.md 16 says so here rather than on a console.
+        _moycore()
+        from moycore import check as _check
+        from moycore import pack as _pack
+        findings = _check.check_wasm_files(_pack.read_folder(src))
+        bad = [f for f in findings if f[0] in ("error", "warn")]
+        for level, code, msg in bad:
+            print("  %-6s %s: %s" % (level, code, msg))
+        if _check.worst(findings) == "error":
+            die("the module does not keep to SPEC.md 16 -- see above")
+    _build_cover(src)
+
+
+def _build_cover(src):
+    """cover.png, rewritten into SPEC.md 3.6's profile: any size to its centre
+    square at 128x128, alpha flattened onto black, indexed at 256 colours or
+    fewer, no ancillary chunks, the smallest encoding found."""
     _moycore()
-    from moycore import check as _check
-    from moycore import pack as _pack
-    findings = _check.check_wasm_files(_pack.read_folder(src))
-    bad = [f for f in findings if f[0] in ("error", "warn")]
-    for level, code, msg in bad:
-        print("  %-6s %s: %s" % (level, code, msg))
-    if _check.worst(findings) == "error":
-        die("the module does not keep to SPEC.md 16 -- see above")
+    from moycore import cover
+    path = os.path.join(src, cover.NAME)
+    if not os.path.isfile(path):
+        return
+    with open(path, "rb") as f:
+        data = f.read()
+    try:
+        out, notes = cover.rewrite(data)
+    except cover.CoverError as exc:
+        print("  warn   cover: %s is %s; hosts will ignore it until it is a PNG"
+              % (cover.NAME, exc))
+        return
+    for note in notes:
+        print("  warn   cover: %s" % note)
+    if out != data:
+        with open(path + ".part", "wb") as f:
+            f.write(out)
+        os.replace(path + ".part", path)
+    print("moy: %s %s (%d bytes)" % (cover.NAME, "rewritten" if out != data
+                                     else "already in the profile", len(out)))
 
 
 def _refuse_unloadable(files, what):

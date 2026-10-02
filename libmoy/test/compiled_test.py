@@ -6,9 +6,9 @@
 
 Offline, it needs nothing but Python: `moy new --wasm` scaffolds a cart whose
 header is libmoy's own moy_cart.h; `moy pack` takes a compiled cart; `moy
-index` writes a carts repository's index and `moy install` installs from it,
-refusing an asset that is not the one the index names and leaving the
-destination untouched; `moy push` over serial sends a compiled cart without
+index` writes a carts repository's index, its cover entry included, and `moy
+install` installs from it, refusing an asset that is not the one the index
+names and leaving the destination untouched; `moy push` over serial sends a compiled cart without
 its src/ and shows what the console notes.
 
 With the toolchain -- $WASI_SDK_PATH, or the pinned wasi-sdk `moy build
@@ -151,10 +151,58 @@ def carts_repo(tmp):
             entry["assets"][0]["url"] != \
             "https://example.invalid/carts/releases/download/blink-v1/blink.moy.zip":
         fail("the index says %r" % entry)
+    if "cover" in entry:
+        fail("a cart with no cover.png has a cover entry: %r" % entry["cover"])
     rc, out = moy("index", repo)
     if rc != 0:
         fail("moy index again, from the index it wrote: %s" % out)
     ok("moy index writes a carts repository's index.json")
+
+    # The cover is the repository's file, read on every run, built or not.
+    with open(os.path.join(ROOT, "conformance", "covers", "indexed_filter4.png"), "rb") as f:
+        cover = f.read()
+    with open(os.path.join(cart_dir, "cover.png"), "wb") as f:
+        f.write(cover)
+    os.rename(os.path.join(dist, "build.json"), os.path.join(tmp, "build.json"))
+    rc, out = moy("index", repo)
+    with open(os.path.join(repo, "index.json")) as f:
+        entry = json.load(f)["carts"][0]
+    want = {"url": "carts/blink/cover.png", "size": len(cover),
+            "sha256": hashlib.sha256(cover).hexdigest(), "w": 128, "h": 128}
+    if rc != 0 or entry.get("cover") != want:
+        fail("moy index on a cart not built here gave the cover %r: %s"
+             % (entry.get("cover"), out))
+    os.rename(os.path.join(tmp, "build.json"), os.path.join(dist, "build.json"))
+    with open(os.path.join(ROOT, "conformance", "covers", "size_127x128.png"), "rb") as f:
+        bad = f.read()
+    with open(os.path.join(cart_dir, "cover.png"), "wb") as f:
+        f.write(bad)
+    rc, out = moy("index", repo)
+    if rc == 0 or "moy build" not in out:
+        fail("moy index took a cover outside the profile: %s" % out)
+    with open(os.path.join(cart_dir, "cover.png"), "wb") as f:
+        f.write(cover)
+    rc, out = moy("index", repo)
+    with open(os.path.join(repo, "index.json")) as f:
+        index = json.load(f)
+    entry = index["carts"][0]
+    if rc != 0 or entry.get("cover") != want:
+        fail("moy index on a built cart gave the cover %r: %s" % (entry.get("cover"), out))
+    ok("moy index names the cover beside the licence, built or not, and refuses one "
+       "outside the profile")
+
+    # The release carries the cover like any other file.
+    files["cover.png"] = cover
+    with zipfile.ZipFile(zpath, "w") as z:
+        for name, data in sorted(files.items()):
+            z.writestr("blink.moy/" + name, data)
+    with open(zpath, "rb") as f:
+        blob = f.read()
+    entry["assets"][0].update(size=len(blob), sha256=hashlib.sha256(blob).hexdigest(),
+                              files={n: {"size": len(d), "sha256": hashlib.sha256(d).hexdigest()}
+                                     for n, d in files.items()})
+    with open(os.path.join(repo, "index.json"), "w") as f:
+        json.dump(index, f)
 
     dest = os.path.join(tmp, "card")
     os.makedirs(dest)

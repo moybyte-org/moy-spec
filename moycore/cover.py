@@ -194,9 +194,7 @@ def rewrite(data):
     except png.PngError as exc:
         raise CoverError("not a PNG this tool can read: %s" % exc)
     why = problem(data)
-    notes = [] if why is None else ["out of the profile: %s" % why]
-    if d.has_alpha:
-        notes.append("its transparency flattened onto black")
+    notes = []
     if (d.w, d.h) == (SIZE, SIZE) and d.indices is not None:
         out = png.encode(SIZE, SIZE, indices=d.indices, palette=d.palette)
     else:
@@ -204,6 +202,10 @@ def rewrite(data):
         if how:
             notes.append(how)
         out = encode(pixels)
+    if why is not None and not notes:
+        notes.append("out of the profile: %s" % why)
+    if d.has_alpha:
+        notes.append("its transparency flattened onto black")
     if why is None and not d.ancillary and len(data) <= len(out):
         return data, notes
     if d.ancillary:

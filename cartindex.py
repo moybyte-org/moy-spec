@@ -36,9 +36,13 @@ version, release tag, licence, chips, external files), carts/<id>/manifest.json
 (runtime, memory) and what the repository's build recorded in
 build/dist/<id>/build.json (the asset's size, sha256 and files, the source
 bundle, the pins). A cart with no build.json keeps the entry index.json already
-has, so rebuilding one cart leaves the others as they are. Paths inside the
-repository (the licence texts) are written relative to index.json, which is how
-GitHub Pages serves them beside it; everything else is an absolute URL. The
+has, so rebuilding one cart leaves the others as they are. A cart's cover,
+carts/<id>/cover.png (SPEC.md 3.6), is read from the repository every time,
+built or not -- it is served from the Pages site, not from a release -- and
+one outside the profile stops the index. Paths inside the repository (the
+licence texts, the cover) are written relative to index.json, which is how
+GitHub Pages serves them beside it; everything else is an absolute URL.
+`moy install` treats cover.png as one more file of the release asset. The
 index's name and home come from the index already there, or --name and --home
 for a new repository; the home is the repository's URL, which release URLs
 hang off.
@@ -422,6 +426,44 @@ def _repo_file(root, cart_id, rel, name):
             "sha256": hashlib.sha256(data).hexdigest()}
 
 
+def cover_entry(root, cart_id):
+    """carts/<id>/cover.png as the index names it, or None when there is none.
+    A cover outside SPEC.md 3.6's profile is refused: every host would ignore
+    it, so the index would be advertising a picture nobody sees."""
+    rel = "carts/%s/cover.png" % cart_id
+    path = os.path.join(root, *rel.split("/"))
+    if not os.path.isfile(path):
+        return None
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from moycore import cover
+    with open(path, "rb") as f:
+        data = f.read()
+    why = cover.problem(data)
+    if why:
+        raise InstallError("%s is outside SPEC.md 3.6's profile (%s); `moy build "
+                           "carts/%s` rewrites it" % (rel, why, cart_id))
+    return {"url": rel, "size": len(data), "sha256": hashlib.sha256(data).hexdigest(),
+            "w": cover.SIZE, "h": cover.SIZE}
+
+
+def with_cover(root, entry):
+    """`entry` with its cover as the repository has it now: added, replaced,
+    or gone."""
+    entry = dict(entry)
+    entry.pop("cover", None)
+    found = cover_entry(root, entry["id"])
+    if found is None:
+        return entry
+    out = {}
+    for key, value in entry.items():
+        out[key] = value
+        if key == "licence":
+            out["cover"] = found
+    if "cover" not in out:
+        out["cover"] = found
+    return out
+
+
 def index_entry(root, home, cart_id, built):
     """One cart's index entry, from its cart.json, its manifest and its build."""
     meta = _load(os.path.join(root, "carts", cart_id, "cart.json"))
@@ -491,10 +533,10 @@ def write_index(root, name=None, home=None, log=print):
             continue
         built = os.path.join(root, "build", "dist", cart_id, "build.json")
         if os.path.isfile(built):
-            carts.append(index_entry(root, home, cart_id, _load(built)))
+            carts.append(with_cover(root, index_entry(root, home, cart_id, _load(built))))
             log("%s: from %s" % (cart_id, os.path.relpath(built, root)))
         elif cart_id in kept:
-            carts.append(kept[cart_id])
+            carts.append(with_cover(root, kept[cart_id]))
             log("%s: kept (not built here)" % cart_id)
         else:
             log("%s: not built and not in the index; left out" % cart_id)

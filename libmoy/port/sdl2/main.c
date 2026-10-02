@@ -2,7 +2,7 @@
  * worked example.
  *
  *   moy-play <cart.moy> [--scale N] [--fullscreen] [--watch]
- *   moy-play <cart.moy> --dump <out> [--frames N]      (no window)
+ *   moy-play <cart.moy> --dump <out> [--frames N] [--cover]   (no window)
  *   moy-play --runtimes
  *
  * READ TO THE "hot reload" COMMENT AND STOP. Everything above it -- under
@@ -46,7 +46,11 @@
  * --dump is the conformance player (SPEC.md 11, conformance/wasm_run.py): no
  * window, no audio, the clock stopped and rnd() seeded 0, and after the ticks
  * the last frame the cart finished is written to <out> -- palette indices for
- * a Lua cart, RGB565 little-endian for a compiled one.
+ * a Lua cart, RGB565 little-endian for a compiled one -- or, with --cover, as
+ * the cover.png F7 would write for it.
+ *
+ * F7, with --watch, writes the frame on screen as the cart's cover.png
+ * (SPEC.md 3.6); see "the cover" below.
  */
 
 #include <stdio.h>
@@ -583,11 +587,196 @@ static int cart_boot(const char *cart, const char *mainfile,
     }
 }
 
+/* -- the cover (F7) ------------------------------------------------------
+ *
+ * Not part of what a platform owes the console either. F7, while watching,
+ * writes the frame on screen as the cart's cover.png (SPEC.md 3.6): the author
+ * choosing the picture, so it is off for anyone merely playing. A cover is
+ * 128x128, so the frame's centre square is brought to that size -- every k-th
+ * pixel when its side is k * 128, else each output pixel the mean of the
+ * source area it covers, weighted by overlap and rounded half up, in integers.
+ * That is moycore/cover.py's square(), which `moy build` uses, and
+ * test/cover_test.py holds this one to it through --dump --cover.
+ *
+ * Indexed when the result has 256 colours or fewer, RGB otherwise, in a stored
+ * (uncompressed) deflate block: no compressor, and the largest such file --
+ * RGB -- is 49,348 bytes, inside the profile's 65,536. `moy play` rewrites it
+ * smaller with moycore's encoder.
+ */
+#define COVER 128
+#define COVER_RAW (COVER * (1 + COVER * 3))
+
+static uint32_t crc_table[256];
+
+static uint32_t crc32_of(uint32_t crc, const uint8_t *p, size_t n)
+{
+    size_t i;
+    if (!crc_table[1]) {
+        uint32_t k, v;
+        int b;
+        for (k = 0; k < 256; k++) {
+            v = k;
+            for (b = 0; b < 8; b++) v = (v & 1u) ? 0xEDB88320u ^ (v >> 1) : v >> 1;
+            crc_table[k] = v;
+        }
+    }
+    crc = ~crc;
+    for (i = 0; i < n; i++) crc = crc_table[(crc ^ p[i]) & 0xFFu] ^ (crc >> 8);
+    return ~crc;
+}
+
+static uint8_t *put32(uint8_t *p, uint32_t v)
+{
+    p[0] = (uint8_t)(v >> 24); p[1] = (uint8_t)(v >> 16);
+    p[2] = (uint8_t)(v >> 8);  p[3] = (uint8_t)v;
+    return p + 4;
+}
+
+/* A chunk at `p` whose body is already in place after its 8-byte head. */
+static uint8_t *seal_chunk(uint8_t *p, const char *tag, uint32_t n)
+{
+    put32(p, n);
+    memcpy(p + 4, tag, 4);
+    return put32(p + 8 + n, crc32_of(0, p + 4, n + 4));
+}
+
+/* The frame in `px` (0xAARRGGBB, w x h) squared to COVER x COVER R, G, B. */
+static void cover_square(const uint32_t *px, int w, int h, uint8_t *out)
+{
+    int side = w < h ? w : h, x0 = (w - side) / 2, y0 = (h - side) / 2;
+    int ox, oy, ix, iy;
+    for (oy = 0; oy < COVER; oy++) {
+        for (ox = 0; ox < COVER; ox++) {
+            uint8_t *o = out + (oy * COVER + ox) * 3;
+            if (side % COVER == 0) {
+                int k = side / COVER;
+                uint32_t v = px[(y0 + oy * k) * w + x0 + ox * k];
+                o[0] = (uint8_t)(v >> 16); o[1] = (uint8_t)(v >> 8); o[2] = (uint8_t)v;
+            } else {
+                int ys = oy * side, xs = ox * side;
+                uint32_t sum[3] = {0, 0, 0}, total = (uint32_t)side * (uint32_t)side;
+                for (iy = ys / COVER; iy * COVER < ys + side; iy++) {
+                    int top = iy * COVER > ys ? iy * COVER : ys;
+                    int bot = (iy + 1) * COVER < ys + side ? (iy + 1) * COVER : ys + side;
+                    for (ix = xs / COVER; ix * COVER < xs + side; ix++) {
+                        int lft = ix * COVER > xs ? ix * COVER : xs;
+                        int rgt = (ix + 1) * COVER < xs + side ? (ix + 1) * COVER : xs + side;
+                        uint32_t wt = (uint32_t)(bot - top) * (uint32_t)(rgt - lft);
+                        uint32_t v = px[(y0 + iy) * w + x0 + ix];
+                        sum[0] += ((v >> 16) & 0xFFu) * wt;
+                        sum[1] += ((v >> 8) & 0xFFu) * wt;
+                        sum[2] += (v & 0xFFu) * wt;
+                    }
+                }
+                o[0] = (uint8_t)((sum[0] + total / 2) / total);
+                o[1] = (uint8_t)((sum[1] + total / 2) / total);
+                o[2] = (uint8_t)((sum[2] + total / 2) / total);
+            }
+        }
+    }
+}
+
+/* cover.png for the frame in `pixels` at `path`. 0, or 1 having said why. */
+static int cover_write(const char *path, int w, int h)
+{
+    static uint8_t rgb[COVER * COVER * 3], idx[COVER * COVER], raw[COVER_RAW];
+    static uint8_t png[8 + 25 + 12 + 768 + 12 + 2 + 5 + COVER_RAW + 4 + 12];
+    static const uint8_t sig[8] = {0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n'};
+    uint8_t pal[256 * 3], *p = png;
+    char tmp[1100];
+    uint32_t a = 1, b = 0;
+    size_t i, nraw = 0, row;
+    int npal = 0, side = w < h ? w : h;
+    FILE *f;
+
+    cover_square(pixels, w, h, rgb);
+    for (i = 0; i < (size_t)COVER * COVER && npal >= 0; i++) {
+        int j;
+        for (j = 0; j < npal && memcmp(pal + j * 3, rgb + i * 3, 3); j++) {}
+        if (j == npal) {
+            if (npal == 256) { npal = -1; break; }
+            memcpy(pal + npal * 3, rgb + i * 3, 3);
+            npal++;
+        }
+        idx[i] = (uint8_t)j;
+    }
+    for (row = 0; row < COVER; row++) {
+        raw[nraw++] = 0;
+        if (npal > 0) {
+            memcpy(raw + nraw, idx + row * COVER, COVER);
+            nraw += COVER;
+        } else {
+            memcpy(raw + nraw, rgb + row * COVER * 3, COVER * 3);
+            nraw += COVER * 3;
+        }
+    }
+    for (i = 0; i < nraw; i++) {
+        a = (a + raw[i]) % 65521u;
+        b = (b + a) % 65521u;
+    }
+
+    memcpy(p, sig, 8);
+    p += 8;
+    put32(p + 8, COVER);
+    put32(p + 12, COVER);
+    p[16] = 8; p[17] = npal > 0 ? 3 : 2; p[18] = 0; p[19] = 0; p[20] = 0;
+    p = seal_chunk(p, "IHDR", 13);
+    if (npal > 0) {
+        memcpy(p + 8, pal, (size_t)npal * 3);
+        p = seal_chunk(p, "PLTE", (uint32_t)npal * 3);
+    }
+    {   /* zlib: header, ONE stored block (nraw < 65,536), adler-32 */
+        uint8_t *q = p + 8;
+        q[0] = 0x78; q[1] = 0x01; q[2] = 0x01;
+        q[3] = (uint8_t)(nraw & 0xFFu); q[4] = (uint8_t)(nraw >> 8);
+        q[5] = (uint8_t)(~nraw & 0xFFu); q[6] = (uint8_t)((~nraw >> 8) & 0xFFu);
+        memcpy(q + 7, raw, nraw);
+        put32(q + 7 + nraw, (b << 16) | a);
+        p = seal_chunk(p, "IDAT", (uint32_t)(7 + nraw + 4));
+    }
+    p = seal_chunk(p, "IEND", 0);
+
+    snprintf(tmp, sizeof tmp, "%s.part", path);
+    f = fopen(tmp, "wb");
+    if (!f || fwrite(png, 1, (size_t)(p - png), f) != (size_t)(p - png)) {
+        if (f) fclose(f);
+        remove(tmp);
+        fprintf(stderr, "moy-play: cannot write %s\n", tmp);
+        return 1;
+    }
+    fclose(f);
+    if (rename(tmp, path) != 0) {
+        remove(path);                       /* Windows will not rename over a file */
+        if (rename(tmp, path) != 0) {
+            remove(tmp);
+            fprintf(stderr, "moy-play: cannot write %s\n", path);
+            return 1;
+        }
+    }
+    {   /* what was done, in moycore/cover.py's words */
+        char crop[40] = "", step[40] = "";
+        if (w != h) snprintf(crop, sizeof crop, "the centre %dx%d", side, side);
+        if (side % COVER)
+            snprintf(step, sizeof step, "area-averaged to %dx%d", COVER, COVER);
+        else if (side > COVER)
+            snprintf(step, sizeof step, "every %d%s pixel", side / COVER,
+                     side / COVER == 2 ? "nd" : side / COVER == 3 ? "rd" : "th");
+        if (crop[0] || step[0])
+            fprintf(stderr, "moy-play: cover %s (%dx%d -> %dx%d: %s%s%s; %s, %ld bytes)\n",
+                    path, w, h, COVER, COVER, crop, crop[0] && step[0] ? ", " : "", step,
+                    npal > 0 ? "indexed" : "RGB", (long)(p - png));
+        else
+            fprintf(stderr, "moy-play: cover %s (%dx%d; %s, %ld bytes)\n", path, w, h,
+                    npal > 0 ? "indexed" : "RGB", (long)(p - png));
+    }
+    return 0;
+}
+
 /* --dump: the ticks with no window, then the last frame the cart finished --
  * the one a player would be looking at -- written to `out`. 0 when the cart
  * ran, 1 when it failed. */
 static int dump_run(const char *out, int frames, moy_canvas *canvas,
-                    host_state *hs, int cw, int ch)
+                    host_state *hs, int cw, int ch, int as_cover)
 {
     static uint8_t shown[MOY_W * MOY_H * 2];
     size_t nbytes = 0;
@@ -611,6 +800,11 @@ static int dump_run(const char *out, int frames, moy_canvas *canvas,
             rc = 1;
             break;
         }
+        if (as_cover) {
+            present(cw, ch);
+            nbytes = 1;
+            continue;
+        }
 #ifdef MOY_PLAY_WASM
         if (is_wasm) {
             const uint16_t *px = wasm_cart_frame(wc);
@@ -626,7 +820,9 @@ static int dump_run(const char *out, int frames, moy_canvas *canvas,
         memcpy(shown, frame, (size_t)cw * (size_t)ch);
         nbytes = (size_t)cw * (size_t)ch;
     }
-    if (nbytes) {
+    if (nbytes && as_cover) {
+        if (cover_write(out, cw, ch)) rc = 1;
+    } else if (nbytes) {
         FILE *f = fopen(out, "wb");
         if (!f || fwrite(shown, 1, nbytes, f) != nbytes) {
             fprintf(stderr, "moy-play: cannot write %s\n", out);
@@ -653,7 +849,7 @@ int main(int argc, char **argv)
     char *manifest;
     const char *cart = NULL, *dump = NULL;
     int i, scale = 0, fullscreen = 0, fps, frame_ms, cw, ch, nsrc, frames = 2;
-    int watch = 0, live = 1, arate = 0;
+    int watch = 0, live = 1, arate = 0, as_cover = 0;
     int lw, lh;              /* the renderer's logical size, as last set */
     long pages = 0;
     uint64_t limit = (uint64_t)1024 * 1024 * 1024;
@@ -665,6 +861,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--fullscreen")) fullscreen = 1;
         else if (!strcmp(argv[i], "--watch")) watch = 1;
         else if (!strcmp(argv[i], "--dump") && i + 1 < argc) dump = argv[++i];
+        else if (!strcmp(argv[i], "--cover")) as_cover = 1;
         else if (!strcmp(argv[i], "--frames") && i + 1 < argc) frames = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--memory-limit") && i + 1 < argc)
             limit = (uint64_t)strtoul(argv[++i], NULL, 10) * 1024u * 1024u;
@@ -681,7 +878,7 @@ int main(int argc, char **argv)
     if (!cart) {
         fprintf(stderr, "usage: moy-play <cart.moy> [--scale N] [--fullscreen]"
                         " [--watch] [--memory-limit MIB]\n"
-                        "       moy-play <cart.moy> --dump <out> [--frames N]\n"
+                        "       moy-play <cart.moy> --dump <out> [--frames N] [--cover]\n"
                         "       moy-play --runtimes\n");
         return 2;
     }
@@ -799,7 +996,7 @@ int main(int argc, char **argv)
                 fprintf(stderr, "moy-play: %s\n", err);
                 return 2;
             }
-            rc = dump_run(dump, frames, &canvas, &host, cw, ch);
+            rc = dump_run(dump, frames, &canvas, &host, cw, ch, as_cover);
 #ifdef MOY_PLAY_WASM
             if (wc) wasm_cart_close(wc);
 #endif
@@ -909,6 +1106,12 @@ int main(int argc, char **argv)
             /* THE HOST OWNS EXIT (SPEC.md 7.3). There is no exit button in the
              * console's input model and the cart never sees this key. */
             if (ev.type == SDL_KEYDOWN && ev.key.keysym.sym == SDLK_ESCAPE) host.running = 0;
+            /* the author choosing the cart's cover: the frame on screen */
+            if (watch && ev.type == SDL_KEYDOWN && ev.key.keysym.sym == SDLK_F7
+                && !ev.key.repeat) {
+                snprintf(path, sizeof path, "%s/cover.png", cart);
+                cover_write(path, cw, ch);
+            }
         }
         /* hot reload: poll, and rebuild the cart when the bytes on disk stop
          * matching the ones being run. A failed reload leaves the PREVIOUS
