@@ -9,7 +9,7 @@ gpl-carts and mit-carts), and both use this one copy of the two tools:
 
     moy install --index <url|file> --list
     moy install --index <url|file> <id> <carts folder> [--build DIR] [--yes]
-    moy index [repo] [--name NAME --home URL]
+    moy index [repo] [--name NAME --home URL] [--mirror DIR]
 
 INSTALL reads the index (a URL or a local file), downloads the cart's release
 asset and every external file it needs, checks each against the size and
@@ -46,6 +46,23 @@ GitHub Pages serves them beside it; everything else is an absolute URL.
 index's name and home come from the index already there, or --name and --home
 for a new repository; the home is the repository's URL, which release URLs
 hang off.
+
+A MIRROR is a second copy of a release asset served beside the index, and an
+asset's optional "mirror" field names it: a path relative to index.json, which
+`moy index --mirror DIR` writes as DIR/<release tag>/<asset name> for every
+cart, built or not (without --mirror, the DIR the index already uses). The
+asset's "url" stays the canonical copy. A mirror exists for a browser: a
+GitHub release download carries no CORS header, so a page cannot read it,
+while a Pages site answers every file with `Access-Control-Allow-Origin: *`.
+The repository publishes the mirror itself -- it downloads each release asset
+the index names, holds it to the index's size and sha256, and deploys it
+beside the index -- and an index names a mirror only for a repository that
+does. A reader that does not know the field ignores it; `moy install` fetches
+the release and falls back to the mirror, and a browser reads the mirror.
+
+`check_index` holds an index to what these tools and a console read, the
+mirror rules included, and both commands run it: `moy index` on what it is
+about to write, `moy install` on what it reads.
 
 Python 3.8 or newer, standard library only, like the rest of the CLI.
 """
@@ -209,7 +226,119 @@ def load_index(ref):
         raise InstallError("%s is not JSON: %s" % (ref, exc))
     if not isinstance(index, dict) or index.get("version") != INDEX_VERSION:
         raise InstallError("%s is not a version %d index" % (ref, INDEX_VERSION))
+    problems = check_index(index)
+    if problems:
+        raise InstallError("%s is not a valid index:\n  %s" % (ref, "\n  ".join(problems)))
     return index
+
+
+# -- the index's shape ---------------------------------------------------------------
+
+def _sha(v):
+    return isinstance(v, str) and len(v) == 64 and all(c in "0123456789abcdef" for c in v)
+
+
+def _sized(ref):
+    return (isinstance(ref, dict) and isinstance(ref.get("size"), int)
+            and not isinstance(ref.get("size"), bool) and ref["size"] >= 0
+            and _sha(ref.get("sha256")))
+
+
+def _plain(name):
+    return isinstance(name, str) and plain_name(name)
+
+
+def relative_ref(ref):
+    """A path relative to index.json: no scheme, not absolute, nothing that
+    climbs out of the site (`..`), forward slashes only."""
+    return (isinstance(ref, str) and bool(ref) and not ref.startswith("/")
+            and "\\" not in ref and urllib.parse.urlsplit(ref).scheme == ""
+            and ":" not in ref.split("/")[0]
+            and all(seg not in ("", ".", "..") for seg in ref.split("/")))
+
+
+def mirror_path(directory, url):
+    """The mirror of the release asset at `url`: DIR/<tag>/<name>, the last two
+    segments of a GitHub release download's path."""
+    tail = urllib.parse.urlsplit(url).path.rstrip("/").split("/")[-2:]
+    return "/".join([directory.strip("/")] + tail)
+
+
+def check_index(index):
+    """What is wrong with `index` as these tools and a console read it, as a
+    list of sentences; empty when nothing is."""
+    out = []
+    if not isinstance(index, dict) or index.get("version") != INDEX_VERSION:
+        return ["it is not a version %d index" % INDEX_VERSION]
+    carts = index.get("carts")
+    if not isinstance(carts, list):
+        return ["its carts are not a list"]
+    seen = set()
+    for n, cart in enumerate(carts):
+        if not isinstance(cart, dict):
+            out.append("carts[%d] is not an object" % n)
+            continue
+        cid = cart.get("id")
+        where = "cart %r" % cid if isinstance(cid, str) and cid else "carts[%d]" % n
+        for key in ("id", "name", "folder", "runtime"):
+            if not isinstance(cart.get(key), str) or not cart[key]:
+                out.append("%s has no %s" % (where, key))
+        if isinstance(cid, str):
+            if cid in seen:
+                out.append("%s is listed twice" % where)
+            seen.add(cid)
+        if not isinstance(cart.get("version"), int) or isinstance(cart.get("version"), bool):
+            out.append("%s has no integer version" % where)
+        folder = cart.get("folder")
+        if isinstance(folder, str) and (not _plain(folder) or not folder.endswith(".moy")):
+            out.append("%s: its folder %r is not a plain name ending .moy" % (where, folder))
+        lic = cart.get("licence")
+        if not _sized(lic) or not isinstance(lic.get("url"), str):
+            out.append("%s: its licence is not a url with a size and sha256" % where)
+        assets = cart.get("assets")
+        if not isinstance(assets, list) or not assets:
+            out.append("%s has no assets" % where)
+            assets = []
+        names = set()
+        for asset in assets:
+            aw = "%s asset %r" % (where, asset.get("name") if isinstance(asset, dict) else asset)
+            if not _sized(asset) or not isinstance(asset.get("url"), str) \
+                    or not isinstance(asset.get("name"), str):
+                out.append("%s is not a name and url with a size and sha256" % aw)
+                continue
+            files = asset.get("files")
+            if not isinstance(files, dict):
+                out.append("%s lists no files" % aw)
+                files = {}
+            for fn, meta in files.items():
+                if not _plain(fn) or fn in names or not _sized(meta):
+                    out.append("%s: file %r is not a plain name listed once with a size "
+                               "and sha256" % (aw, fn))
+                names.add(fn)
+            if "mirror" in asset:
+                mirror = asset["mirror"]
+                if not relative_ref(mirror):
+                    out.append("%s: its mirror %r is not a path relative to the index"
+                               % (aw, mirror))
+                elif mirror.rsplit("/", 1)[-1] != asset["name"]:
+                    out.append("%s: its mirror %r does not end in the asset's name"
+                               % (aw, mirror))
+        for ext in cart.get("external") or []:
+            ew = "%s external %r" % (where, ext.get("path") if isinstance(ext, dict) else ext)
+            arc = ext.get("archive") if isinstance(ext, dict) else None
+            if not _sized(ext) or not _plain(ext.get("path")) or ext["path"] in names:
+                out.append("%s is not a plain file name with a size and sha256" % ew)
+            elif not _sized(ext.get("licence")) or not _sized(arc) \
+                    or not isinstance(arc.get("urls"), list) or not arc["urls"] \
+                    or not isinstance(arc.get("member"), str):
+                out.append("%s needs a licence and an archive (urls, size, sha256, member)"
+                           % ew)
+            else:
+                names.add(ext["path"])
+        cover = cart.get("cover")
+        if cover is not None and not (_sized(cover) and isinstance(cover.get("url"), str)):
+            out.append("%s: its cover is not a url with a size and sha256" % where)
+    return out
 
 
 def unpack(data, cart, asset, staging):
@@ -324,7 +453,8 @@ def install(index, base, cart_id, dest, asset_dir=None, cache=None, force=False,
         if cart.get("source_asset"):
             print("  complete source as one file: %s" % cart["source_asset"]["url"])
         for asset in cart["assets"]:
-            data = obtain(asset["name"], [asset["url"]], asset["size"], asset["sha256"],
+            urls = [asset["url"]] + ([asset["mirror"]] if asset.get("mirror") else [])
+            data = obtain(asset["name"], urls, asset["size"], asset["sha256"],
                           base, asset_dir=asset_dir, name=asset["name"], cache=cache)
             unpack(data, cart, asset, staging)
             print("  %s: %d bytes, sha256 %s" % (asset["name"], asset["size"],
@@ -464,6 +594,36 @@ def with_cover(root, entry):
     return out
 
 
+def with_mirror(entry, directory):
+    """`entry` with every asset's mirror under `directory` (DIR/<tag>/<name>),
+    or with none when `directory` is None."""
+    entry = dict(entry)
+    assets = []
+    for asset in entry.get("assets", []):
+        asset = dict(asset)
+        asset.pop("mirror", None)
+        if directory:
+            out = {}
+            for key, value in asset.items():
+                out[key] = value
+                if key == "url":
+                    out["mirror"] = mirror_path(directory, value)
+            asset = out
+        assets.append(asset)
+    entry["assets"] = assets
+    return entry
+
+
+def mirror_dir(index):
+    """The DIR an index's mirrors live under, or None when it names none."""
+    for cart in index.get("carts", []):
+        for asset in cart.get("assets", []):
+            mirror = asset.get("mirror")
+            if isinstance(mirror, str) and mirror.count("/") >= 2:
+                return mirror.rsplit("/", 2)[0]
+    return None
+
+
 def index_entry(root, home, cart_id, built):
     """One cart's index entry, from its cart.json, its manifest and its build."""
     meta = _load(os.path.join(root, "carts", cart_id, "cart.json"))
@@ -514,12 +674,15 @@ def index_entry(root, home, cart_id, built):
     return entry
 
 
-def write_index(root, name=None, home=None, log=print):
+def write_index(root, name=None, home=None, log=print, mirror=None):
     """Write `root`/index.json. Returns the index."""
     path = os.path.join(root, "index.json")
     old = _load(path) if os.path.isfile(path) else {}
     name = name or old.get("name")
     home = (home or old.get("home") or "").rstrip("/")
+    mirror = (mirror or mirror_dir(old) or "").strip("/") or None
+    if mirror is not None and not relative_ref(mirror):
+        raise InstallError("--mirror %r is not a folder relative to index.json" % mirror)
     if not name or not home:
         raise InstallError("a new index needs its --name and its --home (the "
                            "repository's URL, which release URLs hang off)")
@@ -533,14 +696,19 @@ def write_index(root, name=None, home=None, log=print):
             continue
         built = os.path.join(root, "build", "dist", cart_id, "build.json")
         if os.path.isfile(built):
-            carts.append(with_cover(root, index_entry(root, home, cart_id, _load(built))))
+            entry = index_entry(root, home, cart_id, _load(built))
             log("%s: from %s" % (cart_id, os.path.relpath(built, root)))
         elif cart_id in kept:
-            carts.append(with_cover(root, kept[cart_id]))
+            entry = kept[cart_id]
             log("%s: kept (not built here)" % cart_id)
         else:
             log("%s: not built and not in the index; left out" % cart_id)
+            continue
+        carts.append(with_mirror(with_cover(root, entry), mirror))
     index = {"version": INDEX_VERSION, "name": name, "home": home, "carts": carts}
+    problems = check_index(index)
+    if problems:
+        raise InstallError("the index would not be valid:\n  %s" % "\n  ".join(problems))
     with open(path, "w", encoding="utf-8", newline="\n") as f:
         json.dump(index, f, indent=2)
         f.write("\n")
@@ -555,9 +723,13 @@ def main_index(argv, prog="moy index"):
                     help="the carts repository (default: here)")
     ap.add_argument("--name", help="the index's name (default: the one index.json has)")
     ap.add_argument("--home", help="the repository's URL (default: the one index.json has)")
+    ap.add_argument("--mirror", metavar="DIR",
+                    help="name a mirror of every release asset at DIR/<tag>/<asset>, "
+                    "beside index.json, for a repository whose site serves them "
+                    "(default: the folder index.json already uses, if any)")
     args = ap.parse_args(argv)
     try:
-        write_index(os.path.abspath(args.repo), args.name, args.home)
+        write_index(os.path.abspath(args.repo), args.name, args.home, mirror=args.mirror)
     except (InstallError, OSError, ValueError, KeyError) as exc:
         print("index: %s" % exc, file=sys.stderr)
         return 2

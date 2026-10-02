@@ -81,7 +81,9 @@ Carts other people publish, from a carts repository's index.json:
                                  under another licence; --build DIR installs
                                  your own build of it instead
     moy.py index [repo]          write a carts repository's index.json from
-                                 its carts/*/cart.json and its builds
+          [--mirror DIR]         its carts/*/cart.json and its builds;
+                                 --mirror names each release asset's copy
+                                 beside the index, for browsers
 
 Pure Python stdlib, no dependencies. The player it wraps is runner/ -- libmoy
 compiled to WebAssembly (see runner/BUILD.md); the spec it implements is

@@ -191,6 +191,32 @@ def carts_repo(tmp):
     ok("moy index names the cover beside the licence, built or not, and refuses one "
        "outside the profile")
 
+    # The mirror: a copy of each release asset beside the index, for a browser.
+    rc, out = moy("index", repo, "--mirror", "releases")
+    with open(os.path.join(repo, "index.json")) as f:
+        asset = json.load(f)["carts"][0]["assets"][0]
+    if rc != 0 or asset.get("mirror") != "releases/blink-v1/blink.moy.zip":
+        fail("moy index --mirror gave %r: %s" % (asset.get("mirror"), out))
+    os.rename(os.path.join(dist, "build.json"), os.path.join(tmp, "build.json"))
+    rc, out = moy("index", repo)
+    os.rename(os.path.join(tmp, "build.json"), os.path.join(dist, "build.json"))
+    with open(os.path.join(repo, "index.json")) as f:
+        asset = json.load(f)["carts"][0]["assets"][0]
+    if rc != 0 or asset.get("mirror") != "releases/blink-v1/blink.moy.zip":
+        fail("moy index without --mirror, on a cart not built here, gave the mirror %r: %s"
+             % (asset.get("mirror"), out))
+    rc, out = moy("index", repo, "--mirror", "../elsewhere")
+    if rc == 0 or "relative" not in out:
+        fail("moy index took a mirror folder outside the site: %s" % out)
+    rc, out = moy("index", repo)
+    with open(os.path.join(repo, "index.json")) as f:
+        index = json.load(f)
+    entry = index["carts"][0]
+    if rc != 0 or entry["assets"][0].get("mirror") != "releases/blink-v1/blink.moy.zip":
+        fail("moy index lost the mirror: %s" % out)
+    ok("moy index names each release asset's mirror under --mirror, built or not, and "
+       "keeps the folder the index already uses")
+
     # The release carries the cover like any other file.
     files["cover.png"] = cover
     with zipfile.ZipFile(zpath, "w") as z:
@@ -221,6 +247,42 @@ def carts_repo(tmp):
     if rc == 0 or "Refusing" not in out or os.listdir(dest):
         return fail("moy install took an asset that is not the index's: %s" % out)
     ok("moy install installs from an index and refuses an asset it does not name")
+
+    # The release is canonical; the mirror is where moy install goes when the
+    # release does not answer. Here the release is a port nothing listens on and
+    # the mirror is a file beside the index.
+    site = os.path.join(tmp, "site")
+    os.makedirs(os.path.join(site, "releases", "blink-v1"))
+    good = os.path.join(tmp, "good.zip")
+    with zipfile.ZipFile(good, "w") as z:
+        for name, data in sorted(files.items()):
+            z.writestr("blink.moy/" + name, data)
+    with open(good, "rb") as f:
+        blob = f.read()
+    shutil.copy(good, os.path.join(site, "releases", "blink-v1", "blink.moy.zip"))
+    shutil.copy(os.path.join(cart_dir, "NOTICE"), os.path.join(site, "NOTICE"))
+    mirrored = json.loads(json.dumps(index))
+    m_entry = mirrored["carts"][0]
+    m_entry["licence"]["url"] = "NOTICE"
+    m_entry["assets"][0].update(url="http://127.0.0.1:9/blink.moy.zip", size=len(blob),
+                                sha256=hashlib.sha256(blob).hexdigest())
+    m_idx = os.path.join(site, "index.json")
+    with open(m_idx, "w") as f:
+        json.dump(mirrored, f)
+    rc, out = moy("install", "--index", m_idx, "blink", dest)
+    if rc != 0 or sorted(os.listdir(os.path.join(dest, "blink.moy"))) != sorted(files):
+        return fail("moy install did not fall back to the mirror: %s" % out)
+    shutil.rmtree(os.path.join(dest, "blink.moy"))
+    for bad in ("../blink.moy.zip", "https://elsewhere.example/blink.moy.zip",
+                "releases/blink-v1/other.zip"):
+        m_entry["assets"][0]["mirror"] = bad
+        with open(m_idx, "w") as f:
+            json.dump(mirrored, f)
+        rc, out = moy("install", "--index", m_idx, "--list")
+        if rc == 0 or "not a valid index" not in out:
+            return fail("moy install read an index whose mirror is %r: %s" % (bad, out))
+    ok("moy install falls back to an asset's mirror, and refuses an index whose mirror "
+       "is not the asset beside it")
 
     # The same files, compressed: the index can name this asset exactly, and
     # it is still refused, because a console unpacks a release as it streams.
