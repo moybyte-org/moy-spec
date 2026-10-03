@@ -155,4 +155,50 @@ static inline int moy_manifest_sources(const char *text, const char *mainfile,
     return n;
 }
 
+/* The manifest's `writable` (SPEC.md 16.12): a compiled cart's paths it may
+ * write, as moy_wasm's `writable` takes them -- each NUL-terminated, one after
+ * another, ended by an empty one. Returns how many, 0 when the field is
+ * absent or not an array of strings, or -1 when they do not fit `n` bytes.
+ * The entries are copied as they are spelled: the binding holds each to the
+ * path rule, so one this scan cannot read (a JSON escape in it) declares
+ * nothing. */
+static inline int moy_manifest_writable(const char *text, char *out, size_t n)
+{
+    static const char KEY[] = "\"writable\"";
+    const char *p = text ? strstr(text, KEY) : NULL;
+    const char *end;
+    size_t o = 0;
+    int count = 0;
+
+    if (n < 1) return -1;
+    out[0] = 0;
+    if (!p) return 0;
+    p += sizeof KEY - 1;
+    while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') p++;
+    if (*p++ != ':') return 0;
+    while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') p++;
+    if (*p != '[') return 0;
+    end = strchr(p, ']');
+    if (!end) return 0;
+    for (p++; p < end; p++) {
+        const char *s, *e;
+        if (*p != '"') continue;
+        s = p + 1;
+        e = strchr(s, '"');
+        if (!e || e > end) return 0;
+        if (e == s) {                    /* "" declares nothing, and ends no list */
+            p = e;
+            continue;
+        }
+        if (o + (size_t)(e - s) + 2 > n) return -1;
+        memcpy(out + o, s, (size_t)(e - s));
+        o += (size_t)(e - s);
+        out[o++] = 0;
+        count++;
+        p = e;
+    }
+    out[o] = 0;
+    return count;
+}
+
 #endif /* MOY_MANIFEST_H */

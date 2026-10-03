@@ -242,8 +242,8 @@ exists — every cart written against 64 slots runs unchanged on a 256-slot host
 the reverse.
 
 The boundary the smaller number was defending is still real: a cart wanting more than
-this is probably wanting a filesystem, which §0 puts out of scope on purpose. It just
-does not sit at 64. What runs past it is the ordinary case, a flag or a star count per
+this is probably wanting files, which only a compiled cart has (§12.9, §16.12). It
+just does not sit at 64. What runs past it is the ordinary case, a flag or a star count per
 level, not a cart smuggling in a save format.
 
 ## `spr_batch` — why it *left* core
@@ -432,3 +432,38 @@ moybyte#158's).
 The reference console gives a cart every core but the one its session runs on, below
 the display and audio tasks' priority, and each core takes the next item as it
 finishes one, so a busier core takes fewer.
+
+### Writable files
+
+The compiled tier's ports save as files, so a compiled cart keeps files: the paths
+its manifest declares, inside its own namespace (§16.12; Lua's answer is §12.9).
+Decided 2026-10-03, with the rest of this section.
+
+**Whole files, written atomically.** A write replaces a file, never a range of one.
+Atomic comes free that way — a host writes the new copy beside the old and swaps it
+in — where a write at an offset is atomic only with a journal. No handle is open
+between calls, so a trap or a quit leaves nothing half-written for a host to tidy,
+and there is no state to keep per cart but the files. And it is how engines already
+save: Doom builds its save in a buffer and writes it in one call, and so do the
+emulators' save states and a settings file.
+
+**What it does not do yet**, each added when a real cart needs it:
+
+- writing at an offset, with a commit — a disk image, an SQLite database;
+- appending — a log, a replay, an exported recording;
+- a file over 1 MiB — the same carts, past the cap §16.12 explains.
+
+**What is not a file**, each a separate decision when its cart arrives:
+
+- the network — a terminal, a chat;
+- serial, GPIO and I²C — maker tools;
+- richer keys, modifiers and arrows — a terminal;
+- stereo sound — a tracker, a music player.
+
+**A user's own files are another capability.** A ROM, a book, a song, a document —
+anything the user brings rather than the cart — will come through a file picker the
+host shows: the console grants a cart one file or one folder, to read or to read and
+write, and remembers the grant for that cart (moybyte#231). Deliberately not a
+folder layout the spec dictates, where hosts would agree to keep ROMs in one place
+and books in another: the grant is the user's, per cart, and the sandbox stays the
+cart's own namespace.

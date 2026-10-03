@@ -234,6 +234,186 @@ def par_trap():
     return [(8191 * ((n // W) // 60) + 1) & 0xFFFF for n in range(W * H)]
 
 
+
+# -- write: the cart's writable files, over two runs (SPEC.md 16.12) -----------
+
+PATH_MAX, WRITE_MAX = 64, 1048576       # SPEC.md 16.12
+
+
+def _cart_files(name):
+    """{path: bytes} of a scene cart as it ships: every file but its WAT."""
+    folder = os.path.join(SCENES_DIR, name + ".moy")
+    files = {}
+    for dirpath, _, names in os.walk(folder):
+        for fn in names:
+            p = os.path.join(dirpath, fn)
+            rel = os.path.relpath(p, folder).replace(os.sep, "/")
+            if rel != "main.wat":
+                with open(p, "rb") as f:
+                    files[rel] = f.read()
+    return files
+
+
+def _well_formed(path):
+    segs = path.split("/")
+    return (bool(path) and "\\" not in path and "\0" not in path
+            and all(s not in ("", ".", "..") for s in segs))
+
+
+class _Files:
+    """SPEC.md 16.12's rules, from the text: a cart's shipped files, its
+    writable entries, and what it has written."""
+
+    def __init__(self, shipped, writable, written=None):
+        self.shipped = shipped
+        self.entries = [e for e in writable if len(e) <= PATH_MAX and _well_formed(
+            e[:-1] if e.endswith("/") else e)]
+        self.written = dict(written or {})
+
+    def writable(self, path):
+        if len(path) > PATH_MAX or not _well_formed(path):
+            return False
+        return any(path == e or (e.endswith("/") and path.startswith(e) and path != e)
+                   for e in self.entries)
+
+    def read(self, path, n):
+        if not _well_formed(path):
+            return 0, b""
+        data = self.written.get(path) if self.writable(path) else None
+        if data is None:
+            data = self.shipped.get(path)
+        if data is None:
+            return 0, b""
+        return (len(data), b"") if n == 0 else (min(n, len(data)), data[:n])
+
+    def write(self, path, data):
+        if not self.writable(path):
+            return -1
+        if len(data) > WRITE_MAX:
+            return -2
+        self.written[path] = bytes(data)
+        return 0
+
+    def erase(self, path):
+        if not self.writable(path) or path not in self.written:
+            return -1
+        del self.written[path]
+        return 0
+
+    def list(self, prefix, i, n):
+        names = sorted(set(self.shipped) | set(self.written),
+                       key=lambda p: p.encode("utf-8"))
+        names = [p for p in names if p.startswith(prefix)]
+        if i >= len(names):
+            return -1, b""
+        b = names[i].encode("utf-8")
+        return len(b), b[:n]
+
+
+def _write_runs():
+    """Both runs of the write scene over one store: (answers, what the cart
+    keeps in memory) for each."""
+    shipped = _cart_files("write")
+    with open(os.path.join(SCENES_DIR, "write.moy", "manifest.json")) as f:
+        writable = json.load(f)["writable"]
+    store = _Files(shipped, writable)
+    slot1 = bytes((i * 7) & 255 for i in range(300))
+    runs = []
+    for _ in range(2):
+        a, mem = [], {}
+        a.append(store.read("options.cfg", 0)[0])
+        a.append(store.read("saves/slot1.sav", 0)[0])
+        listed = []
+
+        def listing():
+            for i in range(8):
+                v, b = store.list("saves/", i, 24)
+                a.append(v)
+                listed.append(b)
+
+        if not a[1]:
+            a.append(store.write("options.cfg", b"volume=9!"))
+            v, mem["options"] = store.read("options.cfg", 32)
+            a.append(v)
+            for bad in ("readme.txt", "saves", "saves/../readme.txt", "saves//a.sav",
+                        "/options.cfg", "saves/" + "a" * 59):
+                a.append(store.write(bad, b"deep"[:4] if bad.endswith("a") else b"volume=9!"))
+            a.append(store.write("saves/" + "b" * 58, b"deep"))
+            a.append(store.write("saves/big.bin", bytes(WRITE_MAX + 1)))
+            a.append(store.write("saves/slot1.sav", slot1))
+            a.append(store.write("saves/slot2.sav", b""))
+            a.append(store.write("saves/sub/deep.sav", b"deep"))
+            a.append(store.write("saves/Case.sav", b"C"))
+            a.append(store.write("saves/case.sav", b"ca"))
+            a.append(store.write("saves/slot0.sav", b"WRITTEN0!"))
+            a.append(store.write("saves/tmp.sav", b"d"))
+            a.append(store.erase("saves/tmp.sav"))
+            a.append(store.erase("saves/tmp.sav"))
+            a.append(store.erase("readme.txt"))
+            a.append(store.read("saves/tmp.sav", 0)[0])
+            a.append(store.read("saves/slot2.sav", 0)[0])
+            a.append(store.write("Saves/X.sav", b"deep"))
+            a.append(store.list("saves/", 99, 0)[0])
+            a.append(store.list("saves/x", 0, 0)[0])
+            a.append(store.list("saves/s", 3, 0)[0])
+            a.append(store.list("saves/s", 4, 0)[0])
+            listing()
+            v, mem["slot0"] = store.read("saves/slot0.sav", 16)
+            a.append(v)
+        else:
+            v, mem["slot1"] = store.read("saves/slot1.sav", 300)
+            a.append(v)
+            v, mem["options"] = store.read("options.cfg", 32)
+            a.append(v)
+            v, mem["slot0"] = store.read("saves/slot0.sav", 16)
+            a.append(v)
+            a.append(store.erase("options.cfg"))
+            a.append(store.read("options.cfg", 0)[0])
+            a.append(store.erase("saves/slot0.sav"))
+            v, mem["shipped0"] = store.read("saves/slot0.sav", 16)
+            a.append(v)
+            a.append(store.erase("saves/sub/deep.sav"))
+            a.append(store.read("saves/sub/deep.sav", 0)[0])
+            a.append(store.read("saves/Case.sav", 0)[0])
+            a.append(store.read("saves/case.sav", 0)[0])
+            listing()
+            a.append(sum(1 for i in range(300) if mem["slot1"][i:i + 1] != slot1[i:i + 1]))
+        runs.append((a, mem, listed))
+    return runs
+
+
+def _write_frame(run):
+    a, mem, listed = _write_runs()[run - 1]
+    c = moycore.Canvas(W, H)
+    c.cls(1)
+    c.rect(300, 8, 12, 12, 10 + run)
+    for k, v in enumerate(a):
+        u = (v + 4) & 0xFFFFFFFF
+        h = (u & 63) + 1
+        c.rect(4 + k * 8, 236 - h, 6, h, 8 + ((u >> 6) & 31))
+    for i, b in enumerate(listed):
+        if b:
+            c.print(b, 8, 8 + i * 10, 7)
+
+    def nine(key, n=9):
+        return (mem.get(key, b"") + bytes(n))[:n]
+
+    c.print(nine("options"), 8, 100, 7)
+    c.print(nine("slot0"), 8, 112, 7)
+    if run == 2:
+        c.print(nine("shipped0", 8), 8, 124, 7)
+        for i in range(64):
+            c.rect(8 + (i % 32) * 9, 140 + (i // 32) * 9, 8, 8, mem["slot1"][i] & 63)
+    return [MOY565[v] for v in c.buf]
+
+
+def write():
+    return _write_frame(1)
+
+
+def write_again():
+    return _write_frame(2)
+
 # -- verbs: every ordinary verb through the binding, as data -----------------
 
 def _tile_pixels():
@@ -569,6 +749,8 @@ SCENES = [
     ("blit", blit),
     ("blit565", blit565),
     ("read", read),
+    ("write", write),
+    ("write_again", write_again),
     ("target", target),
     ("snd", snd),
     ("par", par),
@@ -579,6 +761,11 @@ SCENES = [
     ("snd_trap", snd_trap),
     ("par_trap", par_trap),
 ]
+
+# A scene that is another scene's cart run again on the store the other's run
+# left, as the cart would run after the player restarted it: write_again is the
+# write cart's second run.
+AGAIN = {"write_again": "write"}
 
 # A scene whose last tick traps: the host exits non-zero and what it writes is
 # the last whole frame, which is the golden.

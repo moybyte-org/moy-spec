@@ -143,7 +143,7 @@ instead. What a platform owes libmoy is four things:
 | **pixels out** | resolve the index framebuffer through the palette, put it on your glass |
 | **buttons in** | map your hardware onto SPEC.md 7.3's seven logical buttons |
 | **a clock** | milliseconds |
-| **persistence** | 256 signed 32-bit slots, if you have anywhere to put them |
+| **persistence** | 256 signed 32-bit slots, if you have anywhere to put them; a compiled cart's files too, if you run compiled carts |
 
 Sound is not among them. SPEC.md 8.3 makes silence a valid rendering, so audio is
 a fifth duty you may skip entirely. If you want it, it is libmoy's too — `moy_audio.h`
@@ -179,7 +179,9 @@ reaching for any of them fails, as SPEC.md 11 requires of every conforming host.
 as C: a
 `NativeSymbol` array of the verbs, bound to a `moy_console` the way
 `moy_lua_open` binds a `lua_State`, with the palette `blit`, `blit565`, `target`
-for layers, `read` routed to a callback the host supplies, and `par`, which
+for layers, `read` routed to a callback the host supplies, `write`, `erase` and
+`list` held to the cart's `writable` paths and routed to the host's store, and
+`par`, which
 runs the cart's own items on the lanes a host offers (threads it runs on its
 other cores, which the binding fills with sibling instances of the cart over
 the same memory) or, with none, one after another. The binding is optional
@@ -207,8 +209,10 @@ Three hosts here run it: the harness below, the desktop player
 (`port/wasm/cart.c`, `embed.c` and `page/cart.js`, the cart a sibling module
 on the browser's engine). The harness and the desktop player run `par` items on POSIX
 lanes (`port/moy_lanes.c`); the web player, whose page has one thread to give a
-cart, runs them in order. `conformance/wasm_run.py` holds all three to the same
-RGB565 frames.
+cart, runs them in order. The harness and the desktop player keep a cart's
+written files in a folder (`port/moy_files.c`), the web player in the page's
+`localStorage`. `conformance/wasm_run.py` holds all three to the same RGB565
+frames.
 
 ```
 make wasm-check     # moy check refuses the refusal fixtures and passes hello

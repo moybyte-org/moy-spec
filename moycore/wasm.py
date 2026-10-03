@@ -270,6 +270,14 @@ def check_module(blob, manifest, findings, table=None):
                                  % (where, _sig(got) if got else "?",
                                     _sig(table[name]))))
 
+    writes = sorted(set(n for m, n, k, _ in mod["imports"]
+                        if m == IMPORT_MODULE and n in ("write", "erase")))
+    if writes and not manifest.get("writable"):
+        findings.append(("warn", "wasm.writable",
+                         "imports %s, and the manifest declares no \"writable\" "
+                         "paths, so every call answers -1 (SPEC.md 16.12)"
+                         % " and ".join(writes)))
+
     exports = dict((n, (k, i)) for n, k, i in mod["exports"])
     for name in sorted(EXPORTS):
         want = EXPORTS[name]

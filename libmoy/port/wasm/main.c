@@ -88,6 +88,7 @@ static int running = 0;
 static int is_wasm = 0;
 static void *binding = NULL;             /* the compiled cart's, from cart.c */
 static char module_name[MOY_NAME_MAX];
+static char writable[1024];              /* the compiled cart's, moy_wasm's form */
 static int pmem_dirty = 0;
 static char title[128] = "moy";
 static char errmsg[512];
@@ -155,6 +156,155 @@ static uint32_t h_read(void *u, const char *name, uint32_t offset,
     if (len > left) len = left;
     memcpy(dst, data + offset, len);
     return len;
+}
+
+/* -- a compiled cart's written files (SPEC.md 16.12) ---------------------- */
+/* The page keeps them, per cart (Module.moyFiles: page/cart.js's
+ * storageFiles, over localStorage). A path crosses as its bytes, one
+ * character each, so every path the rule allows is kept as it is. */
+
+EM_JS(int, web_written, (const char *path, uint32_t offset, uint8_t *dst, uint32_t len), {
+    const f = Module.moyFiles;
+    let p = "";
+    for (let i = path; HEAPU8[i]; i++) p += String.fromCharCode(HEAPU8[i]);
+    const b = f ? f.get(p) : null;
+    if (!b) return -1;
+    offset >>>= 0; len >>>= 0;
+    if (offset >= b.length) return 0;
+    const left = b.length - offset;
+    if (len === 0) return left;
+    const n = Math.min(len, left);
+    HEAPU8.set(b.subarray(offset, offset + n), dst);
+    return n;
+});
+
+EM_JS(int, web_write, (const char *path, const uint8_t *data, uint32_t len), {
+    const f = Module.moyFiles;
+    let p = "";
+    for (let i = path; HEAPU8[i]; i++) p += String.fromCharCode(HEAPU8[i]);
+    return f ? f.put(p, HEAPU8.slice(data, data + (len >>> 0))) : -3;
+});
+
+EM_JS(int, web_erase, (const char *path), {
+    const f = Module.moyFiles;
+    let p = "";
+    for (let i = path; HEAPU8[i]; i++) p += String.fromCharCode(HEAPU8[i]);
+    return f ? f.del(p) : -1;
+});
+
+/* Every written path, each NUL-terminated and the last followed by an empty
+ * one, in a block the caller frees; NULL for none. */
+EM_JS(char *, web_written_names, (void), {
+    const f = Module.moyFiles;
+    const names = f ? f.names() : [];
+    if (!names.length) return 0;
+    let n = 1;
+    for (const p of names) n += p.length + 1;
+    const out = _malloc(n);
+    let o = out;
+    for (const p of names) {
+        for (let i = 0; i < p.length; i++) HEAPU8[o++] = p.charCodeAt(i) & 255;
+        HEAPU8[o++] = 0;
+    }
+    HEAPU8[o] = 0;
+    return out;
+});
+
+static int32_t h_written(void *u, const char *path, uint32_t offset, uint8_t *dst, uint32_t len)
+{
+    (void)u;
+    return web_written(path, offset, dst, len);
+}
+
+static int listed_stale = 1;
+
+static int32_t h_write(void *u, const char *path, const uint8_t *data, uint32_t len)
+{
+    int32_t r;
+    (void)u;
+    r = web_write(path, data, len);
+    if (r == 0) listed_stale = 1;
+    return r;
+}
+
+static int32_t h_erase(void *u, const char *path)
+{
+    int32_t r;
+    (void)u;
+    r = web_erase(path);
+    if (r == 0) listed_stale = 1;
+    return r;
+}
+
+/* `list`: the cart's files and the written ones, sorted and each path once,
+ * built on the first list after anything changed. */
+static char **listed;
+static size_t n_listed;
+
+static void listed_free(void)
+{
+    size_t i;
+    for (i = 0; i < n_listed; i++) free(listed[i]);
+    free(listed);
+    listed = NULL;
+    n_listed = 0;
+    listed_stale = 1;
+}
+
+static int by_bytes(const void *a, const void *b)
+{
+    return strcmp(*(char *const *)a, *(char *const *)b);
+}
+
+static void listed_add(const char *name)
+{
+    size_t n = strlen(name) + 1;
+    char *d = (char *)malloc(n);
+    if (!d) return;
+    memcpy(d, name, n);
+    listed[n_listed++] = d;
+}
+
+static void listed_build(void)
+{
+    char *w = web_written_names();
+    const char *p;
+    size_t cap = (size_t)nfiles, i, o;
+    listed_free();
+    for (p = w; p && *p; p += strlen(p) + 1) cap++;
+    listed = (char **)malloc((cap ? cap : 1) * sizeof *listed);
+    if (listed) {
+        for (i = 0; i < (size_t)nfiles; i++) listed_add(files[i].name);
+        for (p = w; p && *p; p += strlen(p) + 1) listed_add(p);
+        if (n_listed) qsort(listed, n_listed, sizeof *listed, by_bytes);
+        for (i = o = 0; i < n_listed; i++) {
+            if (o && !strcmp(listed[o - 1], listed[i])) { free(listed[i]); continue; }
+            listed[o++] = listed[i];
+        }
+        n_listed = o;
+    }
+    free(w);
+    listed_stale = 0;
+}
+
+static int32_t h_list(void *u, const char *prefix, uint32_t index, uint8_t *dst, uint32_t len)
+{
+    size_t lo = 0, hi, plen = strlen(prefix), n;
+    const char *name;
+    (void)u;
+    if (listed_stale) listed_build();
+    hi = n_listed;
+    while (lo < hi) {
+        size_t mid = lo + (hi - lo) / 2;
+        if (strcmp(listed[mid], prefix) < 0) lo = mid + 1;
+        else hi = mid;
+    }
+    if (lo + index >= n_listed) return -1;
+    name = listed[lo + index];
+    if (strncmp(name, prefix, plen) != 0) return -1;
+    n = strlen(name);
+    memcpy(dst, name, n < len ? n : len);
+    return (int32_t)n;
 }
 
 /* -- asset parsing (SPEC.md 3.2, 3.3) ------------------------------------ */
@@ -423,6 +573,7 @@ KEEP int moy_web_audio_rate(void) { return AUDIO_RATE; }
 KEEP void moy_web_reset(void)
 {
     if (L) { lua_close(L); L = NULL; }
+    listed_free();
     web_cart_close();
     binding = NULL;
     is_wasm = 0;
@@ -609,6 +760,12 @@ KEEP int moy_web_boot(uint32_t seed)
         cfg.host = &con.host;
         cfg.read = h_read;
         cfg.snd = h_snd;
+        if (moy_manifest_writable(manifest, writable, sizeof writable) < 0) writable[0] = 0;
+        cfg.writable = writable;
+        cfg.written = h_written;
+        cfg.write = h_write;
+        cfg.erase = h_erase;
+        cfg.list = h_list;
         moy_stream_init(&pcm, pcm_ring, WEB_CART_SND_DEPTH, WEB_CART_SND_RATE);
         cfg.seed = seed;
         cfg.limit = WASM_LIMIT;

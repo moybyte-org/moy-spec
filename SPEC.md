@@ -41,7 +41,9 @@ tick model, the sandbox ceiling, the audio model, the cart package layout.
 optional extension in §10, filesystem access, app install/lifecycle, anything a cart
 could use to reach the host system. A cart draws, reads input, plays sound, and saves
 a little state. That constraint is what makes the same cart run on a handheld, a
-desktop simulator, and someone else's OS.
+desktop simulator, and someone else's OS. A compiled cart's writable files (§16.12)
+are inside it: paths in the cart's own namespace, which the host keeps where it
+likes, never a path of the host's.
 
 ---
 
@@ -231,6 +233,7 @@ Lua; §16.1 says what changes.
 | `extensions` | no | optional features required — see §10 |
 | `runtime` | no | which language binding `main` is written in, default `"lua"` — see §15 |
 | `icon` | no | sheet tiles to show this cart by in a list — see §3.4 |
+| `writable` | no | a compiled cart's paths it may write — see §16.12 |
 
 A host MUST ignore manifest fields it does not recognise. Implementations hang
 vendor metadata there (the reference console records editor state in fields of its
@@ -1037,7 +1040,8 @@ on the same host is the same sequence, every time.
 to 2 147 483 647), persisted per cart. That is exactly what §4.2 makes a Lua integer,
 which is where every stored value comes from and returns to — a wider slot would
 accept numbers the cart could not read back. Hosts MAY defer the write; they MUST
-persist before the cart exits.
+persist before the cart exits. A compiled cart may also keep files (§16.12); a Lua
+cart's state is these slots alone (§12.9).
 
 `config.json` is a flat map of values a person can edit without touching code — the
 cart's own tuning surface, not a system feature.
@@ -1286,6 +1290,20 @@ own verbs are globals too. The second is real, and its answer is an alias at the
 of the file that uses the name (`local spr = spr`): a line a person can read and a
 converter can write.
 
+### 12.9 — Only a compiled cart writes files.
+
+*Decided 2026-10-03.* A compiled cart declares the paths it writes and keeps files
+there (§16.12); a Lua cart keeps §9's 256 integers and nothing else. The compiled
+tier exists for ported engines and emulators, and those save as files: Doom's save
+slots run to tens of kilobytes and its settings are a text file, which a kilobyte
+of integers cannot hold. A Lua cart is written for this console, and a small fixed
+save is part of what keeps it small — a high score, a level reached, a flag per
+stage. **Cost:** a Lua cart that outgrows 256 integers has nowhere to go but the
+compiled tier. The pair is shaped so Lua could take it later — a manifest field and
+`read`/`write` over the cart's own namespace, nothing in either particular to
+WebAssembly — and it will when a real Lua cart needs it. — *RATIONALE, "Writable
+files".*
+
 ---
 
 ## 13. Versioning
@@ -1366,8 +1384,9 @@ table.
 `main` names the module, and for this runtime it defaults to `main.wasm`.
 `memory` is required: the cart's linear memory in 64 KiB pages (§16.7).
 `sources` does not apply — a compiled cart is one module — and a manifest that
-lists it is refused the way §4 refuses a broken one. Every other field keeps its
-§3.1 meaning, `canvas` and `fps` included, and every asset file is unchanged:
+lists it is refused the way §4 refuses a broken one. `writable` names the paths
+the cart may write (§16.12). Every other field keeps its §3.1 meaning, `canvas`
+and `fps` included, and every asset file is unchanged:
 `sprites.moygfx`, `map.moymap`, `flags.moyflags`, `sounds.json`, `config.json`,
 `cover.png`.
 **The `.wasm` is the sole portable artifact.** How a host executes it is the
@@ -1425,10 +1444,11 @@ produce the same shape.
 ### 16.3 The import table
 
 **The import table is the verb table.** Every verb the Lua binding installs is one
-import of the same name and the same §6–§9 meaning, and six exist because this
+import of the same name and the same §6–§9 meaning, and nine exist because this
 binding needs them: `blit` and `blit565` (the framebuffer, §16.5), `read` (the
 cart's own files, §16.6), `target` (drawing into a layer, §16.4), `snd` (the
-sample stream, §16.9) and `par` (the cart's own work across the cores, §16.10).
+sample stream, §16.9), `par` (the cart's own work across the cores, §16.10), and
+`write`, `erase` and `list` (its writable files, §16.12).
 `wasm-imports.json` lists every one; a verb the spec gains is a row there before it
 is anything else.
 
@@ -1485,9 +1505,9 @@ close the gap, and every row's notes apply them.
   milliseconds since the cart started, which is all a cart needs to measure. It
   paces itself by returning from `_update`, and §5 calls it again.
 - **No import blocks.** Every import completes in time bounded by its arguments —
-  `read` by its length, `blit` by the frame, `snd` by its count, `par` by the
-  cart's own items — and none waits for input, a timer, the display, the audio
-  output or the network. There is no sleep and no vsync wait: a cart waits by
+  `read` and `write` by their lengths, `list` by the cart's files, `blit` by the
+  frame, `snd` by its count, `par` by the cart's own items — and none waits for
+  input, a timer, the display, the audio output or the network. There is no sleep and no vsync wait: a cart waits by
   returning.
 - **`quit()` does not return.** The host unwinds the cart as it would for a trap
   and treats the unwinding as the cart ending itself (§9), with no report.
@@ -1586,15 +1606,16 @@ absent, or that breaks that rule, reads 0, and so does an offset at or past the 
 — so a cart cannot tell a missing file from an empty one, and cannot reach
 anything outside its folder. That is as far as §0's "no filesystem access"
 stretches: the folder already is the cart. Every file in it is readable, the
-manifest and the module included; nothing is writable, and `pmem` (§9) stays the
-only state a cart keeps.
+manifest and the module included, and none of it is ever written: a cart that
+keeps files writes the paths its manifest declares, which `read` then answers
+from the written copy (§16.12).
 
 It exists because a ported engine needs its own data and the sprite sheet cannot
 carry it — Doom reads a 4 MB WAD. The read is synchronous and bounded by `len`: a
 host whose carts live on slow storage makes it slow, and never makes it wait on
 anything else. A user's own files — a document the cart did not ship — are a
-different capability and would be a different import, so this one never widens
-past the cart's folder.
+different capability (RATIONALE.md, "Writable files"), so this one never widens
+past the cart's own files: its folder, and what it wrote.
 
 ### 16.7 Memory — one fixed block, checked before it exists
 
@@ -1759,3 +1780,83 @@ reproduces exactly: a direct-colour host holds it and an RGB888 host reduces to
 it. Verbs reduce through the cart's palette, a `blit` through the palette it was
 handed, and a `blit565` frame is already in the golden's form.
 `conformance/wasm_run.py` holds a host to these scenes and to the refusals.
+
+### 16.12 Writable files — `write`, `erase` and `list`
+
+A compiled cart may keep files. Its manifest declares which paths it writes:
+
+```json
+{ "format": "moy-1", "title": "…", "runtime": "wasm", "memory": 64,
+  "writable": ["saves/", "options.cfg"] }
+```
+
+Each entry is a path in the cart's own namespace — the one `read` reaches (§16.6)
+— under `read`'s rule, and at most **64 bytes**. An entry ending in `/` is a folder
+and declares every path below it, at any depth; any other entry declares exactly
+itself. Absent or empty, nothing is writable, so every cart written before this
+section runs as it did. An entry that breaks the rule declares nothing, and `moy
+check` reports it.
+
+```c
+i32 write(i32 path, i32 path_len, i32 data, i32 len);
+i32 erase(i32 path, i32 path_len);
+i32 list(i32 prefix, i32 prefix_len, i32 index, i32 dst, i32 dst_len);
+```
+
+`write` replaces the whole file at `path` with the `len` bytes at `data`, and
+answers:
+
+| answer | when |
+|---|---|
+| 0 | written |
+| -1 | `path` is malformed, longer than 64 bytes, or not declared writable |
+| -2 | the host has no room for it, or `len` is over 1,048,576 |
+| -3 | the host's storage failed |
+
+A write is **atomic**: the old copy stays whole until the new one is complete, so
+a cart that loses power mid-save keeps its last save rather than half of two. And
+it is **kept when `write` returns**. A host does not hold a write back to batch it
+or to make it when the cart ends: a handheld's battery runs out mid-game, and a
+save the player was told succeeded has to be there when it comes back on.
+
+**One file is at most 1 MiB** (1,048,576 bytes); a longer write answers -2 without
+reaching storage. The cap bounds the copy across the module boundary: a host takes
+the whole file out of the cart's memory in one call — into another module's memory
+in a browser, to another task on a board — and a megabyte is what every host can
+hold in transit. A cart with more to keep splits it into files.
+
+**There is no budget.** A cart declares which paths it writes, never how much, and
+no host refuses a cart for the space it might write. A host's storage is shared and
+finite, so any write may answer -2, and a cart handles that as it would on any
+filesystem: it says the save failed, and plays on. Nor is there a limit on how many
+files a cart keeps: -2 is the answer to whatever a host runs out of.
+
+**`read` answers the written copy first.** For a writable path that has one, `read`
+reads the written copy; for every other name, the file the cart shipped, exactly as
+§16.6 says. So a cart may ship a default — a settings file, a first save — that its
+first write shadows. `erase` removes the written copy, and `read` answers the
+shipped file again, or nothing: it returns 0, or -1 when there was no written copy
+or `path` is not writable. A written copy may be empty, which reads as 0 bytes, like
+an absent file, and is still listed.
+
+**`list` is the cart's files, one namespace**: every file in its folder and every
+written one, in bytewise order of their paths, and a path that is both counted
+once. It copies the `index`-th path (from 0) that begins with the bytes of `prefix`
+into `dst`, at most `dst_len` bytes, and returns the path's whole length, so a
+short buffer is visible (as `cfg`'s is, §16.4); -1 past the last. A path is whole,
+from the cart's root, so it passes straight back to `read`. The prefix is bytes,
+not a folder: `"saves/"` lists the folder at every depth, `"saves/slot"` the
+slots, `""` everything. The order holds while no file changes, and a `write` or an
+`erase` may move every later index, so a cart lists and then acts. A host may keep
+files of its own in a cart's folder — a compiled form of the module (§16.1) — which
+a prefix that covers them lists, as `read` reads them; a cart lists its own
+folders.
+
+**Written files are the cart's**, kept per cart and outside its folder: installing,
+updating or pushing a cart never touches them, an update keeps them, and removing
+the cart removes them. Where they live and how a host knows one cart from another
+are the host's (PORTING.md).
+
+`write`, `erase` and `list` belong to this binding alone: a Lua cart's state is
+`pmem` (§12.9). `conformance/wasm_run.py` runs a scene that writes twice over one
+store, and holds the second run to what the first left.

@@ -42,8 +42,10 @@ numbering the issues cite keeps meaning.
    **Landed 2026-09-30:** `libmoy/include/moy_cart.h`, which
    `libmoy/test/wasm_table_check.py` holds to `wasm-imports.json` row for row.
 6. **User-file access** (moybyte#108) is orthogonal to the cart-local `read`
-   (item 10) and would be a separate import; it blocks the e-reader class of ports
-   either way, and the WASI-subset question belongs to that issue, not this one.
+   (item 10) and to the cart's own writable files (item 13); it blocks the
+   e-reader class of ports either way. Its direction is a file picker the host
+   shows, granting a cart one file or folder (moybyte#231; RATIONALE.md, "Writable
+   files"), and the WASI-subset question belongs to that issue, not this one.
 7. ~~**The `blit565` penalty on the floor board.**~~ **Measured 2026-08-06**, and
    the prediction held with room to spare: the cart-side cost widened from
    +4.5–31 % to 1.1–3.3×, and the host-side saving went negative (RATIONALE.md).
@@ -79,3 +81,8 @@ numbering the issues cite keeps meaning.
     cart's own unshared memory, and not the threads proposal (RATIONALE.md);
     moybyte#158 has what it measures against one core and against native two-core
     rendering.
+13. ~~**A ported engine needs to save.**~~ **Decided 2026-10-03:** a compiled cart
+    declares `writable` paths in its own namespace and writes whole files there,
+    atomically, at most 1 MiB each, with `read` answering a written copy first and
+    `list` enumerating the cart's files (SPEC.md §16.12); a Lua cart keeps `pmem`
+    (§12.9). Doom's save slots and its settings file were the cart that asked.

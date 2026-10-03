@@ -248,10 +248,11 @@ $(WAMR_LIB): $(WAMR_SRC)/.pin-$(WAMR_PIN)
 wamr: $(WAMR_LIB)
 
 $(WASMT): test/wasm_test.c src/moy_wasm.c include/moy_wasm.h port/moy_lanes.c port/moy_lanes.h \
-          $(SRC) include/moy.h $(WAMR_LIB)
+          port/moy_files.c port/moy_files.h port/moy_manifest.h $(SRC) include/moy.h $(WAMR_LIB)
 	$(CC) $(CFLAGS) -DMOY_PIXEL_RGB565 -DMOY_WASM \
 	  -isystem $(WAMR_SRC)/core/iwasm/include \
-	  test/wasm_test.c src/moy_wasm.c port/moy_lanes.c $(SRC) $(WAMR_LIB) -lm $(WAMR_LIBS) -o $@
+	  test/wasm_test.c src/moy_wasm.c port/moy_lanes.c port/moy_files.c $(SRC) $(WAMR_LIB) \
+	  -lm $(WAMR_LIBS) -o $@
 
 wasm-test: $(WASMT)
 	rm -rf build/wasm && mkdir -p build/wasm
@@ -287,7 +288,7 @@ P565_CFLAGS = $(CFLAGS) -DMOY_PIXEL_RGB565 -DMOY_WASM -include port/moy565.h \
               -isystem $(WAMR_SRC)/core/iwasm/include
 ifeq ($(PLAY_WASM),1)
 PLAY_WASM_OBJ  := $(P565)/moy_canvas.o $(P565)/moy_sprite.o $(P565)/moy_wasm.o \
-                  $(P565)/wasm_cart.o $(P565)/moy_lanes.o
+                  $(P565)/wasm_cart.o $(P565)/moy_lanes.o $(P565)/moy_files.o
 PLAY_WASM_LINK := $(WAMR_LIB) $(WAMR_LIBS)
 PLAY_WASM_DEF  := -DMOY_PLAY_WASM
 endif
@@ -298,12 +299,17 @@ $(P565)/%.o: src/%.c include/moy.h include/moy_wasm.h src/moy_pixel.h port/moy56
 	$(CC) $(P565_CFLAGS) -c $< -o $@
 
 $(P565)/wasm_cart.o: port/sdl2/wasm_cart.c port/sdl2/wasm_cart.h include/moy.h \
-                     include/moy_wasm.h port/moy565.h port/moy_lanes.h \
+                     include/moy_wasm.h port/moy565.h port/moy_lanes.h port/moy_files.h \
                      $(WAMR_SRC)/.pin-$(WAMR_PIN)
 	@mkdir -p $(P565)
 	$(CC) $(P565_CFLAGS) -c $< -o $@
 
 $(P565)/moy_lanes.o: port/moy_lanes.c port/moy_lanes.h include/moy_wasm.h \
+                     $(WAMR_SRC)/.pin-$(WAMR_PIN)
+	@mkdir -p $(P565)
+	$(CC) $(P565_CFLAGS) -c $< -o $@
+
+$(P565)/moy_files.o: port/moy_files.c port/moy_files.h include/moy_wasm.h \
                      $(WAMR_SRC)/.pin-$(WAMR_PIN)
 	@mkdir -p $(P565)
 	$(CC) $(P565_CFLAGS) -c $< -o $@

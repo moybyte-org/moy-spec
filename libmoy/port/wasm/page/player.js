@@ -12,7 +12,7 @@
  */
 
 import createMoy from "./moy.mjs";
-import { startCart } from "./cart.js";
+import { startCart, storageFiles } from "./cart.js";
 
 const cv = document.getElementById("screen");
 const ctx = cv.getContext("2d", { alpha: false });
@@ -544,6 +544,12 @@ async function boot() {
   cart = null;
   M._moy_web_reset();
   feed(bundle);
+  /* A compiled cart's written files, per cart beside its pmem (SPEC.md
+   * 16.12). A page whose site data is blocked has no localStorage, and its
+   * cart's writes fail rather than vanish. */
+  let ls = null;
+  try { ls = window.localStorage; } catch (e) { /* blocked */ }
+  M.moyFiles = storageFiles(ls, "moy.files." + (cartName || "cart") + "/");
   /* SPEC.md 9 defines rnd()'s range but not its sequence, so the seed is
    * genuinely arbitrary -- and must not be constant, or every session of a
    * cart that shuffles plays the same. */

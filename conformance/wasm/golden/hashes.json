@@ -81,6 +81,16 @@
       "crc32": "825f7aaa",
       "sha256": "5ec04b2223b08a4c2117948b1190b70006057529c4223d3e4d119117e8489a47",
       "traps": false
+    },
+    "write": {
+      "crc32": "aaf3c118",
+      "sha256": "3cce9d9497a52cdb9737426fda27a81ba48d97d78f118fded5ce03ae36be7b35",
+      "traps": false
+    },
+    "write_again": {
+      "crc32": "935a107e",
+      "sha256": "92d9a53bb0ff0a5c6e4e9e258aebaca1bc203abf7df4474b9e2dbd66db453854",
+      "traps": false
     }
   }
 }

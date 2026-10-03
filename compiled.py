@@ -172,7 +172,8 @@ JET_FILES = {
 # The starters' manifests. fps "free": both scale their motion by dt.
 MANIFESTS = {
     "wasm": {"format": "moy-1", "title": None, "version": 1, "runtime": "wasm",
-             "main": "main.wasm", "memory": 4, "fps": 60, "input": ["buttons"]},
+             "main": "main.wasm", "memory": 4, "fps": 60, "input": ["buttons"],
+             "writable": ["saves/"]},
     "jet": {"format": "moy-1", "title": None, "version": 1, "runtime": "wasm",
             "main": "main.wasm", "memory": 8, "fps": "free", "input": ["buttons"]},
 }

@@ -45,6 +45,15 @@ typedef struct {
                      uint8_t *dst, uint32_t len);
     /* The cart's `snd`: moy_wasm's snd callback. */
     uint32_t (*snd)(void *user, const uint8_t *pcm, uint32_t n);
+    /* The cart's writable files: moy_wasm's `writable` and its four
+     * callbacks, main.c's, over the store the page keeps. */
+    const char *writable;
+    int32_t (*written)(void *user, const char *path, uint32_t offset,
+                       uint8_t *dst, uint32_t len);
+    int32_t (*write)(void *user, const char *path, const uint8_t *data, uint32_t len);
+    int32_t (*erase)(void *user, const char *path);
+    int32_t (*list)(void *user, const char *prefix, uint32_t index,
+                    uint8_t *dst, uint32_t len);
     uint32_t seed;              /* rnd()'s */
     uint64_t limit;             /* the most a cart may take to load, in bytes */
 } web_cart_config;

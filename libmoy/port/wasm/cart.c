@@ -3,7 +3,7 @@
  * Built with -DMOY_PIXEL_RGB565 -DMOY_WASM_JS -include port/moy565.h, so the
  * moy_* calls below reach the direct-colour raster under its moy565_ names
  * and main.c keeps the index one. The import table, the marshalling, the
- * blit, the read and the traps are src/moy_wasm.c's -- the file every other
+ * blit, the read and write and the traps are src/moy_wasm.c's -- the file every other
  * host of the binding runs. The cart itself is not here: page/cart.js
  * instantiates it as a sibling module with the browser's own engine and
  * adapts each of its "moy" imports onto the table, and embed.c is what the
@@ -94,6 +94,11 @@ void *web_cart_open(const web_cart_config *cfg, char *err, size_t errlen)
     memset(&binding, 0, sizeof binding);
     binding.read = cfg->read;
     binding.snd = cfg->snd;
+    binding.writable = cfg->writable;
+    binding.written = cfg->written;
+    binding.write = cfg->write;
+    binding.erase = cfg->erase;
+    binding.list = cfg->list;
     moy_wasm_bind(&binding, &con);
     return &binding;
 }

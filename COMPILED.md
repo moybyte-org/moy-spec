@@ -58,12 +58,37 @@ photographs), because on small boards it is slower.
 
 `malloc`, `snprintf`, `sinf` and the rest of the C library work. What does not is
 anything that needs an operating system: there is no clock but `moy_time()`, no
-file but the cart's own through `moy_read()`, no `printf` to a terminal. If you
-use one by accident, `moy build` stops and names it.
+file but the cart's own through `moy_read()` and the ones it keeps (below), no
+`printf` to a terminal. If you use one by accident, `moy build` stops and names
+it.
 
 The cart's memory is fixed by `"memory"` in `manifest.json` and never grows: the
 stack first (64 KB; `moy build --stack` changes it), then your static data, then
 the heap. If the build says the memory is too small, raise it.
+
+### Keeping files
+
+A compiled cart can save: settings, save slots, a high-score table. List the
+paths it writes in `manifest.json`, a folder ending in `/`:
+
+```json
+"writable": ["saves/", "options.cfg"]
+```
+
+`moy_write(path, path_len, data, len)` replaces a file whole and answers 0, or
+-1 for a path you did not declare, -2 when the console has no room (or the file
+is over 1 MB), -3 when its storage failed. `moy_read` reads the written copy
+first, so you can ship a default `options.cfg` that the player's first save
+replaces; `moy_erase` removes the copy, and the default comes back.
+`moy_list(prefix, prefix_len, index, name, name_len)` names the cart's files one
+at a time, in order, for a menu of save slots. The starter keeps where the
+circle is in `saves/circle.bin`: press B, quit, play again.
+
+A save is kept when `moy_write` returns, all of it or none of it, and it stays
+when the cart is updated; it goes when the cart is removed. Where it lives is
+the console's: `moy play` keeps a cart's files in moy's data folder, under
+`files/` and the cart's name. Handle -2: the console's storage is shared, and
+a save that does not fit should say so and let the game go on (SPEC.md §16.12).
 
 ## 3. Check it and share it
 
@@ -111,6 +136,7 @@ straight into the frame the cart hands to `moy_blit565`.
 ## Where to look next
 
 - SPEC.md §16 — the whole contract: every import, how a Lua verb becomes a C
-  function, memory, traps, sound (`moy_snd`) and more than one core (`moy_par`).
+  function, memory, traps, sound (`moy_snd`), more than one core (`moy_par`)
+  and files (`moy_write`).
 - `libmoy/include/moy_cart.h` — every verb, with its rules in one line each.
 - RATIONALE.md, "The WebAssembly binding" — why it is built this way.

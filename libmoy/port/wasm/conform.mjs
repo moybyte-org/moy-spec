@@ -1,7 +1,7 @@
 /* The conformance player protocol, driven through the browser player's own
  * WebAssembly module.
  *
- *   node conform.mjs <cart-dir> <out.bin> [--frames N]
+ *   node conform.mjs <cart-dir> <out.bin> [--frames N] [--files DIR]
  *
  * so
  *
@@ -21,19 +21,23 @@
  * sibling module of the player's, and what is written is the last frame it
  * finished as RGB565 little-endian -- its golden's form
  * (conformance/wasm_run.py). A trap ends the run non-zero with that last
- * whole frame written; a refusal ends it non-zero with nothing written.
+ * whole frame written; a refusal ends it non-zero with nothing written. Its
+ * written files (SPEC.md 16.12) go through the page's own store, cart.js's
+ * storageFiles, over a Storage kept in DIR/storage.json, where the next run
+ * finds them; without --files none are kept.
  */
 
-import { readFileSync, readdirSync, writeFileSync, statSync } from "node:fs";
-import { join, dirname, relative, sep } from "node:path";
+import { readFileSync, readdirSync, writeFileSync, statSync, renameSync } from "node:fs";
+import { join, dirname, relative, sep, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 const args = process.argv.slice(2);
-let cart = null, out = null, frames = 2;
+let cart = null, out = null, frames = 2, keep = null;
 for (let i = 0; i < args.length; i++) {
   if (args[i] === "--frames") frames = parseInt(args[++i], 10);
+  else if (args[i] === "--files") keep = args[++i];
   else if (args[i] === "--module") process.env.MOY_MODULE = args[++i];
   else if (!cart) cart = args[i];
   else out = args[i];
@@ -49,8 +53,29 @@ const modPath = process.env.MOY_MODULE ||
   join(HERE, "..", "..", "..", "runner", "moy.mjs");
 
 const { default: createMoy } = await import("file://" + modPath);
-const { startCart } = await import("file://" + join(dirname(modPath), "cart.js"));
+const { startCart, storageFiles } = await import("file://" + join(dirname(modPath), "cart.js"));
 const M = await createMoy();
+
+/* The page's localStorage, as a file: every change written whole and renamed
+ * into place, as setItem is whole. */
+function folderStorage(dir) {
+  const path = join(dir, "storage.json");
+  let items = {};
+  try { items = JSON.parse(readFileSync(path, "utf8")); } catch (e) { /* none yet */ }
+  const save = () => {
+    writeFileSync(path + ".new", JSON.stringify(items));
+    renameSync(path + ".new", path);
+  };
+  return {
+    get length() { return Object.keys(items).length; },
+    key(i) { const k = Object.keys(items)[i]; return k === undefined ? null : k; },
+    getItem(k) { return Object.prototype.hasOwnProperty.call(items, k) ? items[k] : null; },
+    setItem(k, v) { items[k] = String(v); save(); },
+    removeItem(k) { delete items[k]; save(); },
+  };
+}
+M.moyFiles = storageFiles(keep ? folderStorage(keep) : null,
+                          "moy.files." + basename(cart) + "/");
 
 /* The cart, flattened the way the page's carts.json is: names relative to the
  * cart folder. */

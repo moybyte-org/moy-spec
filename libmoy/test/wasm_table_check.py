@@ -9,7 +9,7 @@ claim is prose:
 
   * its names are exactly the globals libmoy's Lua binding installs (parsed
     from src/moy_lua.c: the VERBS table and open_host_verbs, as the reference
-    console's own deny-list test does) plus the binding's own five;
+    console's own deny-list test does) plus the binding's own;
   * src/moy_wasm.c's NativeSymbol array names the same rows, in the same
     order, at the same WAMR signature strings;
   * each row's WAMR string says what its wasm type says, and each row's SPEC
@@ -33,8 +33,8 @@ ROOT = os.path.dirname(LIBMOY)
 
 # The imports this binding has and the Lua binding does not: the framebuffer,
 # the cart's own files, the receiver a Lua layer method has for free, the
-# sample stream, and the cart's own work across the cores.
-WASM_ONLY = {"blit", "blit565", "read", "target", "snd", "par"}
+# sample stream, the cart's own work across the cores, and its writable files.
+WASM_ONLY = {"blit", "blit565", "read", "target", "snd", "par", "write", "erase", "list"}
 
 # WAMR signature letter -> wasm value type. '*' and '~' are an i32 pointer and
 # the i32 length WAMR bounds-checks it by.

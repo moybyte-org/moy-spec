@@ -6,6 +6,10 @@
  * row's exact wasm type. libmoy/test/wasm_table_check.py holds the two equal,
  * so a row the table gains is a declaration here in the same change.
  *
+ * Rows are only ever added -- 0.4 added write, erase and list at the end --
+ * so a cart that builds against an older copy of this file builds against
+ * this one unchanged, and runs on a host that has the newer table.
+ *
  * A cart includes this, defines its hooks and links for wasm32:
  *
  *     #include "moy_cart.h"
@@ -145,7 +149,8 @@ MOY_IMPORT(blit) void moy_blit(const uint8_t *frame, const uint8_t *pal);
 /* The whole frame: W x H RGB565 words, little-endian, row-major. */
 MOY_IMPORT(blit565) void moy_blit565(const uint16_t *frame);
 /* Up to len bytes of the cart's own file name from offset into dst, and how
- * many; with len 0, how many remain from offset. Absent or outside the
+ * many; with len 0, how many remain from offset. A writable path's written
+ * copy is read before the file the cart shipped. Absent or outside the
  * cart's folder reads 0. */
 MOY_IMPORT(read) int32_t moy_read(const char *name, int32_t name_len, int32_t offset, void *dst,
                                   int32_t len);
@@ -157,6 +162,23 @@ MOY_IMPORT(snd) int32_t moy_snd(const int16_t *pcm, int32_t n);
  * stacks + (i + 1) * size (16-aligned). An item calls no import. The cart
  * exports _par and __stack_pointer (-Wl,--export=__stack_pointer). */
 MOY_IMPORT(par) void moy_par(int32_t n, int32_t arg, void *stacks, int32_t size);
+
+/* -- the cart's writable files (SPEC.md 16.12) ----------------------------- */
+
+/* Replace the written copy of `path` -- a path the manifest's "writable"
+ * declares, at most 64 bytes -- with len bytes at data, atomically, kept when
+ * it returns. 0; -1 malformed or not writable; -2 no room, or len over
+ * 1048576; -3 the host's storage failed. */
+MOY_IMPORT(write) int32_t moy_write(const char *path, int32_t path_len, const void *data,
+                                    int32_t len);
+/* Remove the written copy: read answers the shipped file again, or nothing.
+ * 0, or -1 when there is none or path is not writable. */
+MOY_IMPORT(erase) int32_t moy_erase(const char *path, int32_t path_len);
+/* The index-th path, from 0 in bytewise order, of the cart's files beginning
+ * with prefix -- shipped and written, each once -- into dst, at most dst_len
+ * bytes; its whole length, or -1 past the last. */
+MOY_IMPORT(list) int32_t moy_list(const char *prefix, int32_t prefix_len, int32_t index,
+                                  char *dst, int32_t dst_len);
 
 #ifdef __cplusplus
 }

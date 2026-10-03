@@ -10,6 +10,10 @@
  * this one fills a whole frame of palette indices every _draw and hands it to
  * the console with moy_blit, then draws over it with the ordinary verbs.
  *
+ * It also keeps a file (SPEC.md 16.12): manifest.json declares "saves/"
+ * writable, B writes where the circle is, and the next time the cart starts
+ * _init reads it back.
+ *
  * `moy build` compiles src/ into main.wasm; `moy play` rebuilds it when you
  * save a file here, and reloads it. */
 #include <math.h>
@@ -29,6 +33,9 @@ static float t;
 static float x = W / 2, y = H / 2;
 static int fps, frames, second_start;
 
+static const char SAVE[] = "saves/circle.bin";
+static int saved = 1, saved_at;   /* what the last save answered, and when */
+
 MOY_EXPORT("_init") void init(void)
 {
     for (int i = 0; i < 256; i++) {
@@ -37,6 +44,12 @@ MOY_EXPORT("_init") void init(void)
         palette[i * 3 + 0] = (uint8_t)(128 + 127 * sinf(a));
         palette[i * 3 + 1] = (uint8_t)(128 + 127 * sinf(a + 2.1f));
         palette[i * 3 + 2] = (uint8_t)(128 + 127 * sinf(a + 4.2f));
+    }
+    /* No save yet reads 0 bytes, and the circle starts in the middle. */
+    float at[2];
+    if (moy_read(SAVE, sizeof SAVE - 1, 0, at, sizeof at) == sizeof at) {
+        x = at[0];
+        y = at[1];
     }
 }
 
@@ -52,6 +65,12 @@ MOY_EXPORT("_update") void update(float dt)
     if (x > W - 8) x = W - 8;
     if (y < 8) y = 8;
     if (y > H - 8) y = H - 8;
+    if (moy_btnp(MOY_B, 0)) {
+        /* 0 when the file is written; -2 when the console has no room. */
+        float at[2] = { x, y };
+        saved = moy_write(SAVE, sizeof SAVE - 1, at, sizeof at);
+        saved_at = moy_time();
+    }
 }
 
 MOY_EXPORT("_draw") void draw(void)
@@ -81,5 +100,9 @@ MOY_EXPORT("_draw") void draw(void)
     if (n > (int)sizeof line - 1) n = (int)sizeof line - 1;
     moy_rect(4, 4, n * 8 + 4, 12, 0);
     moy_print(line, n, 6, 6, 7);
-    moy_print("arrows move", 11, 8, 228, 7);
+    moy_print("arrows move, B saves", 20, 8, 228, 7);
+    if (saved != 1 && moy_time() - saved_at < 1500) {
+        const char *said = saved == 0 ? "saved" : "not saved";
+        moy_print(said, (int32_t)strlen(said), 220, 228, saved == 0 ? 11 : 8);
+    }
 }

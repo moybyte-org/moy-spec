@@ -249,7 +249,9 @@ python3 conformance/wasm_run.py --build                # re-render the goldens
 
 The player protocol is §11's with a compiled cart's frame: run the cart's two
 ticks with the clock stopped and nothing pressed, write the last frame it
-**finished** to `{out}` as W × H little-endian RGB565 words, and exit 0. A tick
+**finished** to `{out}` as W × H little-endian RGB565 words, and exit 0. The
+cart's written files (§16.12) live in the folder `{files}` names, empty for a
+scene and kept for the scene that runs the same cart again. A tick
 that traps exits non-zero with the last whole frame written; a refused cart
 exits non-zero with nothing written. `wasm_run.py`'s docstring is the full
 statement.
@@ -258,6 +260,8 @@ statement.
 |---|---|
 | `blit` | a 256-entry palette handed over with the frame; the frame replaces the whole screen whatever the camera, clip, pal and target are, and a HUD drawn after it lands on top through them |
 | `blit565` | a direct-colour frame shown word for word: the byte order is the spec's, never the panel's |
+| `write` | the cart's writable files on a fresh store: a written copy read before the shipped one, every path `write` must refuse (undeclared, malformed, past 64 bytes, another case), a write past 1 MiB, an empty file, `erase` twice, and `list` in bytewise order with "Case" and "case" apart and a short buffer answering the whole length |
+| `write_again` | the same cart run again on the store the first run left, as after a restart: everything written is there, and an erased copy gives the shipped file back |
 | `read` | the cart's own files: sizes, short reads, reads at and past the end, a file in a subfolder — and 0 for an absent name, a folder, and every name the rule refuses. A host that opens a folder as if it were a file answers garbage for it, which is how this scene's folder question came to be asked |
 | `target` | drawing into a layer and back, a layer's own camera persisting across hooks, `pix` read back from it, and its pixels kept between frames |
 | `verbs` | every ordinary verb through the binding at the import table's arity: the sentinel forms, `camera`'s out pointer, read-backs feeding colours, a sheet and map written with `sset` and `mset`, over a frame blitted through the cart's own palette with indices past 63 |

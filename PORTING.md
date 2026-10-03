@@ -393,8 +393,25 @@ without audio leaves the binding's `snd` callback NULL, and the binding drains
 the queue by the host's clock and drops the samples, so the cart sees the same
 backpressure either way.
 
+A compiled cart's files are §16.12's: the paths its manifest declares
+`writable`, kept per cart and outside its folder. libmoy's binding holds every
+path to the declaration and the 1 MiB cap and hands the host four calls
+(`moy_wasm.h`'s `written`, `write`, `erase` and `list`); the host decides where
+the files live and how it knows one cart from another, which, like `pmem`'s
+keying, is yours. Two things are not: a write is whole or not at all — write a
+new copy beside the old and swap it in, and finish or discard a half-made one
+the next time the store opens — and it is on the medium before `write` returns.
+A host on a filesystem can take `libmoy/port/moy_files.c` as it is: one flat
+folder per cart, each path kept under a lowercase file name every filesystem
+holds, which is what the desktop player and libmoy's harness keep their files
+in. The web player keeps them in the page's `localStorage`
+(`libmoy/port/wasm/page/cart.js`'s `storageFiles`). Removing a cart removes its
+files: on a console with a store that is the store's job, and a player whose
+carts are plain folders has nothing to see.
+
 `conformance/wasm_run.py` holds a host to the compiled-cart scenes' RGB565
-goldens and to the refusals, by the same kind of player protocol as SPEC.md 11's.
+goldens and to the refusals, by the same kind of player protocol as SPEC.md 11's;
+its `write` scene runs twice on one store, as a cart does across a restart.
 
 ## Extensions: adding your own without forking core
 
@@ -478,6 +495,7 @@ Before you claim conformance:
 - [ ] `dt` is the tick period, and dropped frames drop `_draw` only
 - [ ] The first `make_layer` succeeds
 - [ ] `pmem` survives a power cycle
+- [ ] If you run compiled carts: a write that returned 0 survives a power cycle, and one cut short leaves the last whole copy
 - [ ] A Lua error ends the cart and reports its line number
 - [ ] The player can always exit, without the cart's help
 - [ ] Audio is either implemented or a set of no-ops that never error

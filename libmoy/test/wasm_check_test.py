@@ -196,11 +196,34 @@ def cases():
            "manifest.canvas")
     expect("a main that is not in the cart", cart_codes({"main": "game.wasm"}),
            "manifest.main")
+    expect("writable paths and folders", cart_codes(
+        {"writable": ["saves/", "options.cfg", "a/b/c.dat", "x/" + "y" * 61]}), None)
+    expect("writable that is not an array", cart_codes({"writable": "saves/"}),
+           "manifest.writable")
+    for bad in ("/saves/", "saves//", "../up", "a/./b", "a\\b", "", "x/" + "y" * 63, 7):
+        expect("writable entry %r" % (bad,), cart_codes({"writable": [bad]}),
+               "manifest.writable")
+    writer = module(ok_mem, '(import "moy" "write" (func (param i32 i32 i32 i32) '
+                            '(result i32)))')
+    warned = [c for lvl, c, _ in mw.check_module(writer, m2, []) if lvl == "warn"]
+    if "wasm.writable" not in warned:
+        fail("write imported with nothing writable: want a warning, got %s" % warned)
+    else:
+        print("  ok   write imported with nothing writable is a warning")
+    if [c for lvl, c, _ in mw.check_module(writer, dict(m2, writable=["s/"]), [])
+            if lvl == "warn"]:
+        fail("write imported with a writable path: want no warning")
+    lua = mc.check_writable({"writable": ["saves/"]}, [], False)
+    if [c for lvl, c, _ in lua] != ["manifest.writable"] or lua[0][0] != "warn":
+        fail("writable on a Lua cart: want a warning, got %s" % lua)
+    else:
+        print("  ok   writable on a Lua cart is a warning")
 
 
 def the_table_is_readable():
     table = mw.load_table()
-    for name in ("blit", "blit565", "read", "target", "snd", "par", "cls"):
+    for name in ("blit", "blit565", "read", "target", "snd", "par", "write",
+                 "erase", "list", "cls"):
         if name not in table:
             fail("the import table has no %s" % name)
     print("  ok   the import table loads (%d rows)" % len(table))

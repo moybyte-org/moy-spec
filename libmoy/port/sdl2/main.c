@@ -1,8 +1,8 @@
 /* moy-play -- a desktop moy console in SDL2, and the porting layer as a
  * worked example.
  *
- *   moy-play <cart.moy> [--scale N] [--fullscreen] [--watch]
- *   moy-play <cart.moy> --dump <out> [--frames N] [--cover]   (no window)
+ *   moy-play <cart.moy> [--scale N] [--fullscreen] [--watch] [--files DIR]
+ *   moy-play <cart.moy> --dump <out> [--frames N] [--cover] [--files DIR]
  *   moy-play --runtimes
  *
  * READ TO THE "hot reload" COMMENT AND STOP. Everything above it -- under
@@ -39,6 +39,13 @@
  * with MOY_PLAY_WASM; without it such a cart is refused cleanly (SPEC.md
  * 3.1). --memory-limit MIB caps what a compiled cart may take to load.
  *
+ * A compiled cart's written files (SPEC.md 16.12) are kept per cart in moy's
+ * per-user data folder, files/<cart>: <cart> is the cart folder's name less
+ * ".moy", so a rebuilt or reinstalled cart finds its files again. That folder
+ * is outside the cart's, and the player removes nothing in it: a cart here is
+ * a folder, and deleting one is not something the player sees. --files DIR
+ * keeps them in DIR instead.
+ *
  * A compiled cart's sample stream (`snd`) is mixed into the same output as the
  * synth, after it; when the cart made one, the player says on exit how many
  * frames the cart queued and the output played, over how long.
@@ -47,7 +54,8 @@
  * window, no audio, the clock stopped and rnd() seeded 0, and after the ticks
  * the last frame the cart finished is written to <out> -- palette indices for
  * a Lua cart, RGB565 little-endian for a compiled one -- or, with --cover, as
- * the cover.png F7 would write for it.
+ * the cover.png F7 would write for it. It keeps no written files unless
+ * --files names a folder for them.
  *
  * F7, with --watch, writes the frame on screen as the cart's cover.png
  * (SPEC.md 3.6); see "the cover" below.
@@ -82,6 +90,10 @@ static uint8_t  map_cells[MOY_MAP_MAX * MOY_MAP_MAX];
 static uint32_t pixels[MOY_W * MOY_H];          /* ARGB8888 for the texture */
 static int32_t  pmem_slots[256];
 static char     pmem_path[1024];
+/* A compiled cart's writable paths, in moy_wasm's form, and the folder its
+ * written files are kept in (empty: none are kept). */
+static char     writable[1024];
+static char     files_at[1024];
 
 /* -- the host (SPEC.md 7.3, 9) ------------------------------------------- */
 
@@ -560,6 +572,8 @@ static int cart_boot(const char *cart, const char *mainfile,
         cfg.host = &con->host;
         cfg.seed = seed;
         cfg.limit = limit;
+        cfg.writable = writable;
+        cfg.files = files_at[0] ? files_at : NULL;
         if (adev) {
             cfg.snd = h_snd;
             pcm_reset();
@@ -833,6 +847,40 @@ static int dump_run(const char *out, int frames, moy_canvas *canvas,
     return rc;
 }
 
+/* moy's per-user data folder's files/<cart>, for the cart in folder `cart`. */
+static void files_folder(const char *cart, char *out, size_t n)
+{
+    char name[256];
+    const char *base, *end = cart + strlen(cart), *start;
+    const char *home = getenv("HOME");
+    size_t len;
+    while (end > cart && (end[-1] == '/' || end[-1] == '\\')) end--;
+    start = end;
+    while (start > cart && start[-1] != '/' && start[-1] != '\\') start--;
+    len = (size_t)(end - start);
+    if (len > 4 && !strncmp(end - 4, ".moy", 4)) len -= 4;
+    if (len == 0 || len >= sizeof name) {
+        out[0] = 0;
+        return;
+    }
+    memcpy(name, start, len);
+    name[len] = 0;
+#ifdef _WIN32
+    base = getenv("LOCALAPPDATA");
+    if (base) snprintf(out, n, "%s\\moy\\files\\%s", base, name);
+    else snprintf(out, n, "%s\\AppData\\Local\\moy\\files\\%s",
+                  getenv("USERPROFILE") ? getenv("USERPROFILE") : ".", name);
+    (void)home;
+#elif defined(__APPLE__)
+    (void)base;
+    snprintf(out, n, "%s/Library/Application Support/moy/files/%s", home ? home : ".", name);
+#else
+    base = getenv("XDG_DATA_HOME");
+    if (base && base[0]) snprintf(out, n, "%s/moy/files/%s", base, name);
+    else snprintf(out, n, "%s/.local/share/moy/files/%s", home ? home : ".", name);
+#endif
+}
+
 int main(int argc, char **argv)
 {
     moy_canvas canvas;
@@ -847,7 +895,7 @@ int main(int argc, char **argv)
     char fps_s[16] = "30", canvas_s[16] = "320x240", runtime_s[16] = "lua", err[512];
     char srcname[MOY_SOURCES_MAX][MOY_NAME_MAX];
     char *manifest;
-    const char *cart = NULL, *dump = NULL;
+    const char *cart = NULL, *dump = NULL, *files_arg = NULL;
     int i, scale = 0, fullscreen = 0, fps, frame_ms, cw, ch, nsrc, frames = 2;
     int watch = 0, live = 1, arate = 0, as_cover = 0;
     int lw, lh;              /* the renderer's logical size, as last set */
@@ -865,6 +913,7 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "--frames") && i + 1 < argc) frames = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--memory-limit") && i + 1 < argc)
             limit = (uint64_t)strtoul(argv[++i], NULL, 10) * 1024u * 1024u;
+        else if (!strcmp(argv[i], "--files") && i + 1 < argc) files_arg = argv[++i];
         else if (!strcmp(argv[i], "--runtimes")) {
 #ifdef MOY_PLAY_WASM
             puts("lua wasm");
@@ -877,8 +926,9 @@ int main(int argc, char **argv)
     }
     if (!cart) {
         fprintf(stderr, "usage: moy-play <cart.moy> [--scale N] [--fullscreen]"
-                        " [--watch] [--memory-limit MIB]\n"
-                        "       moy-play <cart.moy> --dump <out> [--frames N] [--cover]\n"
+                        " [--watch] [--memory-limit MIB] [--files DIR]\n"
+                        "       moy-play <cart.moy> --dump <out> [--frames N] [--cover]"
+                        " [--files DIR]\n"
                         "       moy-play --runtimes\n");
         return 2;
     }
@@ -907,6 +957,9 @@ int main(int argc, char **argv)
     cart_pal_ok = moy_manifest_palette(manifest, cart_pal);
     nsrc = moy_manifest_sources(manifest, mainfile, srcname, MOY_SOURCES_MAX);
     pages = moy_manifest_uint(manifest, "memory", 0);
+    if (moy_manifest_writable(manifest, writable, sizeof writable) < 0) writable[0] = 0;
+    if (files_arg) snprintf(files_at, sizeof files_at, "%s", files_arg);
+    else if (!dump) files_folder(cart, files_at, sizeof files_at);
     /* fps is a number, not a string, so scan it as one. SPEC.md 5: 30 or 60,
      * and anything else falls back to the guaranteed 30. */
     if (manifest) {
@@ -1148,6 +1201,8 @@ int main(int argc, char **argv)
                                                  MOY_SOURCES_MAX);
                     if (is_wasm && strstr(manifest, "\"sources\"")) nnsrc = -1;
                     npages = moy_manifest_uint(manifest, "memory", 0);
+                    if (moy_manifest_writable(manifest, writable, sizeof writable) < 0)
+                        writable[0] = 0;
                     fp = strstr(manifest, "\"fps\"");
                     if (fp && (fp = strchr(fp, ':')) != NULL)
                         frame_ms = 1000 / (atoi(fp + 1) == 60 ? 60 : 30);

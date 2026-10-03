@@ -173,6 +173,54 @@ def check_manifest(manifest, findings):
                              "pick a picture for you (SPEC.md 3.4)"))
 
 
+# SPEC.md 16.12: a writable path is at most this many bytes.
+WRITABLE_PATH_MAX = 64
+
+
+def _path_ok(path):
+    """SPEC.md 16.6's path rule: bytes, '/'-separated, every segment non-empty
+    and neither "." nor "..", no backslash and no NUL."""
+    return bool(path) and "\\" not in path and "\0" not in path \
+        and all(seg not in ("", ".", "..") for seg in path.split("/"))
+
+
+def check_writable(manifest, findings, compiled):
+    """SPEC.md 16.12's `writable`: an array of paths, each at most 64 bytes, a
+    folder ending in '/'. An entry that breaks the rule declares nothing on
+    any host, which is worth an error; on a Lua cart the field means nothing
+    (SPEC.md 12.9)."""
+    w = manifest.get("writable")
+    if w is None:
+        return findings
+    if not compiled:
+        findings.append(("warn", "manifest.writable",
+                         "writable is a compiled cart's (SPEC.md 16.12); a Lua cart "
+                         "keeps its state in pmem (SPEC.md 9, 12.9), and every host "
+                         "ignores this field on one"))
+        return findings
+    if not isinstance(w, list):
+        findings.append(("error", "manifest.writable",
+                         "writable must be an array of paths (SPEC.md 16.12)"))
+        return findings
+    seen = set()
+    for entry in w:
+        if not isinstance(entry, str):
+            findings.append(("error", "manifest.writable",
+                             "writable entry %r is not a path" % (entry,)))
+            continue
+        body = entry[:-1] if entry.endswith("/") else entry
+        if len(entry.encode("utf-8")) > WRITABLE_PATH_MAX or not _path_ok(body):
+            findings.append(("error", "manifest.writable",
+                             "writable entry %r is not a path of at most %d bytes under "
+                             "SPEC.md 16.6's rule, so it declares nothing (SPEC.md 16.12)"
+                             % (entry, WRITABLE_PATH_MAX)))
+        elif entry in seen:
+            findings.append(("warn", "manifest.writable",
+                             "writable lists %r twice" % entry))
+        seen.add(entry)
+    return findings
+
+
 def check_source(source, manifest, findings):
     code = strip_lua(source)
 
@@ -249,6 +297,7 @@ def check_cart(cart, files=None, findings=None):
     report be about the real file rather than a re-serialization."""
     findings = [] if findings is None else findings
     check_manifest(cart.manifest, findings)
+    check_writable(cart.manifest, findings, False)
     # Every script, not just the authored one: SPEC.md 4 runs them all, so a
     # prologue that reaches past the sandbox is the cart reaching past it.
     check_source("\n".join(text for _, text in cart.sources), cart.manifest,
@@ -342,6 +391,7 @@ def check_wasm_files(files, findings=None):
         findings.append(("error", "manifest", "%s must be a JSON object" % MANIFEST))
         return findings
     check_manifest(manifest, findings)
+    check_writable(manifest, findings, True)
     findings.append(("info", "manifest.runtime",
                      'runtime "wasm" is SPEC.md 16, an optional binding: a console '
                      "without it refuses this cart cleanly"))

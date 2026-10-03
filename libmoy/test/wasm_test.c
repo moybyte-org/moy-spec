@@ -1,7 +1,7 @@
 /* make wasm-test: libmoy's wasm binding under WAMR, on Linux.
  *
  *   build/wasm_test <built fixtures dir> <frame out>
- *   build/wasm_test play <cart> <out> [--frames N] [--limit MIB]
+ *   build/wasm_test play <cart> <out> [--frames N] [--limit MIB] [--files DIR]
  *
  * The fixtures are test/wasm/, assembled by tools/wat.py into the directory
  * given. This drives them the way a console would:
@@ -30,7 +30,10 @@
  *     lanes (port/moy_lanes.c), which must leave the same memory, each item
  *     on its own stack and the caller's stack pointer as it was, and trap
  *     alike: the lowest trapping item's message, an import called from an
- *     item, and par's own argument checks.
+ *     item, and par's own argument checks;
+ *   - the written-file store the conformance players keep (port/moy_files.c):
+ *     the file name each path is kept under, and what a crash mid-write
+ *     leaves behind put right when the store is opened again.
  *
  * Exits non-zero on the first failure.
  *
@@ -43,6 +46,9 @@
  * was one; 2 when it was refused, with nothing written. A cart whose load
  * footprint -- its declared memory, its module and the interpreter's stack --
  * is over the limit (1024 MiB unless --limit says) is refused before it loads.
+ * --files keeps the cart's written files (SPEC.md 16.12) in DIR
+ * (port/moy_files.c), where a second run finds them; without it none are
+ * kept and every write fails.
  */
 
 #include <stdio.h>
@@ -53,6 +59,8 @@
 #include "moy_audio.h"
 #include "moy_wasm.h"
 #include "../port/moy_lanes.h"
+#include "../port/moy_files.h"
+#include "../port/moy_manifest.h"
 
 static char dir[512];
 static int failures;
@@ -868,10 +876,11 @@ static int write_frame(const char *out, const uint8_t *frame, size_t n)
 
 static int play(int argc, char **argv)
 {
-    char path[1024], err[256];
-    const char *out;
+    char path[1024], err[256], writable[1024];
+    const char *out, *files_dir = NULL;
     int i, frames = 2, shown = 0, n_lanes = 2;
     moy_lanes *lanes;
+    moy_files *files;
     uint32_t pages;
     uint64_t limit = 1024u * 1024u * 1024u, footprint;
     uint8_t *frame;
@@ -884,7 +893,7 @@ static int play(int argc, char **argv)
 
     if (argc < 4) {
         fprintf(stderr, "usage: wasm_test play <cart> <out> [--frames N] [--limit MIB] "
-                        "[--lanes N]\n");
+                        "[--lanes N] [--files DIR]\n");
         return 2;
     }
     snprintf(cart, sizeof cart, "%s", argv[2]);
@@ -893,6 +902,16 @@ static int play(int argc, char **argv)
         if (!strcmp(argv[i], "--frames")) frames = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--limit")) limit = (uint64_t)atoi(argv[++i]) * 1024u * 1024u;
         else if (!strcmp(argv[i], "--lanes")) n_lanes = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--files")) files_dir = argv[++i];
+    }
+    {
+        uint32_t mlen;
+        uint8_t *m;
+        snprintf(path, sizeof path, "%s/manifest.json", cart);
+        m = slurp(path, &mlen);
+        if (moy_manifest_writable((const char *)m, writable, sizeof writable) < 0)
+            writable[0] = 0;
+        free(m);
     }
 
     snprintf(path, sizeof path, "%s/main.wasm", cart);
@@ -942,12 +961,16 @@ static int play(int argc, char **argv)
     }
     memset(&w, 0, sizeof w);
     w.read = h_read;
+    w.writable = writable;
+    files = moy_files_open(files_dir, cart);
+    if (files) moy_files_bind(files, &w);
     lanes = moy_lanes_open(n_lanes);
     moy_lanes_bind(lanes, &w);
     w.lane_stack = PLAY_STACK;
     if (moy_wasm_open(&w, &con, l.env)) {
         fprintf(stderr, "wasm_test: refused: a hook is missing\n");
         moy_lanes_close(lanes);
+        moy_files_close(files);
         unload(&l);
         return 2;
     }
@@ -970,6 +993,7 @@ static int play(int argc, char **argv)
     if (shown) write_frame(out, frame, n * 2);
     moy_wasm_close(&w);
     moy_lanes_close(lanes);
+    moy_files_close(files);
     unload(&l);
     free(frame);
     return 0;
@@ -979,9 +1003,92 @@ trapped:
     if (shown) write_frame(out, frame, n * 2);
     moy_wasm_close(&w);
     moy_lanes_close(lanes);
+    moy_files_close(files);
     unload(&l);
     free(frame);
     return 1;
+}
+
+/* -- the written-file store (port/moy_files.c) ------------------------------ */
+
+static void put_file(const char *path, const char *text)
+{
+    FILE *f = fopen(path, "wb");
+    if (!f) return;
+    fputs(text, f);
+    fclose(f);
+}
+
+static int file_is(const char *path, const char *text)
+{
+    char got[64] = "";
+    size_t n;
+    FILE *f = fopen(path, "rb");
+    if (!f) return text == NULL;
+    n = fread(got, 1, sizeof got - 1, f);
+    fclose(f);
+    got[n] = 0;
+    return text && !strcmp(got, text);
+}
+
+static void files_store(void)
+{
+    static const struct { const char *path, *key; } KEYS[] = {
+        {"saves/slot1.sav", "saves%2fslot1.sav"},
+        {"saves/Case.sav", "saves%2f%43ase.sav"},
+        {".hidden", "%2ehidden"},
+        {"trail.", "trail%2e"},
+        {"a b%c~d", "a%20b%25c%7ed"},
+        {"con.cfg", "%63on.cfg"},
+        {"com1", "%63om1"},
+        {"console.cfg", "console.cfg"},
+    };
+    char key[256], store[600], path[700];
+    char upper[MOY_WASM_PATH_MAX + 1];
+    size_t i;
+    moy_files *f;
+    moy_wasm w;
+    uint8_t buf[16];
+
+    for (i = 0; i < sizeof KEYS / sizeof KEYS[0]; i++) {
+        int n = moy_files_key(KEYS[i].path, key, sizeof key);
+        CHECK(n > 0 && !strcmp(key, KEYS[i].key), "files: %s is kept as %s, want %s",
+              KEYS[i].path, key, KEYS[i].key);
+    }
+    memset(upper, 'A', MOY_WASM_PATH_MAX);
+    upper[MOY_WASM_PATH_MAX] = 0;
+    CHECK(moy_files_key(upper, key, sizeof key) == 3 * MOY_WASM_PATH_MAX,
+          "files: a 64-byte path's key is not 192 characters");
+    printf("  ok   a path is kept under a portable lowercase name\n");
+
+    /* A crash after "x~done" was whole, and one mid-way through "y~part". */
+    snprintf(store, sizeof store, "%s/files", dir);
+    f = moy_files_open(store, dir);
+    memset(&w, 0, sizeof w);
+    moy_files_bind(f, &w);
+    CHECK(w.write(w.files_user, "x", (const uint8_t *)"old", 3) == 0,
+          "files: a write into a folder not yet made");
+    moy_files_close(f);
+    snprintf(path, sizeof path, "%s/x~done", store);
+    put_file(path, "new");
+    snprintf(path, sizeof path, "%s/y~part", store);
+    put_file(path, "torn");
+    f = moy_files_open(store, dir);
+    moy_files_bind(f, &w);
+    snprintf(path, sizeof path, "%s/x", store);
+    CHECK(file_is(path, "new"), "files: a whole ~done did not replace its file");
+    snprintf(path, sizeof path, "%s/x~done", store);
+    CHECK(file_is(path, NULL), "files: the ~done is still there");
+    snprintf(path, sizeof path, "%s/y~part", store);
+    CHECK(file_is(path, NULL), "files: a torn ~part is still there");
+    CHECK(w.written(w.files_user, "y", 0, buf, sizeof buf) == -1,
+          "files: a torn write reads as a written copy");
+    CHECK(w.written(w.files_user, "x", 0, buf, sizeof buf) == 3 && !memcmp(buf, "new", 3),
+          "files: x does not read back as the write that finished");
+    CHECK(w.erase(w.files_user, "x") == 0 && w.erase(w.files_user, "x") == -1,
+          "files: erase answers 0, then -1");
+    moy_files_close(f);
+    printf("  ok   a write a crash cut short leaves the last whole one\n");
 }
 
 static NativeSymbol *natives;   /* WAMR sorts it in place and keeps it */
@@ -1043,6 +1150,8 @@ int main(int argc, char **argv)
     stream();
     printf("wasm test: par\n");
     par_items();
+    printf("wasm test: the written-file store\n");
+    files_store();
 
     wasm_runtime_destroy();
     if (failures) {

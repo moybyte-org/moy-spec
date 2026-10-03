@@ -7,7 +7,8 @@
     python3 conformance/wasm_run.py --build           # re-render the goldens
 
 The scenes are runtime "wasm" carts under conformance/wasm/, one per import
-only this binding has (blit, blit565, read, target, snd, par) plus `verbs`, the
+only this binding has (blit, blit565, read, target, snd, par, and write with
+erase and list) plus `verbs`, the
 ordinary verbs through it, `primitives` and the five `layer_*` scenes, SPEC.md
 11's scenes of those names as compiled carts, and three traps in the second
 frame: `trap`, `snd_trap`, samples past the end of memory, and `par_trap`, one
@@ -25,6 +26,10 @@ command with {cart} and {out} in it; for each cart it runs the cart's ticks
 (two, with dt 1/30, the clock stopped, nothing pressed and no sample of a
 cart's stream played) and writes the last frame the cart finished to {out}:
 W x H RGB565 words, little-endian, row-major.
+It keeps the cart's written files (SPEC.md 16.12) in the folder {files} names,
+which is empty for a scene's run, and the next run of the same cart finds them
+there: `write_again` is the `write` cart run a second time on the folder its
+first run left, as after a restart.
 It exits 0 when the cart ran. When a tick traps it exits non-zero and {out}
 holds the last whole frame -- never the one the trap interrupted. When the cart
 is refused -- its module's shape, or more memory than the player gives a cart
@@ -32,9 +37,9 @@ is refused -- its module's shape, or more memory than the player gives a cart
 
 The hosts this repository has, each found when it is built:
 
-    harness   libmoy/build/wasm_test play      (make -C libmoy wasm-test)
-    desktop   libmoy/build/moy-play --dump     (make -C libmoy play)
-    browser   node libmoy/port/wasm/conform.mjs  (runner/, and node)
+    harness   libmoy/build/wasm_test play --files    (make -C libmoy wasm-test)
+    desktop   libmoy/build/moy-play --dump --files   (make -C libmoy play)
+    browser   node libmoy/port/wasm/conform.mjs --files  (runner/, and node)
 
 Every host must match every golden, which makes their frames identical to each
 other's; the CRC32 of each frame is printed so a failure says which side moved.
@@ -136,7 +141,7 @@ def hosts_here():
     found = {}
     harness = os.path.join(ROOT, "libmoy", "build", "wasm_test")
     if os.path.isfile(harness):
-        found["harness"] = '"%s" play {cart} {out}' % harness
+        found["harness"] = '"%s" play {cart} {out} --files {files}' % harness
     for exe in ("moy-play", "moy-play.exe"):
         desk = os.path.join(ROOT, "libmoy", "build", exe)
         if os.path.isfile(desk):
@@ -146,21 +151,22 @@ def hosts_here():
             except (OSError, subprocess.SubprocessError):
                 rts = []
             if "wasm" in rts:
-                found["desktop"] = '"%s" {cart} --dump {out}' % desk
+                found["desktop"] = '"%s" {cart} --dump {out} --files {files}' % desk
             break
     if shutil.which("node") and os.path.isfile(os.path.join(ROOT, "runner", "moy.mjs")):
-        found["browser"] = 'node "%s" {cart} {out}' % os.path.join(
+        found["browser"] = 'node "%s" {cart} {out} --files {files}' % os.path.join(
             ROOT, "libmoy", "port", "wasm", "conform.mjs")
     return found
 
 
-def play(command, cart):
+def play(command, cart, files):
     """(exit status, the frame written or None, stderr)."""
     fd, out = tempfile.mkstemp(suffix=".bin")
     os.close(fd)
     os.remove(out)
     try:
-        cmd = command.replace("{cart}", '"%s"' % cart).replace("{out}", '"%s"' % out)
+        cmd = (command.replace("{cart}", '"%s"' % cart).replace("{out}", '"%s"' % out)
+               .replace("{files}", '"%s"' % files))
         p = subprocess.run(cmd, shell=True, capture_output=True, timeout=300)
         frame = None
         if os.path.exists(out) and os.path.getsize(out):
@@ -183,11 +189,21 @@ def first_diff(want, got):
 def run_host(label, command, scratch, goldens):
     print("%s: %s" % (label, command))
     bad = 0
+    kept = {}
     for name, _ in ws.SCENES:
-        cart = os.path.join(scratch, name + ".moy")
-        rc, frame, err = play(command, cart)
+        cart = os.path.join(scratch, ws.AGAIN.get(name, name) + ".moy")
+        if name in ws.AGAIN:
+            files = kept[ws.AGAIN[name]]
+        else:
+            files = kept[name] = tempfile.mkdtemp(prefix="files-", dir=scratch)
         want = goldens[name]
         traps = name in ws.TRAPS
+        if "{files}" not in command and (name in ws.AGAIN or name in ws.AGAIN.values()):
+            print("  FAIL  %-10s the player keeps no written files: its command has "
+                  "no {files}" % name)
+            bad += 1
+            continue
+        rc, frame, err = play(command, cart, files)
         if frame is None:
             print("  FAIL  %-10s no frame (exit %d): %s" % (name, rc, err[:200]))
             bad += 1
@@ -210,7 +226,7 @@ def run_host(label, command, scratch, goldens):
                                               "  (trapped; the last whole frame)" if traps else ""))
     for rel, why in ws.REFUSED:
         cart = os.path.join(scratch, os.path.basename(rel))
-        rc, frame, err = play(command, cart)
+        rc, frame, err = play(command, cart, tempfile.mkdtemp(prefix="files-", dir=scratch))
         name = os.path.basename(rel)[:-4]
         if rc == 0 or frame is not None:
             print("  FAIL  %-15s should be refused (%s): exit %d, %s"
@@ -252,13 +268,16 @@ def main(argv):
     scratch = tempfile.mkdtemp(prefix="moy-wasm-conform-")
     try:
         for name, _ in ws.SCENES:
-            wat.build_cart(os.path.join(SCENES, name + ".moy"),
-                           os.path.join(scratch, name + ".moy"))
+            if name not in ws.AGAIN:
+                wat.build_cart(os.path.join(SCENES, name + ".moy"),
+                               os.path.join(scratch, name + ".moy"))
         for rel, _ in ws.REFUSED:
             wat.build_cart(os.path.join(ROOT, rel),
                            os.path.join(scratch, os.path.basename(rel)))
         # A scene is a conforming cart: `moy check` finds nothing wrong with it.
         for name, _ in ws.SCENES:
+            if name in ws.AGAIN:
+                continue
             files = _pack.read_folder(os.path.join(scratch, name + ".moy"))
             errors = [m for lvl, _, m in _check.check_wasm_files(files) if lvl == "error"]
             if errors:

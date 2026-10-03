@@ -42,6 +42,10 @@ typedef struct {
      * NULL is a player with none. */
     uint32_t (*snd)(void *user, const uint8_t *pcm, uint32_t n);
     void *snd_user;
+    /* The manifest's "writable" entries, in moy_wasm's form (NULL: none), and
+     * the folder the cart's written files are kept in (NULL: none are kept). */
+    const char *writable;
+    const char *files;
 } wasm_cart_config;
 
 /* Check the cart and load it: its footprint against cfg->limit, then its

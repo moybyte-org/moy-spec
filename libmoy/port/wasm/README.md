@@ -77,6 +77,13 @@ for each through `moy_wasm_js_item`, and `cart.js` sets the cart's exported
 `__stack_pointer` to the item's own stack, calls its `_par`, and puts the stack
 pointer back.
 
+The cart's written files (SPEC.md §16.12) are the page's: `cart.js`'s
+`storageFiles` keeps each in `localStorage` under the cart's name and its path,
+which `setItem` replaces whole and the browser keeps once it returns, and
+`main.c` reaches it for the binding's `write`, `erase` and `list` and for
+`read`'s written copy. A write past the origin's quota answers -2. Under node,
+`conform.mjs --files DIR` gives the same store a `Storage` kept in a file.
+
 The cart's `snd` queues its samples in a `moy_stream` in `main.c`, and the
 page's audio pull adds them after the synth, so they reach the AudioWorklet
 the same way. While the page has no running AudioContext it drains the queue
