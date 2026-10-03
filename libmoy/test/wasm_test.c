@@ -1096,8 +1096,8 @@ static NativeSymbol *natives;   /* WAMR sorts it in place and keeps it */
 int main(int argc, char **argv)
 {
     static const char *const REFUSED[] = {
-        "foreign_import", "memory_mismatch", "missing_export", "bad_signature",
-        "start_function"
+        "foreign_import", "unknown_import", "memory_mismatch", "missing_export",
+        "bad_signature", "start_function"
     };
     char err[256] = "";
     size_t i;

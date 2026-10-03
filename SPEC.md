@@ -1453,6 +1453,11 @@ sample stream, §16.9), `par` (the cart's own work across the cores, §16.10), a
 `wasm-imports.json` lists every one; a verb the spec gains is a row there before it
 is anything else.
 
+A host's table is the one it was built with, which may predate the cart's: a module
+importing a name the host's table lacks is refused when it loads, with a message
+naming the import, never run with the import unbound to trap when the cart first
+calls it.
+
 `W` and `H` are not imports. The canvas is the manifest's (§1, §3.1) and a host
 runs the cart at exactly that size or refuses it, so a compiled cart knows both
 when it is compiled.

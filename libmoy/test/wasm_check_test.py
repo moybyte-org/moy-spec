@@ -30,6 +30,7 @@ from moycore import check as mc              # noqa: E402
 EXPECT = {
     "hello": None,
     "foreign_import": "wasm.import",
+    "unknown_import": "wasm.import",
     "memory_mismatch": "wasm.memory",
     "missing_export": "wasm.export",
     "bad_signature": "wasm.import",

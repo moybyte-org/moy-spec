@@ -777,6 +777,7 @@ TRAPS = ("trap", "snd_trap", "par_trap")
 # for more memory than a player gives.
 REFUSED = [
     ("libmoy/test/wasm/foreign_import.moy", "imports from a module that is not \"moy\""),
+    ("libmoy/test/wasm/unknown_import.moy", "imports a name the table does not have"),
     ("libmoy/test/wasm/bad_signature.moy", "imports a row at the wrong type"),
     ("libmoy/test/wasm/memory_mismatch.moy", "its memory is not the manifest's"),
     ("libmoy/test/wasm/missing_export.moy", "no _draw"),
