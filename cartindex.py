@@ -2,10 +2,10 @@
 
 A carts repository publishes built carts as release assets and lists them in
 one file, index.json: each cart's id, name, version, licence, the assets to
-download with every file's size and sha256, and any file it needs that the
-repository does not host (Doom's WAD), with where to fetch it and under what
-licence. The Moybyte carts repositories are the first such (moybyte-org's
-gpl-carts and mit-carts), and both use this one copy of the two tools:
+download with every file's size and sha256, and any file it needs that is not
+in its release (an EXTERNAL file: Doom's WAD), with where to fetch it and
+under what licence. moybyte-org/carts is the first such repository, and every
+carts repository uses this one copy of the two tools:
 
     moy install --index <url|file> --list
     moy install --index <url|file> <id> <carts folder> [--build DIR] [--yes]
@@ -59,6 +59,20 @@ the index names, holds it to the index's size and sha256, and deploys it
 beside the index -- and an index names a mirror only for a repository that
 does. A reader that does not know the field ignores it; `moy install` fetches
 the release and falls back to the mirror, and a browser reads the mirror.
+
+An EXTERNAL file may have a "mirror" too, of the same shape: a path relative
+to index.json where the repository serves the file itself, bare -- for a file
+whose licence lets the repository give it away (Doom's shareware WAD, given
+away unmodified and for nothing, as id's licence allows). It is the cart's
+call, so `moy index` copies it from the external's entry in cart.json -- on
+every run, built or not, like the cover, since it is served from the site and
+not from a release -- and the repository publishes the file there, taken from
+its archive and checked, the way it publishes an asset's mirror. The "archive" stays, and is still
+required: a reader that does not know the field fetches the archive as
+before. One that does fetches the bare file first -- no archive to hold and
+no inflate -- and the archive when the mirror cannot be had; either way the
+file is held to the external's size and sha256, and its licence is shown and
+accepted before anything is fetched.
 
 `check_index` holds an index to what these tools and a console read, the
 mirror rules included, and both commands run it: `moy index` on what it is
@@ -335,6 +349,14 @@ def check_index(index):
                            % ew)
             else:
                 names.add(ext["path"])
+                if "mirror" in ext:
+                    mirror = ext["mirror"]
+                    if not relative_ref(mirror):
+                        out.append("%s: its mirror %r is not a path relative to the index"
+                                   % (ew, mirror))
+                    elif mirror.rsplit("/", 1)[-1] != ext["path"]:
+                        out.append("%s: its mirror %r does not end in the file's name"
+                                   % (ew, mirror))
         cover = cart.get("cover")
         if cover is not None and not (_sized(cover) and isinstance(cover.get("url"), str)):
             out.append("%s: its cover is not a url with a size and sha256" % where)
@@ -372,10 +394,23 @@ def unpack(data, cart, asset, staging):
 
 
 def external(base, ext, staging, cache, assume_yes):
-    """An external file: its licence, then its archive, then its member."""
+    """An external file: its licence, then the file -- from its mirror when the
+    index names one, bare, else (or when the mirror cannot be had) its
+    archive's member."""
     path = ext["path"]
     show_licence(base, ext["licence"], path)
     accept(path, assume_yes)
+    if ext.get("mirror"):
+        try:
+            body = obtain(path, [ext["mirror"]], ext["size"], ext["sha256"], base,
+                          cache=cache)
+        except InstallError as exc:
+            print("  %s; trying its archive" % exc)
+        else:
+            with open(os.path.join(staging, path), "wb") as f:
+                f.write(body)
+            print("  %s: %d bytes, sha256 %s" % (path, len(body), ext["sha256"]))
+            return
     arc = ext["archive"]
     data = obtain("the archive holding %s" % path, arc["urls"], arc["size"], arc["sha256"],
                   base, cache=cache)
@@ -477,14 +512,19 @@ def install(index, base, cart_id, dest, asset_dir=None, cache=None, force=False,
     return target
 
 
-def list_carts(index):
+def list_carts(index, base=None):
     for cart in index.get("carts", []):
         print("%-10s %-20s version %-4s %-8s %s" % (
             cart["id"], cart["name"], cart["version"], cart["runtime"],
             cart["licence"].get("spdx", "")))
         for ext in cart.get("external", []):
-            print("%-10s   needs %s (fetched from %s)" % (
-                "", ext["path"], urllib.parse.urlsplit(ext["archive"]["urls"][0]).netloc))
+            arc = urllib.parse.urlsplit(ext["archive"]["urls"][0]).netloc
+            where = "from %s" % arc
+            if ext.get("mirror"):
+                at = resolve(base, ext["mirror"]) if base else ext["mirror"]
+                host = urllib.parse.urlsplit(at).netloc if is_url(at) else "beside the index"
+                where = "from %s, else %s" % (host, arc)
+            print("%-10s   needs %s (fetched %s)" % ("", ext["path"], where))
     if not index.get("carts"):
         print("(the index lists no carts)")
 
@@ -513,7 +553,7 @@ def main_install(argv, prog="moy install", default_index=None):
     try:
         index = load_index(args.index)
         if args.list:
-            list_carts(index)
+            list_carts(index, args.index)
             return 0
         if not args.cart or not args.dest:
             ap.error("name a cart and a destination folder (or pass --list)")
@@ -624,6 +664,39 @@ def mirror_dir(index):
     return None
 
 
+def external_entry(root, cart_id, ext):
+    """An external file's index entry, from its entry in cart.json."""
+    return {"path": ext["path"], "size": ext["size"], "sha256": ext["sha256"],
+            "licence": _repo_file(root, cart_id, ext["licence"]["file"], ext["licence"]["name"]),
+            "archive": ext["archive"]}
+
+
+def with_external_mirrors(root, entry):
+    """`entry` with each external file's mirror as carts/<id>/cart.json names it
+    now: added, replaced, or gone. Like the cover, the copy is served from the
+    repository's site and not from a release, so it is read on every run,
+    built or not."""
+    path = os.path.join(root, "carts", entry["id"], "cart.json")
+    want = {}
+    if os.path.isfile(path):
+        for ext in _load(path).get("external", []):
+            if ext.get("mirror"):
+                want[ext["path"]] = ext["mirror"]
+    entry = dict(entry)
+    exts = []
+    for ext in entry.get("external", []):
+        out = {}
+        for key, value in ext.items():
+            if key == "mirror":
+                continue
+            out[key] = value
+            if key == "sha256" and ext["path"] in want:
+                out["mirror"] = want[ext["path"]]
+        exts.append(out)
+    entry["external"] = exts
+    return entry
+
+
 def index_entry(root, home, cart_id, built):
     """One cart's index entry, from its cart.json, its manifest and its build."""
     meta = _load(os.path.join(root, "carts", cart_id, "cart.json"))
@@ -652,13 +725,7 @@ def index_entry(root, home, cart_id, built):
             "files": built["files"],
         }],
         "source_asset": None,
-        "external": [{
-            "path": ext["path"],
-            "size": ext["size"],
-            "sha256": ext["sha256"],
-            "licence": _repo_file(root, cart_id, ext["licence"]["file"], ext["licence"]["name"]),
-            "archive": ext["archive"],
-        } for ext in meta.get("external", [])],
+        "external": [external_entry(root, cart_id, ext) for ext in meta.get("external", [])],
         "build": {"commit": built["commit"], "keys": built.get("keys", {}),
                   "modules": built.get("modules", {}), "pins": built.get("pins", {})},
     }
@@ -704,7 +771,7 @@ def write_index(root, name=None, home=None, log=print, mirror=None):
         else:
             log("%s: not built and not in the index; left out" % cart_id)
             continue
-        carts.append(with_mirror(with_cover(root, entry), mirror))
+        carts.append(with_mirror(with_external_mirrors(root, with_cover(root, entry)), mirror))
     index = {"version": INDEX_VERSION, "name": name, "home": home, "carts": carts}
     problems = check_index(index)
     if problems:

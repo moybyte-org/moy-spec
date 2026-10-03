@@ -6,9 +6,10 @@
 
 Offline, it needs nothing but Python: `moy new --wasm` scaffolds a cart whose
 header is libmoy's own moy_cart.h; `moy pack` takes a compiled cart; `moy
-index` writes a carts repository's index, its cover entry included, and `moy
-install` installs from it, refusing an asset that is not the one the index
-names and leaving the destination untouched; `moy push` over serial sends a compiled cart without
+index` writes a carts repository's index, its cover entry and an external
+file's mirror included, and `moy install` installs from it -- an external
+file from its mirror first and its archive after -- refusing an asset that is
+not the one the index names and leaving the destination untouched; `moy push` over serial sends a compiled cart without
 its src/ and shows what the console notes.
 
 With the toolchain -- $WASI_SDK_PATH, or the pinned wasi-sdk `moy build
@@ -304,6 +305,135 @@ def carts_repo(tmp):
     ok("moy install refuses a release asset that is not a STORED zip")
 
 
+def external_mirror(tmp):
+    """An external file the repository gives away itself: `moy index` names
+    its mirror from cart.json, and `moy install` takes the bare file from it
+    before the archive, and the archive when the mirror cannot be had."""
+    import io
+    import tarfile
+    repo = os.path.join(tmp, "xrepo")
+    cart_dir = os.path.join(repo, "carts", "dm")
+    os.makedirs(os.path.join(cart_dir, "licenses"))
+    data = b"IWAD" + bytes(range(256)) * 40
+    member = "pkg-1.0/game.dat"
+    raw = io.BytesIO()
+    with tarfile.open(fileobj=raw, mode="w:gz") as t:
+        info = tarfile.TarInfo(member)
+        info.size = len(data)
+        t.addfile(info, io.BytesIO(data))
+    arc = raw.getvalue()
+    with open(os.path.join(cart_dir, "NOTICE"), "w") as f:
+        f.write("GPL-2.0-or-later, by the test.\n")
+    with open(os.path.join(cart_dir, "licenses", "game.dat.txt"), "w") as f:
+        f.write("You may give game.dat away, unmodified.\n")
+    ext = {"path": "game.dat", "size": len(data), "sha256": hashlib.sha256(data).hexdigest(),
+           "mirror": "files/dm/game.dat",
+           "licence": {"name": "The game.dat licence", "file": "licenses/game.dat.txt"},
+           "archive": {"urls": ["pkg.tar.gz"], "format": "tar.gz", "size": len(arc),
+                       "sha256": hashlib.sha256(arc).hexdigest(), "member": member}}
+    meta = {"id": "dm", "name": "DM", "version": 1, "release": "dm-v1", "folder": "dm.moy",
+            "chips": [], "licence": {"spdx": "GPL-2.0-or-later", "file": "NOTICE"},
+            "external": [ext]}
+    with open(os.path.join(cart_dir, "cart.json"), "w") as f:
+        json.dump(meta, f)
+    files = {"manifest.json": b'{"format": "moy-1", "title": "DM"}\n',
+             "main.lua": b"function _draw() cls(1) end\n"}
+    with open(os.path.join(cart_dir, "manifest.json"), "wb") as f:
+        f.write(files["manifest.json"])
+    dist = os.path.join(repo, "build", "dist", "dm")
+    os.makedirs(dist)
+    zpath = os.path.join(dist, "dm.moy.zip")
+    with zipfile.ZipFile(zpath, "w") as z:
+        for name, body in sorted(files.items()):
+            z.writestr("dm.moy/" + name, body)
+    with open(zpath, "rb") as f:
+        blob = f.read()
+    with open(os.path.join(dist, "build.json"), "w") as f:
+        json.dump({"id": "dm", "commit": "0" * 40, "source": "https://example.invalid/dm",
+                   "asset": {"name": "dm.moy.zip", "size": len(blob),
+                             "sha256": hashlib.sha256(blob).hexdigest()},
+                   "files": {n: {"size": len(b), "sha256": hashlib.sha256(b).hexdigest()}
+                             for n, b in files.items()}}, f)
+    rc, out = moy("index", repo, "--name", "Test carts", "--home", "https://example.invalid/carts")
+    idx = os.path.join(repo, "index.json")
+    with open(idx) as f:
+        index = json.load(f)
+    got = index["carts"][0]["external"][0] if rc == 0 else {}
+    if rc != 0 or got.get("mirror") != "files/dm/game.dat" \
+            or list(got) != ["path", "size", "sha256", "mirror", "licence", "archive"]:
+        return fail("moy index gave the external %r: %s" % (got, out))
+    del meta["external"][0]["mirror"]
+    with open(os.path.join(cart_dir, "cart.json"), "w") as f:
+        json.dump(meta, f)
+    os.rename(os.path.join(dist, "build.json"), os.path.join(tmp, "dm-build.json"))
+    rc, out = moy("index", repo)
+    with open(idx) as f:
+        gone = json.load(f)["carts"][0]["external"][0]
+    if rc != 0 or "mirror" in gone:
+        fail("moy index kept a mirror cart.json no longer names: %r %s" % (gone, out))
+    with open(idx, "w") as f:
+        json.dump(index, f)
+    ok("moy index names an external file's mirror where cart.json does, built or not")
+
+    # The site: the index, the licences, the bare file at its mirror, and the
+    # archive beside them. The release itself is a port nothing listens on.
+    entry = index["carts"][0]
+    entry["assets"][0]["url"] = "http://127.0.0.1:9/dm.moy.zip"
+    entry["assets"][0]["mirror"] = "releases/dm-v1/dm.moy.zip"
+    os.makedirs(os.path.join(repo, "releases", "dm-v1"))
+    shutil.copy(zpath, os.path.join(repo, "releases", "dm-v1", "dm.moy.zip"))
+    os.makedirs(os.path.join(repo, "files", "dm"))
+    with open(os.path.join(repo, "files", "dm", "game.dat"), "wb") as f:
+        f.write(data)
+    with open(idx, "w") as f:
+        json.dump(index, f)
+    dest = os.path.join(tmp, "xcard")
+    os.makedirs(dest)
+    rc, out = moy("install", "--index", idx, "--list")
+    if rc != 0 or "fetched from beside the index, else" not in out:
+        fail("moy install --list does not say where game.dat comes from: %s" % out)
+    rc, out = moy("install", "--index", idx, "dm", dest, "--yes")
+    target = os.path.join(dest, "dm.moy", "game.dat")
+    if rc != 0 or not os.path.isfile(target) or "trying its archive" in out \
+            or "archive holding" in out:
+        return fail("moy install did not take game.dat from its mirror: %s" % out)
+    with open(target, "rb") as f:
+        if f.read() != data:
+            return fail("moy install wrote a game.dat that is not the index's")
+    shutil.rmtree(os.path.join(dest, "dm.moy"))
+    with open(os.path.join(repo, "pkg.tar.gz"), "wb") as f:
+        f.write(arc)
+    for broken in (b"not the file", None):
+        if broken is None:
+            os.remove(os.path.join(repo, "files", "dm", "game.dat"))
+        else:
+            with open(os.path.join(repo, "files", "dm", "game.dat"), "wb") as f:
+                f.write(broken)
+        rc, out = moy("install", "--index", idx, "dm", dest, "--yes")
+        if rc != 0 or "trying its archive" not in out or not os.path.isfile(target):
+            return fail("moy install did not fall back to the archive: %s" % out)
+        shutil.rmtree(os.path.join(dest, "dm.moy"))
+    old = json.loads(json.dumps(index))
+    del old["carts"][0]["external"][0]["mirror"]
+    with open(idx, "w") as f:
+        json.dump(old, f)
+    rc, out = moy("install", "--index", idx, "dm", dest, "--yes")
+    if rc != 0 or "trying its archive" in out or not os.path.isfile(target):
+        return fail("moy install of an index without the mirror: %s" % out)
+    shutil.rmtree(os.path.join(dest, "dm.moy"))
+    ok("moy install takes an external file from its mirror, bare, and from its archive "
+       "when the mirror is wrong, gone or not named")
+    for bad in ("../game.dat", "https://elsewhere.example/game.dat", "files/dm/other.dat"):
+        index["carts"][0]["external"][0]["mirror"] = bad
+        with open(idx, "w") as f:
+            json.dump(index, f)
+        rc, out = moy("install", "--index", idx, "--list")
+        if rc == 0 or "not a valid index" not in out:
+            return fail("moy install read an index whose external mirror is %r: %s"
+                        % (bad, out))
+    ok("moy install refuses an index whose external mirror is not the file beside it")
+
+
 class FakeConsole(object):
     """A console answering proposals/sideload.md's tier 1, as a pyserial
     port: it decodes what is written, keeps the files, and answers."""
@@ -488,6 +618,7 @@ def main():
         scaffold(tmp)
         pack_compiled(tmp)
         carts_repo(tmp)
+        external_mirror(tmp)
         push_over_serial(tmp)
         if offline:
             print("compiled carts: (skipping the toolchain half: --offline)")
