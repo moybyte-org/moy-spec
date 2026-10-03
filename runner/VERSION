@@ -2,30 +2,30 @@
   "bundle": "moy web player (libmoy/port/wasm)",
   "files": {
     "cart.js": {
-      "bytes": 7282,
-      "sha256": "48b7fb90293f8a4d451dd09056643bff1114b2353260725efd980220b6b2a419"
+      "bytes": 9383,
+      "sha256": "1b34b1ba657b1838b8f515614c867b4bb602b499b20ece43bf16ece60e94fd29"
     },
     "index.html": {
       "bytes": 8572,
       "sha256": "e2c04b5260080b75f53d90ce14cec2a64aaaf46068290c1a37115796ac1f6a8b"
     },
     "moy.mjs": {
-      "bytes": 16836,
-      "sha256": "841716b019cd34779fb7073ac2ba7f6e4e577a22e801b79e2059bef6f3c4276d"
+      "bytes": 17880,
+      "sha256": "77183a10d92ee39ec1699cb6638cbc9c4692fda92480a778afa02ef971f394cf"
     },
     "moy.wasm": {
-      "bytes": 364207,
-      "sha256": "008b29c636028014b60324d42738ece968a0fd5d73a347b6b0477e16415a836a"
+      "bytes": 368226,
+      "sha256": "a93306f10afcc8408c0502ecec1fd3a0afffb97adc679e9054d7aba2295f625d"
     },
     "player.js": {
-      "bytes": 29307,
-      "sha256": "22fa1f462f0d0cfe09275f0b2549503de00ae6f8e1fd31a88c39e3189175d416"
+      "bytes": 29673,
+      "sha256": "088642c655180474bcda54183b253bf045c45d769507e14507f5d20339a6674c"
     }
   },
-  "inputs_sha256": "34921c0ac34db9a3aeda7698e9e670d8bac6be5f4514a89aaf26d81993d69529",
+  "inputs_sha256": "4f201a094eb6f580c7118412227fa09d98de6b7ea8bfd93c132b61fd1c054cbf",
   "source": {
-    "branch": "",
-    "commit": "",
+    "branch": "saves",
+    "commit": "e8d4d267f8f59d3dd0b03c9dcc2b0cf5a2da01b5",
     "dirty": false
   },
   "toolchain": "emscripten 6.0.7"

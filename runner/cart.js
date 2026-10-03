@@ -25,12 +25,69 @@
  * every host does.
  *
  * Used by player.js in the page and by conform.mjs under node.
+ *
+ * The cart's written files (SPEC.md 16.12) are kept by storageFiles below,
+ * which the page sets as Module.moyFiles before the cart boots; main.c reaches
+ * it for the binding's write, erase and list and for read's written copy.
  */
 
 const OUT_OF_BOUNDS = "out of bounds memory access";
 const HOOK = { init: 0, update: 1, draw: 2 };
 
 export class CartTrap extends Error {}
+
+/* A cart's written files in a Web Storage -- the page's localStorage -- each
+ * under `prefix` + its path, as base64. A path is its bytes, one character
+ * each. setItem replaces an item whole or not at all, and the browser keeps
+ * it once it returns, which is SPEC.md 16.12's write. Its quota is the
+ * origin's, and a write past it answers -2. With no storage nothing is kept:
+ * every write answers -3. */
+export function storageFiles(storage, prefix) {
+  const cache = new Map();                    // decoded once, for chunked reads
+  const has = (k) => storage.getItem(k) !== null;
+  return {
+    get(path) {
+      if (!storage) return null;
+      if (cache.has(path)) return cache.get(path);
+      const v = storage.getItem(prefix + path);
+      if (v === null) return null;
+      const bin = atob(v);
+      const b = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) b[i] = bin.charCodeAt(i);
+      cache.set(path, b);
+      return b;
+    },
+    put(path, bytes) {
+      if (!storage) return -3;
+      let bin = "";
+      for (let i = 0; i < bytes.length; i += 0x8000)
+        bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+      try {
+        storage.setItem(prefix + path, btoa(bin));
+      } catch (e) {
+        cache.delete(path);
+        return e && (e.name === "QuotaExceededError" || e.code === 22) ? -2 : -3;
+      }
+      cache.set(path, bytes);
+      return 0;
+    },
+    del(path) {
+      if (!storage || !has(prefix + path)) return -1;
+      storage.removeItem(prefix + path);
+      cache.delete(path);
+      return 0;
+    },
+    names() {
+      const out = [];
+      if (!storage) return out;
+      for (let i = 0; i < storage.length; i++) {
+        const k = storage.key(i);
+        if (k !== null && k.startsWith(prefix)) out.push(k.slice(prefix.length));
+      }
+      return out;
+    },
+  };
+}
 
 /* The import table, read out of the console's memory: name, the C function
  * it binds, and WAMR's signature string for the rest of its arguments. */
