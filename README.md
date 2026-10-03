@@ -1,20 +1,22 @@
 # moy
 
-**A small game console that exists as a spec. The same cart — pixels, buttons,
-sound, a little saved state — plays on an ESP32 handheld, a PC or a browser
-tab, and the spec is exact enough for those to render it pixel-identically.**
+**A small game console that exists as a spec. A cart — pixels, buttons, sound,
+a little saved state — plays on a PC, in a browser tab and on ESP32 consoles,
+and the spec is exact enough for all of them to draw it pixel for pixel alike.**
 
-A cart is a folder: a manifest, a Lua script, a sprite sheet, a tilemap, a
-sound bank, and a cover to show it by. You hand it to a console and it plays.
-No install, no build step, no per-device binary.
+A cart is a folder: a manifest, a program, and its assets — a sprite sheet, a
+tilemap, a sound bank, and a 128 × 128 cover to show it by. The program is Lua,
+which every console runs, or WebAssembly compiled from C or C++ for the carts
+that draw more than Lua can. You hand the folder to a console and it plays.
 
-- **[SPEC.md](SPEC.md)** — the console: raster, palette, verb table, cart format
+- **[SPEC.md](SPEC.md)** — the console: raster, palette, verbs, cart format, the WebAssembly binding
 - **[GUIDE.md](GUIDE.md)** — writing games: a first cart, then a handbook
+- **[COMPILED.md](COMPILED.md)** — a compiled cart, from `moy new --wasm` to a board
 - **[PORTING.md](PORTING.md)** — running carts on your own hardware, in order
 - **[PICO8.md](PICO8.md)** — importing a PICO-8 cart: what converts, what does not
 - **[RATIONALE.md](RATIONALE.md)** — why each number is what it is
 
-Status: **draft 0.3, unstable.** Names and values will still move.
+Status: **draft 0.4, unstable.** Names and values will still move.
 
 ## Get moy
 
@@ -28,39 +30,47 @@ Status: **draft 0.3, unstable.** Names and values will still move.
   same pair, `moy` and `moy-play`. The macOS build is Apple Silicon and
   unsigned — first run is right-click → Open.
 
-`moy-play` and the browser player also run compiled carts — WebAssembly, the
-spec's optional second binding (SPEC.md §16); [COMPILED.md](COMPILED.md) takes
-you from `moy new --wasm` to one playing on a board.
-
-No Python, no install. From a checkout of this repository, every command below
-also runs as `python3 moy.py …` — Python 3.8+ and nothing else.
+No Python, no install. From a checkout of this repository every command below
+also runs as `python3 moy.py …`, with Python 3.8+ and nothing else, and `moy`
+on its own lists them all.
 
 ## Which are you?
 
 ### Writing a game → **[GUIDE.md](GUIDE.md)**
 
 ```
-moy demo                 # fetch Celeste Classic, port it, play it natively
-moy new mygame           # scaffold your own cart: manifest, Lua, editor stubs
+moy demo                 # fetch Celeste Classic, port it, play it
+moy new mygame           # scaffold a Lua cart: manifest, main.lua, editor stubs
 moy play mygame.moy      # play it in a window, restarting as you save
 ```
 
-**Start with `moy demo`.** There is nothing to set up first, and what it hands
-back is a real PICO-8 game running as a moy cart seconds after you asked for
-it — the quickest way to see what this is. `moy port cart.p8` does the same for
-any cart you have.
+**Start with `moy demo`:** a real PICO-8 game running as a moy cart seconds
+after you ask, with nothing to set up first.
 
-Then your own. `moy play` opens a window, and editing `mygame.moy/main.lua`
-in your own editor restarts the game in under a second — `moy web` is the same
-loop through the browser player, when you want devtools. Your art tools already
-work — the sheet round-trips through indexed PNG and the tilemap through CSV.
-`moy export` turns the cart into static files you can host anywhere, itch.io
-included, and `moy check` tells you before you ship what the tightest console
-would refuse.
+Then your own. `moy play` restarts the game in under a second whenever you
+save a file in the cart, and `moy web` is the same loop in the browser player,
+for devtools. Your art tools already work: `moy gfx` round-trips the sheet
+through indexed PNG and `moy map` the tilemap through CSV. Press **F7** in
+`moy play` and the frame on screen becomes the cart's `cover.png`, the picture
+a launcher or a store shows it by (§3.6) — or paint one. `moy check` says what
+the strictest console would refuse; then `moy export` makes a folder of static
+files that plays in any browser (itch.io takes it as it is), `moy pack` makes
+the cart one file, and `moy push` copies it onto a connected console.
 
-[GUIDE.md](GUIDE.md) builds a complete small game from nothing, then covers
-each topic in turn — art, audio, saving, budgets, and the dozen things that
-catch everyone once.
+**When Lua is too slow** for what you want to draw — per-pixel effects, voxel
+terrain, textured 3D, an emulator — write the cart in C or C++ and compile it
+to WebAssembly, the spec's optional second binding (§16):
+
+```
+moy new --wasm plasma    # a C starter; --jet makes a 3D one in C++
+moy play plasma.moy      # build it, play it, rebuild it as you save
+```
+
+It calls the same verbs and keeps the same assets, and it plays in `moy-play`,
+in the browser player and on moybyte's ESP32 consoles; a console without the
+binding refuses it by name. A compiled cart can also declare writable files of
+its own (§16.12). `moy build` fetches a pinned C compiler the first time it runs,
+and [COMPILED.md](COMPILED.md) goes from an empty folder to a cart on a board.
 
 ### Building a console → **[PORTING.md](PORTING.md)**
 
@@ -70,64 +80,82 @@ firmware speaks. Either way `conformance/` proves it, and it is reachable on
 your first day: every scene ships as a flat verb trace, so a rasterizer can be
 checked long before there is a cart loader or a VM.
 
+The compiled-cart binding is optional. Refusing a `"runtime": "wasm"` cart by
+name is conforming, and libmoy carries the binding behind a build flag for a
+host that takes it on. A launcher may draw each cart's cover, and
+`conformance/covers/` holds the PNG files a cover reader is held to.
+
 [PORTING.md](PORTING.md) is the order to build things in, what to refuse
 versus ignore versus degrade, how to run the suite against your build, and the
 conformance checklist.
 
 ### Importing a PICO-8 cart → **[PICO8.md](PICO8.md)**
 
-`p8_lua_port.py` turns a `.p8` or a BBS `.p8.png` into a Lua cart: assets, the
-map, the sfx, and the cart's own code converted token by token, over a shim
-that implements PICO-8's verbs on the moy API. Most carts boot and play.
+`moy port cart.p8` turns a `.p8`, a BBS `.p8.png` or a BBS URL into a Lua
+cart: the sheet, the map, the flags, the sfx and music, the label as its cover,
+and the cart's own code converted token by token, over a shim that implements
+PICO-8's verbs on the moy API. Most carts boot and play.
 
 It is a converter, not an emulator, but there is a PICO-8 machine behind it —
-the memory map, the screen palette, the fill pattern, the flags, coroutines,
-the system font — so the line falls at 16.16 fixed point and at multi-cart
-games, and the importer says which side of it a cart is on before it writes.
-[PICO8.md](PICO8.md) lists what comes across, what is approximated, what cannot,
-and the corpus of sixteen real carts with what each one actually does. Note the licensing section: BBS carts default to CC BY-NC-SA
-4.0.
+the memory map, the screen palette, the fill pattern, coroutines, the system
+font — so the line falls at 16.16 fixed point and at multi-cart games, and the
+importer says which side of it a cart is on before it writes. [PICO8.md](PICO8.md)
+has what comes across, what does not, and how a corpus of real carts fares.
+Read its licensing section first: BBS carts default to CC BY-NC-SA 4.0.
+
+## Carts other people publish
+
+A carts repository publishes built carts as release assets, listed in an
+`index.json` with each file's size, sha256 and licence and each cart's cover,
+and can keep a copy of every asset beside the index for browsers to read.
+moybyte-org's carts are published from one, `moybyte-org/carts`:
+
+```
+moy install --index https://moybyte-org.github.io/carts/index.json --list
+moy install --index https://moybyte-org.github.io/carts/index.json <id> <carts folder>
+```
+
+`moy install` checks every file against the index and asks before it fetches
+anything under another licence. `moy index` writes the index for a repository
+of your own.
 
 ## Why this exists
 
 Several people are building small handheld consoles on ESP32-class hardware,
 each with its own way of packaging a game — and none of those catalogues can
-move. A shared cart format means a game written once plays on all of them,
-and a converter written once benefits everybody. The numbers are sized for
-that silicon: the whole console fits in about 400 KB of RAM (§1.1), and these
-carts run on two real ESP32 boards today.
+move. A shared cart format means a game written once plays on all of them, and
+a converter written once benefits everybody. The numbers are sized for that
+silicon: the whole console fits in about 400 KB of RAM (§1.1), and these carts
+run on ESP32-S3 and ESP32-P4 boards today.
 
 The spec is deliberately narrow: it describes what a *game* touches, and says
 nothing about operating systems, shells or drivers — exactly where consoles
-differ and should keep differing.
-
-Past core there is an **extension** mechanism — declare what your cart needs,
-and a console that lacks it turns the cart away by name instead of crashing
-halfway through a frame. It is currently **empty**, which is the more
-interesting fact about it. Every candidate so far turned out to be something a
-console could either afford outright or fake convincingly, and both of those
-belong in core: `layers`, `view` and `background` all moved there, and the
-`~= nil` guard a cart would have written around them was a guard that could
-never fire. What is left for an extension is hardware a cart cannot paper over
-— a radio, say. SPEC.md 10 has the test.
+differ and should keep differing. Past core, a cart can declare an
+**extension** it needs, and a console that lacks it turns the cart away by name
+instead of failing halfway through a frame. There are none yet: every
+candidate turned out to be something a console could afford outright or fake
+convincingly, and those belong in core. What is left for an extension is
+hardware a cart cannot paper over — a radio, say. SPEC.md §10 has the test.
 
 ## The pieces
 
 | | |
 |---|---|
-| [moycore/](moycore/) | the console as a Python library — stdlib-only: raster, palette, font, cart format, verb table |
-| [libmoy/](libmoy/) | the console as a C99 library — no dependencies, no allocation, §4.1-sandboxed Lua binding, and three ports: SDL2 desktop, ESP-IDF component, WebAssembly |
-| [runner/](runner/) | the web player: libmoy compiled to WebAssembly, under 450 KB of static files, built by `libmoy/port/wasm` |
-| [conformance/](conformance/) | the suite that keeps them honest — one scene per area, each a real cart with a golden frame, and a runner that takes any player; and the PNG files a cover reader is held to. Every build here renders every scene pixel-identically, and an ESP32-P4 over serial matched every scene it has run — but all of them descend from one raster, and its README is candid about what that costs |
+| [moy.py](moy.py) | the CLI, `moy` in the release download; `moy` on its own lists every command |
+| [moycore/](moycore/) | the console as a Python library — stdlib-only: raster, palette, font, cart format, covers, verb table |
+| [libmoy/](libmoy/) | the console as a C99 library — no dependencies, no allocation, §4.1-sandboxed Lua binding, the §16 binding behind a build flag — and three ports: SDL2 desktop (`moy-play`), ESP-IDF component, WebAssembly |
+| [runner/](runner/) | the web player: libmoy compiled to WebAssembly, under 450 KB of static files, built by `libmoy/port/wasm`; a compiled cart runs beside it as a module of its own |
+| [conformance/](conformance/) | the suite that keeps them honest — one scene per area, each a real cart with a golden frame; compiled carts held to RGB565 goldens; and the PNG files a cover reader is held to. Every build here renders every scene pixel-identically, but all of them descend from one raster, and its README is candid about what that costs |
+| [templates/](templates/) | the compiled-cart starters `moy new --wasm` and `moy new --jet` copy |
 | [examples/](examples/) | `brick_siege.moy`, a complete game in core only, written to be read; `verbs.moy`, one screen per verb group |
-| [moybyte](https://github.com/moybyte-org/moybyte) | the reference implementation: a PC simulator and two ESP32 handhelds |
-| [PURR OS](https://github.com/PastorCatto/PURR-OS-ESP32) | an ESP32 operating system that runs carts from a hand-written console — its own raster, cart loader and Lua binding, no libmoy. The first host outside this repository, and the only one that shares no code with it |
-| [proposals/](proposals/) | drafts on top of core: single-file carts (`moy pack`), sideload, the p8/TIC-80 verb gaps; and the compiled-cart binding's open items, the binding itself being SPEC.md §16 |
+| [moybyte](https://github.com/moybyte-org/moybyte) | the reference implementation: a console OS on ESP32-S3 and ESP32-P4 boards, in a PC simulator and in the browser |
+| [PURR OS](https://github.com/PastorCatto/PURR-OS-ESP32) | an ESP32 operating system that runs carts on a hand-written console — its own raster, cart loader and Lua binding, no libmoy. The first host outside this repository, and the only one that shares no code with it |
+| [proposals/](proposals/) | single-file carts (`moy pack`) and sideload (`moy push`), implemented here and required of no host; and the records behind decisions that landed in SPEC.md — the compiled-cart binding with its open items, PICO-8's memory map, the PICO-8 verb gaps |
 | [THIRD_PARTY.md](THIRD_PARTY.md) | attribution that travels with the normative data files |
 
-The known gaps: audio authoring (sprites and maps round-trip through PNG and
-CSV; `sfx.moysfx` has only the reference console's on-device editors) and a
-TIC-80 converter.
+The known gap is audio authoring: the sheet and the map round-trip through PNG
+and CSV, but `sounds.json` is written by hand, imported from PICO-8, or made in
+the reference console's on-device editors.
 
 ## Contributing
 
