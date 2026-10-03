@@ -4,9 +4,9 @@
 -- is a worked example of its verbs), a smoke test for any new implementation
 -- (if every screen looks right, you're close), and the seed of the conformance
 -- suite (pin golden frames of these screens and "conformance" becomes a diff).
--- Screens 1-8 are core 0.3 and this cart declares no extensions -- SPEC.md
+-- Every screen is core 0.4 and this cart declares no extensions -- SPEC.md
 -- section 10 defines none, so every conforming host must run screen 8's layers
--- too. Screen 9 exercises SPEC.md section 6.1, which is DRAFT.
+-- too. Screen 9 exercises SPEC.md section 6.1, the 3D verbs.
 
 local screen = 1
 local t = 0                       -- seconds since start (accumulated dt)

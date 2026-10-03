@@ -329,7 +329,7 @@ def build(out, demo=True):
     # Pass 1: collect the spec's section numbers, so a reference to one links
     # from any page (including this repo's other documents).
     sections = md.render(src["SPEC.md"], Ctx("spec.html")).sections
-    core = core_version(src["SPEC.md"])          # e.g. "core 0.3"
+    core = core_version(src["SPEC.md"])          # e.g. "core 0.4"
     shell = tmpl("shell.html")
 
     for rel, (name, label, desc) in PAGES.items():

@@ -102,8 +102,8 @@ covers/              cover files and the verdict a reader must reach (below)
 | `layer_small` | a layer narrower and shorter than the screen, asked for past its far corner, under a screen camera, clip and pal that `draw_layer` must ignore |
 | `screen_pal` | `pal(c0, c1, 1)` composes after the draw palette for pixels drawn from then on, a pixel already drawn does NOT move, `pal()` resets both; a player that applies it as a pass over the finished frame fails here |
 | `sheet` | `sset` then `spr`/`sspr`/`map` of the edited tile, the 0–15 mask, writes off the sheet; the scene restores its own edits first, since a second frame sees the first frame's sheet |
-| `provisional` | SPEC.md 6.1's `tri` / `trib` / `sspr`. Counted since core 0.3; the name is kept because implementers cite it |
-| `provisional_tline` | SPEC.md 6.1's `tline`: the map sampled through 16.16 texture steps. Counted since core 0.3 — and the scene that caught a real board failing by 2773 pixels (below) |
+| `provisional` | SPEC.md 6.1's `tri` / `trib` / `sspr`. Counted since 0.3; the name is kept because implementers cite it |
+| `provisional_tline` | SPEC.md 6.1's `tline`: the map sampled through 16.16 texture steps. Counted since 0.3 — and the scene that caught a real board failing by 2773 pixels (below) |
 
 ## Provenance
 

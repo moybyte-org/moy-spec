@@ -289,7 +289,7 @@ There are **two** suites and you need both:
 which is how you find the one row you are wrapping.
 
 The §6.1 verbs (`tri`, `trib`, `sspr`, `tline`) get scenes of their own, and
-those scenes are counted (§11) as of core 0.3 — they were reported but excluded
+those scenes are counted (§11) since 0.3 — they were reported but excluded
 before that, so a port written against the older core has them left to do. That pair is
 where a real board was caught disagreeing by thousands of pixels; do not skip
 them because the names still say "provisional".

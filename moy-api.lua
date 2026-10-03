@@ -5,9 +5,7 @@
 -- and typo squiggles on every console verb. The behavioural contract is the
 -- moy spec (SPEC.md); one line here per verb, the spec is the truth.
 --
--- Every verb below is CORE -- it runs on any conforming console -- unless marked:
---   DRAFT 6.1         -- provisional (SPEC.md 6.1): names/signatures still
---                        moving, NOT core 0.3, may be dropped entirely
+-- Every verb below is CORE -- it runs on any conforming console.
 --
 -- SPEC.md 10 defines no standard extensions, so nothing here needs declaring in
 -- your manifest's "extensions" and no verb below needs an `if v ~= nil` guard.
@@ -102,7 +100,7 @@ function oval(x, y, w, h, c) end
 ---@param c integer
 function ovalb(x, y, w, h, c) end
 
----Filled triangle. Provisional (SPEC.md 6.1).
+---Filled triangle (SPEC.md 6.1).
 ---@param x1 integer
 ---@param y1 integer
 ---@param x2 integer
@@ -112,7 +110,7 @@ function ovalb(x, y, w, h, c) end
 ---@param c integer
 function tri(x1, y1, x2, y2, x3, y3, c) end
 
----Triangle outline. Provisional (SPEC.md 6.1).
+---Triangle outline (SPEC.md 6.1).
 ---@param x1 integer
 ---@param y1 integer
 ---@param x2 integer
@@ -126,9 +124,8 @@ function trib(x1, y1, x2, y2, x3, y3, c) end
 ---virtual texture. u,v,du,dv are 16.16 FIXED-POINT integers (float * 65536);
 ---before each pixel the texel (u>>16, v>>16) is sampled, then u,v advance by
 ---du,dv. Empty map cells draw nothing. The Mode 7 verb: one call per
----scanline, perspective lives in how du,dv change BETWEEN scanlines.
----Provisional (SPEC.md 6.1) -- in moycore and libmoy, golden-checked;
----device kernels pending.
+---scanline, perspective lives in how du,dv change BETWEEN scanlines
+---(SPEC.md 6.1).
 ---@param x0 integer
 ---@param y0 integer
 ---@param x1 integer
@@ -153,7 +150,7 @@ function spr(n, x, y, colorkey, scale, flip) end
 
 ---Stretch-blit a sheet PIXEL region (sx,sy,sw,sh) to a dw x dh screen rect --
 ---arbitrary (non-integer) scaling; the textured-slice verb (a raycaster's
----wall column is sspr with dw=1). Provisional (SPEC.md 6.1).
+---wall column is sspr with dw=1). SPEC.md 6.1.
 ---@param sx integer sheet pixel x
 ---@param sy integer sheet pixel y
 ---@param sw integer

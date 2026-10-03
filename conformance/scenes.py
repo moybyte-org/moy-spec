@@ -631,7 +631,7 @@ SCENES = (
     ("provisional_tline", provisional_tline),
 )
 
-# Scenes reported but NOT counted toward conformance. Empty since core 0.3
+# Scenes reported but NOT counted toward conformance. Empty since 0.3
 # promoted SPEC.md 6.1's verbs: the `provisional` and `provisional_tline`
 # scenes keep their names and are counted like any other. The mechanism stays
 # for the next verb that arrives ahead of its gates.

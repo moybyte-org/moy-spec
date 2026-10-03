@@ -5,7 +5,7 @@
     "w": 320,
     "h": 240
   },
-  "generated_by": "moycore 0.3.0",
+  "generated_by": "moycore 0.4.0",
   "provenance": "Rendered by moycore. Confirmed pixel-identical on all core scenes by libmoy and the WebAssembly player built from it (the tiebreaker SPEC.md 11 names). The reference console's own rasterizer (conformance/parity.py) and an ESP32-P4 over serial matched every scene the suite held before the layer_* scenes. Note that ALL of them now share moycore's lineage -- the board ran a hand transcription until 2026-08-07 and now calls libmoy too. See conformance/README.md, 'The independent check, and its loss'.",
   "scenes": [
     {

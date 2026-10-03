@@ -1,10 +1,11 @@
-# moy core 0.3 — the portable console spec
+# moy core 0.4 — the portable console spec
 
-> **Status: DRAFT 0.3.** Every verb here is decided and implemented — this
+> **Status: DRAFT 0.4.** Every verb here is decided and implemented — this
 > describes a console that exists and runs games today, not a design sketch.
-> The 3D verbs (§6.1), provisional through 0.2, are core as of 0.3. Decisions
-> worth arguing about are collected in §12 with their reasoning. §16, the
-> WebAssembly binding, is optional: a host implements it or refuses its carts.
+> 0.4 adds the WebAssembly binding (§16), a second way to write a cart, which is
+> optional: a host implements it or refuses its carts; covers (§3.6), a cart's
+> picture in a list; and a compiled cart's files, kept across runs (§16.12).
+> Decisions worth arguing about are collected in §12 with their reasoning.
 
 **moy** is a virtual console: a fixed raster, a fixed palette, a fixed set of
 drawing, input and audio verbs, and a cart format that packages a game against them.

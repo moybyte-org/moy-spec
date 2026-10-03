@@ -27,16 +27,14 @@ local CORE = {
   "sfx", "beep", "music", "music_stop", "sound_stop", "volume",
   -- SPEC.md 9, state and utility
   "time", "pmem", "cfg", "rnd", "srand", "flr", "quit",
+  -- SPEC.md 6.1, the 3D verbs
+  "tri", "trib", "sspr", "tline",
 }
 
 -- SPEC.md 4.1's LIBRARIES, which the sandbox check in CI can only prove
 -- absent, never present: a host that forgot to open one passes every golden
 -- and kills the first cart that reaches for a coroutine.
 local LIBS = { "math", "string", "table", "coroutine" }
-
--- SPEC.md 6.1 is PROVISIONAL and not part of core 0.3, so its verbs are not
--- required and their absence is not a failure: tri, trib, sspr, tline.
-local PROVISIONAL = { "tri", "trib", "sspr", "tline" }
 
 function _init()
   local missing = {}
@@ -73,11 +71,5 @@ end
 function _draw()
   cls(1)
   print("core verb table complete", 8, 8, 11)
-  local have = {}
-  for i = 1, #PROVISIONAL do
-    if _G[PROVISIONAL[i]] ~= nil then have[#have + 1] = PROVISIONAL[i] end
-  end
-  print("6.1 provisional present: " .. (#have > 0 and table.concat(have, " ")
-                                        or "none"), 8, 20, 5)
   quit()
 end

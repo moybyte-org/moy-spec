@@ -464,7 +464,7 @@ multi-tile sprite type, and a plain loop is the intended way to draw many
 
 `sspr` stretches an arbitrary pixel region to an arbitrary size. It is one of
 the 3D verbs (§6.1) — provisional through 0.2, core since 0.3 — so a cart using
-it runs on any host that ships core 0.3, and may not on one built to 0.2.
+it runs on any host made to 0.3 or later, and may not on one made to 0.2.
 
 ### The tilemap
 
