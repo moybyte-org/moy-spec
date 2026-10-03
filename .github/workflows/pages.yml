@@ -1,9 +1,9 @@
 # Build the site from the canonical sources and publish it to GitHub Pages.
 #
-# Nothing here is checked in: SPEC.md, RATIONALE.md, README.md, palette.json and
-# font.bin are rendered on every push, and the playable demo is exported fresh
-# from the vendored runner/ -- so the site cannot drift from the repository it
-# publishes, and a spec edit is a site deploy.
+# Nothing here is checked in: the root documents and the normative data files
+# are rendered on every push, and the playable demos are exported fresh from the
+# vendored runner/ -- so the site cannot drift from the repository it publishes,
+# and a spec edit is a site deploy.
 #
 # The build is `python3 site/build.py`: standard library only, no package
 # installs, no node. It runs in about a second.
@@ -45,11 +45,11 @@ jobs:
       - name: Check what was built
         run: |
           set -eu
-          for f in index.html guide.html porting.html spec.html \
-                   rationale.html third-party.html \
-                   style.css palette.json font.bin \
-                   play/index.html play/carts.json \
-                   verbs/index.html verbs/carts.json \
+          for f in index.html guide.html compiled.html porting.html \
+                   pico8.html spec.html rationale.html third-party.html \
+                   style.css palette.json font.bin wasm-imports.json \
+                   play/index.html play/carts.json play/cover.png \
+                   verbs/index.html verbs/carts.json verbs/cover.png \
                    play/moy.mjs play/moy.wasm play/player.js play/cart.js \
                    play/LICENSE.txt verbs/LICENSE.txt; do
             test -s "_site/$f" || { echo "missing or empty: $f"; exit 1; }

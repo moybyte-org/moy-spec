@@ -123,7 +123,7 @@ main { display: block; }
 .hero { padding: 2.6rem max(1rem, calc(50vw - var(--w) / 2)) 1.8rem; }
 .hero-in { display: grid; gap: 2.5rem; align-items: start; }
 @media (min-width: 62rem) {
-  .hero-in { grid-template-columns: minmax(0, 1fr) 20rem; gap: 3rem; }
+  .hero-in { grid-template-columns: minmax(0, 1fr) 23rem; gap: 3rem; }
 }
 .hero h1 { display: flex; align-items: flex-end; gap: 1rem; flex-wrap: wrap;
   margin: 0 0 1.2rem; color: var(--ink); }
@@ -213,7 +213,7 @@ ol.swatches li:hover b { opacity: 1; }
 .cards-band { padding: 2.5rem max(1rem, calc(50vw - var(--w) / 2)) .5rem; }
 .cards-band h2 { margin: 0 0 1.1rem; font-size: 1.35rem; color: var(--ink); }
 .cards { display: grid; gap: 1rem;
-  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); }
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); }
 .card { display: block; padding: 1.1rem 1.2rem; border: 1px solid var(--line);
   border-radius: 10px; background: var(--surface); text-decoration: none;
   color: var(--body); }
@@ -248,8 +248,10 @@ ol.swatches li:hover b { opacity: 1; }
 .doc li.task input { margin-right: .45rem; accent-color: var(--accent); }
 .doc li::marker { color: var(--muted); }
 .doc hr { margin: 2.4rem 0; border: 0; border-top: 1px solid var(--line); }
-/* the documents put a rule before most h2s; one line, not two */
-.doc hr + h2 { border-top: 0; padding-top: 0; margin-top: 1.6rem; }
+/* the documents put a rule before most h2s; one line, not two. A numbered
+   section's anchor sits between the two (md.py), hence the second selector. */
+.doc hr + h2, .doc hr + a[id] + h2 { border-top: 0; padding-top: 0; margin-top: 1.6rem; }
+.doc a[id] { scroll-margin-top: 4.5rem; }
 .doc strong { color: var(--ink); font-weight: 600; }
 .doc em { color: var(--ink); }
 
@@ -340,11 +342,16 @@ a.sref:hover { color: var(--accent); }
    the picker follows the page's light/dark scheme for free. */
 .demotabs { display: flex; gap: .6rem; flex-wrap: wrap; margin: 0 0 .9rem; }
 .demotab { appearance: none; cursor: pointer; text-align: left;
+  display: flex; align-items: center; gap: .8rem;
   font: inherit; padding: .55rem .9rem; border: 1px solid var(--line);
   border-radius: 10px; background: var(--surface); color: var(--body);
   transition: border-color .12s, background .12s; }
 .demotab b { display: block; font: 600 .95rem/1.3 var(--mono); color: var(--ink); }
 .demotab span { display: block; font-size: .82rem; color: var(--muted); }
+/* The cart's cover (SPEC.md 3.6): pixel art at half its size, kept crisp. */
+.demotab img { flex: none; width: 64px; height: 64px; border-radius: 4px;
+  image-rendering: pixelated; box-shadow: 0 0 0 1px var(--line); }
+.demotab.on img { box-shadow: 0 0 0 2px var(--accent); }
 .demotab:hover { border-color: var(--link); background: var(--raised); }
 .demotab.on { border-color: var(--accent); background: var(--raised); }
 .demotab.on b { color: var(--accent); }

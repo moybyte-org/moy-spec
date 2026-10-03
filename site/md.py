@@ -3,9 +3,10 @@
 Deliberately not a dependency. This repo's whole claim is "Python 3.8+ and a
 browser, nothing else"; a site build that needed a package index (let alone a
 node toolchain) would contradict the thing it is publishing. So this handles
-exactly the Markdown the canonical documents use -- ATX headings, fenced code,
-GFM pipe tables, blockquotes, lists, rules, paragraphs, and inline
-code/bold/italic/links/bare URLs -- and nothing else.
+exactly the Markdown the canonical documents use -- ATX headings, fenced and
+indented code, GFM pipe tables, blockquotes, lists (a fenced block inside an
+item included), rules, paragraphs, and inline code/bold/italic/links/bare URLs
+-- and nothing else.
 
 Two behaviours here are not Markdown, and are the reason the spec reads well on
 the web:
@@ -176,17 +177,25 @@ def cells(row):
 TASK = re.compile(r"^\[([ xX])\]\s+")
 
 
-def list_item(text, ctx):
-    """One <li>, honouring GitHub's task-list syntax.
+def list_item(text, ctx, blocks=""):
+    """One <li>, honouring GitHub's task-list syntax; `blocks` is block markup
+    the item carries after its text (a fenced code block indented under it).
 
     A checklist is a checklist wherever it is read, and rendering it as the
     literal characters "[ ]" reads as a typo rather than as a box."""
     m = TASK.match(text)
     if not m:
-        return "<li>%s</li>" % inline(text, ctx)
+        return "<li>%s%s</li>" % (inline(text, ctx), blocks)
     checked = " checked" if m.group(1) != " " else ""
-    return ('<li class="task"><input type="checkbox" disabled%s> %s</li>'
-            % (checked, inline(text[m.end():], ctx)))
+    return ('<li class="task"><input type="checkbox" disabled%s> %s%s</li>'
+            % (checked, inline(text[m.end():], ctx), blocks))
+
+
+def code_block(lines, lang=""):
+    body = _hl("\n".join(lines), lang)
+    label = ('<span class="lang">%s</span>' % html.escape(lang)) if lang else ""
+    return ('<div class="code">%s<pre><code>%s</code></pre></div>'
+            % (label, body))
 
 
 def render(text, ctx):
@@ -234,10 +243,19 @@ def render(text, ctx):
                 buf.append(lines[i])
                 i += 1
             i += 1
-            body = _hl("\n".join(buf), lang)
-            label = ('<span class="lang">%s</span>' % html.escape(lang)) if lang else ""
-            out.append('<div class="code">%s<pre><code>%s</code></pre></div>'
-                       % (label, body))
+            out.append(code_block(buf, lang))
+            continue
+
+        # an indented code block: four spaces, as runner/BUILD.md writes its
+        # commands
+        if line.startswith("    "):
+            buf = []
+            while i < n and (lines[i].startswith("    ") or not lines[i].strip()):
+                buf.append(lines[i][4:])
+                i += 1
+            while buf and not buf[-1].strip():
+                buf.pop()
+            out.append(code_block(buf))
             continue
 
         if HR.match(line):
@@ -272,7 +290,11 @@ def render(text, ctx):
                 sty = ' style="text-align:%s"' % a if a else ""
                 return "<%s%s>%s</%s>" % (tag, sty, inline(txt, ctx), tag)
 
-            th = "".join(cell("th", c, j) for j, c in enumerate(head))
+            # `| | |` is a table with no header row, and an empty <thead> would
+            # draw as a blank band above the first row
+            th = ("<thead><tr>%s</tr></thead>"
+                  % "".join(cell("th", c, j) for j, c in enumerate(head))
+                  if any(head) else "")
             body = []
             for r in rows:
                 # a row of empty cells is a spacer in these documents
@@ -280,22 +302,27 @@ def render(text, ctx):
                 body.append("<tr%s>%s</tr>"
                             % (cls, "".join(cell("td", c, j)
                                             for j, c in enumerate(r))))
-            out.append('<div class="tablewrap"><table><thead><tr>%s</tr></thead>'
+            out.append('<div class="tablewrap"><table>%s'
                        "<tbody>%s</tbody></table></div>" % (th, "".join(body)))
             continue
 
         if UL.match(line) or OL.match(line):
             ordered = bool(OL.match(line))
             start = OL.match(line).group(1) if ordered else None
-            items, cur = [], None
+            items, cur = [], None          # cur: [text lines, block markup]
             while i < n:
                 ln = lines[i]
                 if not ln.strip():
                     # a blank line only ends the list if what follows is not
-                    # another item of it (these documents have loose lists)
+                    # another item of it (these documents have loose lists),
+                    # or a fenced block indented under the current item
                     j = i + 1
                     while j < n and not lines[j].strip():
                         j += 1
+                    if (j < n and cur is not None and lines[j].startswith(" ")
+                            and FENCE.match(lines[j].strip())):
+                        i = j
+                        continue
                     if j >= n or not (OL.match(lines[j]) if ordered
                                       else UL.match(lines[j])):
                         break
@@ -304,19 +331,34 @@ def render(text, ctx):
                 m2 = OL.match(ln) if ordered else UL.match(ln)
                 if m2:
                     if cur is not None:
-                        items.append(" ".join(cur))
-                    cur = [m2.group(2) if ordered else m2.group(1)]
+                        items.append(cur)
+                    cur = [[m2.group(2) if ordered else m2.group(1)], []]
                 elif ln.startswith(" ") and cur is not None:
-                    cur.append(ln.strip())
+                    fm = FENCE.match(ln.strip())
+                    if fm:
+                        indent = len(ln) - len(ln.lstrip(" "))
+                        i += 1
+                        buf = []
+                        while i < n and not lines[i].strip().startswith("```"):
+                            ind = lines[i][:indent]
+                            buf.append(lines[i][indent:] if not ind.strip()
+                                       else lines[i].lstrip())
+                            i += 1
+                        i += 1
+                        cur[1].append(code_block(buf, fm.group(1)))
+                        continue
+                    cur[0].append(ln.strip())
                 else:
                     break
                 i += 1
             if cur is not None:
-                items.append(" ".join(cur))
+                items.append(cur)
             tag = "ol" if ordered else "ul"
             attr = ' start="%s"' % start if ordered and start != "1" else ""
             out.append("<%s%s>%s</%s>"
-                       % (tag, attr, "".join(list_item(it, ctx) for it in items),
+                       % (tag, attr,
+                          "".join(list_item(" ".join(t), ctx, "".join(b))
+                                  for t, b in items),
                           tag))
             continue
 

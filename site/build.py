@@ -4,17 +4,18 @@
 The rule this generator exists to obey: **the canonical documents are the ones
 at the repository root, and nothing is ever copied beside them.** SPEC.md,
 RATIONALE.md, README.md and the attribution files are read where they live and
-rendered to HTML here; palette.json and font.bin -- the two normative data
+rendered to HTML here; palette.json and font.bin -- normative data
 files -- are read here too, and supply the site's own colours and lettering, so
 the page cannot drift from the spec it publishes even in its styling.
 
-The playable demo is built the same way: `moy.py export examples/verbs.moy`
-against the vendored runner/, so what a visitor plays is exactly the player
-this repository ships, at the commit they are reading.
+The playable demos are built the same way: `moy.py export` of each example
+cart against the vendored runner/, so what a visitor plays is exactly the player
+this repository ships, at the commit they are reading -- and each demo's picker
+shows the cart's own cover.png (SPEC.md 3.6).
 
     python3 site/build.py                 # -> _site/
     python3 site/build.py --out /tmp/x    # somewhere else
-    python3 site/build.py --no-demo       # skip the ~690 KB of player bundles
+    python3 site/build.py --no-demo       # skip the player bundles
 
 Everything it emits is generated. Do not edit _site/; edit the sources.
 """
@@ -41,7 +42,8 @@ BRANCH = "main"
 # The playable demos, hero first. A GAME leads (it is what makes a visitor stay);
 # the verb tour stays one click away because it doubles as the conformance suite
 # seed. Each is exported into its own folder by moy.py, so what you play is the
-# player this repo ships.
+# player this repo ships; each cart's cover.png is copied beside its bundle for
+# the picker to show.
 DEMOS = [
     ("play", "examples/brick_siege.moy", "Brick Siege",
      "a tank game &mdash; arrows drive and aim, Z fires"),
@@ -80,9 +82,14 @@ PAGES = {
 }
 
 NAV = [("index.html", "Home"), ("guide.html", "Guide"),
-       ("porting.html", "Porting"), ("pico8.html", "PICO-8"),
-       ("spec.html", "Spec"), ("rationale.html", "Rationale"),
-       ("index.html#play", "Play")]
+       ("compiled.html", "Compiled"), ("porting.html", "Porting"),
+       ("pico8.html", "PICO-8"), ("spec.html", "Spec"),
+       ("rationale.html", "Rationale"), ("index.html#play", "Play")]
+RELEASE = REPO + "/releases/tag/player-latest"
+
+# Normative data travels with the spec and is served beside it: the palette and
+# the font (SPEC.md 2, 6) and the compiled binding's import table (SPEC.md 16).
+DATA_FILES = ("palette.json", "font.bin", "wasm-imports.json")
 
 
 # --- the spec's own files drive the site: version, palette, font -------------
@@ -239,7 +246,7 @@ def toc_html(toc):
 def page(shell, *, title, desc, body, nav, core, cls="", wordmark=""):
     return fill(shell, TITLE=html.escape(title), DESC=html.escape(desc, quote=True),
                 BODY=body, NAV=nav, CLASS=cls, WORDMARK=wordmark, REPO=REPO,
-                IMPL=IMPL, CORETEXT=html.escape(core))
+                IMPL=IMPL, RELEASE=RELEASE, CORETEXT=html.escape(core))
 
 
 # --- the landing page --------------------------------------------------------
@@ -312,6 +319,12 @@ def console_facts(spec, ctx):
     return '<dl class="facts">%s</dl>' % "".join(out) if out else ""
 
 
+def demo_cover(cart):
+    """The demo cart's cover.png, or None for a cart without one."""
+    path = os.path.join(ROOT, cart, "cover.png")
+    return path if os.path.isfile(path) else None
+
+
 # --- build -------------------------------------------------------------------
 
 def build(out, demo=True):
@@ -360,18 +373,21 @@ def build(out, demo=True):
                 CORETEXT=html.escape(core),
                 DEMOTABS="\n".join(
                     '      <button class="demotab%s" data-src="%s/" '
-                    'data-cart="%s"><b>%s</b><span>%s</span></button>'
+                    'data-cart="%s">%s<span class="tx"><b>%s</b><span>%s</span>'
+                    '</span></button>'
                     % (" on" if i == 0 else "", slug, html.escape(cart),
-                       label, sub)
+                       '<img src="%s/cover.png" alt="" width="64" height="64">'
+                       % slug if demo_cover(cart) else "", label, sub)
                     for i, (slug, cart, label, sub) in enumerate(DEMOS)),
                 CART=html.escape(DEMO_CART),
                 CARTLINK="%s/tree/%s/%s" % (REPO, BRANCH, DEMO_CART),
-                REPO=REPO, IMPL=IMPL)
+                REPO=REPO, IMPL=IMPL, RELEASE=RELEASE)
     with open(os.path.join(out, "index.html"), "w", encoding="utf-8") as f:
         f.write(page(shell, title="moy %s — a portable console spec" % core,
                      desc="A small game console that exists as a spec: 320x240, "
-                          "64 colours, Lua carts that play on an ESP32 handheld, "
-                          "a PC simulator or a browser tab. Play one now.",
+                          "64 colours, carts in Lua or compiled WebAssembly that "
+                          "play on a PC, in a browser tab and on ESP32 consoles. "
+                          "Play one now.",
                      body=home, nav=nav_html("index.html"), cls="home",
                      core=core, wordmark=pixel_svg("moy", font)))
 
@@ -409,8 +425,7 @@ def build(out, demo=True):
                 '<g transform="translate(2 2)"><path fill="%s" d="%s"/></g></svg>'
                 % (pal[1], pal[10], inner))
 
-    # The normative data files travel with the spec (SPEC.md 2, 6).
-    for rel in ("palette.json", "font.bin"):
+    for rel in DATA_FILES:
         shutil.copy(os.path.join(ROOT, rel), os.path.join(out, rel))
     with open(os.path.join(out, ".nojekyll"), "w") as f:
         f.write("")
@@ -432,6 +447,9 @@ def build(out, demo=True):
             subprocess.run([sys.executable, os.path.join(ROOT, "moy.py"), "export",
                             os.path.join(ROOT, cart), dst],
                            check=True, cwd=ROOT)
+            cover = demo_cover(cart)
+            if cover:
+                shutil.copy(cover, os.path.join(dst, "cover.png"))
             missing = [n for n in need if not os.path.isfile(os.path.join(dst, n))]
             if missing:
                 raise SystemExit("demo bundle %s incomplete: %s"

@@ -7,8 +7,8 @@
       <div class="sub">{{SUB}}</div>
       <p class="cta">
         <a class="btn go" href="#play">Play a cart<span aria-hidden="true"> ▸</span></a>
-        <a class="btn" href="spec.html">Read the spec</a>
-        <a class="btn ghost" href="{{REPO}}">GitHub</a>
+        <a class="btn" href="{{RELEASE}}">Get moy</a>
+        <a class="btn ghost" href="spec.html">Read the spec</a>
       </p>
       <div class="statusline">{{STATUS}}</div>
     </div>
@@ -25,7 +25,8 @@
     <h2>Play one, right here</h2>
     <p class="note">Running in this repository's own player &mdash; the C console
       compiled to WebAssembly, served from this page and nowhere else. The same
-      code, compiled for ESP32 instead, draws the same pixels on a handheld.</p>
+      code, compiled for ESP32 instead, draws the same pixels on a handheld, and
+      <code>moy-play</code> draws them in a window on your desktop.</p>
     <div class="demotabs">
 {{DEMOTABS}}
     </div>
@@ -36,9 +37,9 @@
       <iframe src="play/" id="demo" title="The moy web player" loading="lazy"
               allow="autoplay"></iframe>
     </div>
-    <p class="hint">Under 400 KB of player and cart per demo.
+    <p class="hint">The whole player is under 450 KB of static files.
       <a id="demofull" href="play/">Open it full screen ↗</a> — and
-      <code>python3 moy.py export</code> turns any cart into exactly this.</p>
+      <code>moy export</code> turns any cart into exactly this.</p>
     <!-- Celeste is NOT one of the tabs above and must not become one: the
          ported cart is CC BY-NC-SA (Maddy Thorson & Noel Berry) and .gitignore
          forbids shipping it from this repo. So the demo is prominent as a
