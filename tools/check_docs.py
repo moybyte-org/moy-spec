@@ -284,8 +284,10 @@ VERSION_CONSTANTS = {
 # The ways the prose names a version. `\bcore` does not match inside "moycore",
 # which is what keeps hashes.json's "generated_by": "moycore 0.1.0" out of scope
 # -- that one is a record of what built the goldens, and is meant to stay put.
+# "draft <v>" is the status line README.md and SPEC.md's status block carry.
 SAYS_VERSION = re.compile(r"\bcore (\d+\.\d+)|\bpart of (\d+\.\d+)\b"
-                          r"|\bbuilt on (\d+\.\d+)\b")
+                          r"|\bbuilt on (\d+\.\d+)\b"
+                          r"|\b(?i:draft) (\d+\.\d+)")
 
 VERSION_SCAN = ("*.md", "*.py", "*.lua", "*.c", "*.h", "*.html")
 
