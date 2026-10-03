@@ -26,9 +26,10 @@ CLI supplies the loop around them.
     moy.py web <cart.moy> [port] the same cart in the BROWSER player instead:
                                  same hot reload, plus devtools, and it needs
                                  no moy-play built
-    moy.py export <cart.moy>     the publishable web bundle: ~300KB of static
-                                 files that boot straight into the game --
-                                 host anywhere (itch.io HTML5 uploads work)
+    moy.py export <cart.moy>     the publishable web bundle: a player under
+                                 450 KB and the cart, static files that boot
+                                 straight into the game -- host anywhere
+                                 (itch.io HTML5 uploads work)
     moy.py port <cart.p8|url>    convert a PICO-8 cart: assets via p8_import,
              [--title NAME]      code mechanically ported to Lua 5.4 under the
              [--zoom]            p8 compat shim (p8_lua_port). The cart draws

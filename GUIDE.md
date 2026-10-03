@@ -637,10 +637,13 @@ honour it. It is not a way to get a bigger window on a desktop — there the
 window already sizes itself to your display, and `--scale N` overrides that;
 all `--zoom` costs you on a desktop is the eight rows.
 
-Things that will not carry over unchanged: anything reaching for `peek`/`poke`
-or the PICO-8 memory map, `pget`, and code depending on 60 Hz. And note the
-licensing — BBS carts are personal/dev material and their default licence is
-CC BY-NC-SA.
+`peek`/`poke` and the rest of the memory map, `pget` and `_update60` all come
+across: a ported cart runs over a PICO-8 machine of its own. What does not is
+a multi-cart game, data unpacked with 16.16 fixed-point shifts, and the 64 × 64
+and rotated screen modes; the importer refuses those before it writes, and
+PICO8.md has the whole list. The cart's label becomes its `cover.png`. And note
+the licensing — BBS carts are personal/dev material and their default licence
+is CC BY-NC-SA.
 
 ### Gotchas
 

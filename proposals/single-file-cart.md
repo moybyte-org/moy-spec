@@ -18,7 +18,7 @@ Every small console that got adoption had exactly that artifact:
 | console | authoring form | shipping form |
 |---|---|---|
 | PICO-8 | `.p8` (text) | `.p8.png` |
-| TIC-80 | project dir | `.tic` |
+| TIC-80 | `.tic`, or one text file | `.tic` |
 | Playdate | source tree | `.pdx` bundle |
 | moy | `.moy/` folder | — |
 
