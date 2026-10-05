@@ -24,7 +24,7 @@ fi
 command -v emcc >/dev/null 2>&1 || {
   echo "build.sh: no emcc. Install emscripten, or set EMSDK to an emsdk checkout:" >&2
   echo "  git clone https://github.com/emscripten-core/emsdk && cd emsdk \\" >&2
-  echo "    && ./emsdk install latest && ./emsdk activate latest" >&2
+  echo "    && ./emsdk install 6.0.7 && ./emsdk activate 6.0.7   # tools/preflight.sh EMSDK_IMAGE" >&2
   exit 1
 }
 

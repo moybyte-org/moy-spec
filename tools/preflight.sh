@@ -19,8 +19,8 @@
 # machine had 6.0.4 and the committed player was built with 6.0.7, so building
 # locally would have silently DOWNGRADED the artifact while making CI green.
 # A pinned image is the only way the toolchain is a fact rather than whatever
-# was installed. (CI itself installs `emsdk latest`, which is how the pin moves;
-# when it does, bump EMSDK_IMAGE here and rebuild in the same commit.)
+# was installed. CI installs the version EMSDK_IMAGE names, read from this
+# file; moving the pin is bumping it here and rebuilding in the same commit.
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
