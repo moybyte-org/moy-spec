@@ -22,10 +22,10 @@
       "sha256": "088642c655180474bcda54183b253bf045c45d769507e14507f5d20339a6674c"
     }
   },
-  "inputs_sha256": "4f201a094eb6f580c7118412227fa09d98de6b7ea8bfd93c132b61fd1c054cbf",
+  "inputs_sha256": "aaf4671a70491d0fc445f3774b1f47c741d17fc58417ff963ad3df0d99e68e0d",
   "source": {
-    "branch": "saves",
-    "commit": "e8d4d267f8f59d3dd0b03c9dcc2b0cf5a2da01b5",
+    "branch": "main",
+    "commit": "876a631e4f913157a5f903c51286b1dfd7ae1e3e",
     "dirty": false
   },
   "toolchain": "emscripten 6.0.7"
