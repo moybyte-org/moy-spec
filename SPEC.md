@@ -224,6 +224,7 @@ Lua; §16.1 says what changes.
 | `format` | yes | `"moy-1"` |
 | `title` | yes | display name |
 | `author` | no | |
+| `id` | no | the cart's identity, `<author>.<name>` — see below |
 | `version` | no | integer, author's own versioning |
 | `main` | no | the cart's own script, default `main.lua` |
 | `sources` | no | every script the host loads, in order; default `[main]` — see §4 |
@@ -236,9 +237,18 @@ Lua; §16.1 says what changes.
 | `icon` | no | sheet tiles to show this cart by in a list — see §3.4 |
 | `writable` | no | a compiled cart's paths it may write — see §16.12 |
 
-A host MUST ignore manifest fields it does not recognise. Implementations hang
-vendor metadata there (the reference console records editor state in fields of its
-own), and future minor versions may add fields — neither may break an existing host.
+`id` names the cart across hosts and copies: two lowercase parts, each of `a`–`z`,
+`0`–`9` and `_`, joined by one dot — the author's handle, then the cart's own name
+(`kenny.star_catcher`). A host keys anything it keeps about a cart (saves, a
+library's rows, a gallery's listing) by `id` when the manifest has one, and by the
+cart's folder name without `.moy` when it does not. A copy that becomes a new cart (a
+remix) takes a new `id`; a copy that is the same cart keeps it.
+
+A host MUST ignore manifest fields it does not recognise. Future minor versions may
+add fields, and an implementation's own metadata goes under ONE top-level key named
+after the implementation (`"moybyte": {"type": "app"}`), never as loose top-level
+fields, so a future standard field can never collide with it — the same rule §10
+applies to extension names. Neither may break an existing host.
 
 **`runtime`, `sources` and an out-of-set `canvas` are the exceptions, refused or
 implemented rather than ignored** (for `canvas`, see §1; for `sources`, §4). Lua is
