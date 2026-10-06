@@ -39,13 +39,13 @@ on its own lists them all.
 ### Writing a game → **[GUIDE.md](GUIDE.md)**
 
 ```
-moy demo                 # fetch Celeste Classic, port it, play it
+moy demo                 # port Celeste Classic and play it (you download it)
 moy new mygame           # scaffold a Lua cart: manifest, main.lua, editor stubs
 moy play mygame.moy      # play it in a window, restarting as you save
 ```
 
-**Start with `moy demo`:** a real PICO-8 game running as a moy cart seconds
-after you ask, with nothing to set up first.
+**Start with `moy demo`:** a real PICO-8 game running as a moy cart, one
+download away. It tells you where to get the cart; nothing else to set up.
 
 Then your own. `moy play` restarts the game in under a second whenever you
 save a file in the cart, and `moy web` is the same loop in the browser player,
@@ -91,7 +91,7 @@ conformance checklist.
 
 ### Importing a PICO-8 cart → **[PICO8.md](PICO8.md)**
 
-`moy port cart.p8` turns a `.p8`, a BBS `.p8.png` or a BBS URL into a Lua
+`moy port cart.p8` turns a `.p8` or a BBS `.p8.png` into a Lua
 cart: the sheet, the map, the flags, the sfx and music, the label as its cover,
 and the cart's own code converted token by token, over a shim that implements
 PICO-8's verbs on the moy API. Most carts boot and play.

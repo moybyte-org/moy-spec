@@ -615,7 +615,7 @@ says so. Run it before every release; it is instant.
 ### Coming from PICO-8
 
 ```
-moy demo                    # fetch Celeste Classic, port it, play it
+moy demo                    # port Celeste Classic and play it (you download it)
 moy port cart.p8            # port a cart of your own -> cart.moy
 moy port cart.p8 --zoom     # ... and add the view() hint below
 moy demo --zoom             # the demo takes it too

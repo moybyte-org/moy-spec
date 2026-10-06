@@ -27,8 +27,10 @@ today, so a known failure does not break the build and a REGRESSION does. A
 cart that starts running fails too, asking for the file to be raised.
 
 THE CARTS ARE NOT IN THIS REPOSITORY. They are their authors' work, several
-under licences that forbid redistribution. Point --corpus at a directory of
-`.p8` / `.p8.png` files; without one this skips and says so.
+under licences that forbid redistribution, and the BBS's terms ask that no
+script fetch them, so CI cannot run this: it is a local gate. Point --corpus at
+a directory of `.p8` / `.p8.png` files downloaded by hand (`p8_corpus.py` beside
+this lists the links); without one this skips and says so.
 """
 import argparse
 import hashlib
@@ -131,8 +133,8 @@ def main(argv):
     ap = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
-    # Same default the fetcher writes to, so `fetch_p8_corpus.py && make
-    # p8-carts` works with no environment at all -- which is what CI does.
+    # The same default `p8_corpus.py` checks, so carts saved there by hand
+    # need no environment at all.
     ap.add_argument("--corpus", default=(
         os.environ.get("MOY_P8_CORPUS")
         or os.path.join(os.path.expanduser("~"), ".cache", "moy", "p8")))
@@ -140,7 +142,9 @@ def main(argv):
     args = ap.parse_args(argv[1:])
 
     if not args.corpus or not os.path.isdir(args.corpus):
-        print("no cart corpus (--corpus DIR or MOY_P8_CORPUS); skipping")
+        print("no cart corpus (--corpus DIR or MOY_P8_CORPUS); skipping.\n"
+              "  python3 conformance/p8_corpus.py lists the carts to download"
+              " by hand")
         return 0
     if not os.path.exists(RUN_CART):
         print("libmoy/build/run_cart is not built -- `make -C libmoy lua`")
@@ -150,7 +154,8 @@ def main(argv):
     carts = sorted(f for f in os.listdir(args.corpus)
                    if f.endswith(".p8") or f.endswith(".p8.png"))
     if not carts:
-        print("no carts in %s; skipping" % args.corpus)
+        print("no carts in %s; skipping (conformance/p8_corpus.py lists"
+              " them)" % args.corpus)
         return 0
 
     expected = {}

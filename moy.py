@@ -30,15 +30,18 @@ CLI supplies the loop around them.
                                  450 KB and the cart, static files that boot
                                  straight into the game -- host anywhere
                                  (itch.io HTML5 uploads work)
-    moy.py port <cart.p8|url>    convert a PICO-8 cart: assets via p8_import,
+    moy.py port <cart.p8>        convert a PICO-8 cart (.p8, or a .p8.png
+                                 downloaded from the BBS): assets via p8_import,
              [--title NAME]      code mechanically ported to Lua 5.4 under the
              [--zoom]            p8 compat shim (p8_lua_port). The cart draws
                                  native 128x128 (manifest canvas, SPEC.md 3.1);
                                  --zoom adds the view(128,120) hint so 4:3
                                  hosts fill their height (SPEC.md 6)
-    moy.py demo                  fetch Celeste Classic (PICO-8), port it, play
-          [--web [port]]         it in the NATIVE player -- the one-command
-          [--zoom] [--scale N]   show-off. --web opens the browser player
+    moy.py demo [cart.p8.png]    port Celeste Classic (PICO-8) and play it in
+          [--web [port]]         the NATIVE player -- the show-off. You
+          [--zoom] [--scale N]   download the cart, it says where from; it
+                                 looks in this folder and ~/Downloads, or
+                                 takes the file. --web opens the browser player
                                  instead, which is also the fallback where
                                  moy-play is not built; --zoom crops 8 p8 rows
                                  so a 4:3 HANDHELD fills its height (it does
@@ -417,7 +420,11 @@ def cmd_export(args):
 
 # --- port / demo (PICO-8) ----------------------------------------------------
 
+# moy downloads nothing from the BBS: Lexaloffle's terms of use ask that no
+# script or third-party client fetch from it without permission. These are
+# links for a PERSON to open, and the name a browser saves the cart under.
 CELESTE_URL = "https://www.lexaloffle.com/bbs/cposts/1/15133.p8.png"
+CELESTE_FILE = "15133.p8.png"
 # The only shape --zoom accepts as its argument. Anything else after the
 # flag belongs to somebody else (p8_lua_port.parse_zoom agrees).
 ZOOM_SPEC = re.compile(r"^\d+,\d+$")
@@ -442,17 +449,14 @@ def cmd_port(args):
         args = [a for a in args if not ("," in a and a.replace(",", "").isdigit())]
     force = "--force" in sys.argv
     if not args:
-        die("usage: moy.py port <cart.p8 | url> [out.moy]"
+        die("usage: moy.py port <cart.p8 | cart.p8.png> [out.moy]"
             " [--title NAME] [--zoom [T,B]] [--force]")
     src = args[0]
     if src.startswith(("http://", "https://")):
-        import urllib.request
-        local = os.path.abspath(os.path.basename(src.split("?")[0]) or "cart.p8")
-        print("fetching %s" % src)
-        req = urllib.request.Request(src, headers={"User-Agent": "moy-cli"})
-        with urllib.request.urlopen(req) as r, open(local, "wb") as f:
-            f.write(r.read())
-        src = local
+        die("port takes a file, not a URL -- moy downloads nothing from the"
+            " BBS (its terms ask for a person, not a script).\n"
+            "  Open %s in your browser, save the file, then:\n"
+            "    %s port <the saved file>" % (src, PROG))
     src = os.path.abspath(src)
     if not os.path.isfile(src):
         die("no such .p8: " + src)
@@ -471,7 +475,11 @@ def cmd_port(args):
 
 
 def cmd_demo(args):
-    """Fetch + port + play Celeste Classic -- the one-command demo.
+    """Port + play Celeste Classic -- the show-off demo.
+
+    The cart comes from the person, not from us: moy fetches nothing from the
+    BBS, so the demo looks for the file a browser saves (CELESTE_FILE) here and
+    in ~/Downloads, takes a path, and otherwise says where to download it.
 
     It plays in the NATIVE player when there is one: a desktop program that
     answers by opening a browser tab is a surprise nobody asked for. The tab
@@ -483,10 +491,10 @@ def cmd_demo(args):
     forwarded -- so `demo --zoom 2`, a mistyping of the T,B form, left a bare
     "2" that the browser player took for a PORT number and died on, privileged
     and with a traceback. A guess about what an argument meant is how that
-    happens; there are five of them, so name them.
+    happens; there are only a handful, so name them.
     """
     PLAYER_FLAGS = {"--scale": 1, "--fullscreen": 0}
-    web, zoom, player, port = False, [], [], []
+    web, zoom, player, port, src = False, [], [], [], None
     i = 0
     while i < len(args):
         a = args[i]
@@ -507,8 +515,11 @@ def cmd_demo(args):
                 if i >= len(args):
                     die("%s wants a value: `%s demo %s 5`" % (a, PROG, a))
                 player.append(args[i])
+        elif a.endswith((".p8", ".p8.png")):
+            src = a
         else:
             die("demo: don't know what to do with %r.\n"
+                "  cart.p8.png    the Celeste Classic cart you downloaded\n"
                 "  --zoom [T,B]   crop 8 p8 rows so a 4:3 HANDHELD fills its "
                 "height\n"
                 "                 (it does not enlarge a desktop window -- "
@@ -525,8 +536,23 @@ def cmd_demo(args):
     # --zoom belongs to the PORT, not to the playing, so it is split out here --
     # and it re-ports when asked for, or the flag would silently do nothing on
     # a second `demo` (the cart is already on disk, ported at the other scale).
-    if zoom or not os.path.isdir(out):
-        cmd_port([CELESTE_URL, "celeste"] + zoom)
+    if src or zoom or not os.path.isdir(out):
+        if src is None:
+            for d in (os.getcwd(), os.path.join(os.path.expanduser("~"),
+                                                "Downloads")):
+                if os.path.isfile(os.path.join(d, CELESTE_FILE)):
+                    src = os.path.join(d, CELESTE_FILE)
+                    break
+        if src is None:
+            die("Celeste Classic is not here yet, and moy downloads nothing"
+                " from the BBS.\n"
+                "  Download it in your browser (one file):\n"
+                "    %s\n"
+                "  then run `%s demo` again -- it looks in this folder and in"
+                " ~/Downloads --\n"
+                "  or name the file: `%s demo path/to/%s`"
+                % (CELESTE_URL, PROG, PROG, CELESTE_FILE))
+        cmd_port([src, "celeste"] + zoom)
     else:
         print("using existing %s" % out)
 

@@ -9,8 +9,8 @@
     pixel off reads the ring into the label's edge and fails. Then every real
     cartridge to hand -- the conformance corpus (MOY_P8_CORPUS, else
     ~/.cache/moy/p8) and 15133.p8.png, Celeste Classic, in the repository root
-    when `moy demo` left it there -- is held to the template that region
-    assumes: the one-pixel ring around the label all the cartridge's frame
+    when it was downloaded there for `moy demo` -- is held to the template that
+    region assumes: the one-pixel ring around the label all the cartridge's frame
     colour, which no label pixel is, and the cartridge's grey two pixels out;
     every label pixel one of PICO-8's 32 colours on its high six bits, or the
     green PICO-8 used before it changed it.

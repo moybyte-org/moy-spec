@@ -42,4 +42,5 @@ compiled player without one.
 Carts produced by `moy.py port` / `moy.py demo` are derivative works of their
 PICO-8 originals and carry the original's license — **not** this repository's.
 PICO-8 BBS carts default to CC BY-NC-SA 4.0. No ported cart is committed to this
-repository; `moy.py demo` regenerates one locally on request.
+repository; `moy.py demo` regenerates one locally from a cart the user
+downloads.

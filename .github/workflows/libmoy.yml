@@ -79,30 +79,13 @@ jobs:
         run: make conform-lua
         working-directory: libmoy
 
-      # THE PORTER, against real PICO-8 carts, on this VM. p8_lua_port.py lives
-      # in this repository and hosts vendor it, so without this a porter bug is
-      # only noticed at the next re-vendor -- the delay conform-lua exists to
-      # close for the C. And the VM is the point: LUA_32BITS makes lua_Number a
-      # single-precision float, so a fixed-point implementation of p8's bitwise
-      # operators that is correct on a 64-bit Lua returns 0 here.
-      #
-      # The carts are NOT in this repository -- they are their authors' work.
-      # p8_corpus.json holds the links; the cache means a green run costs the
-      # BBS nothing, and the fetcher never fails the build over someone else's
-      # hosting. A cart that cannot be downloaded is simply skipped, and the
-      # ratchet only judges carts that arrived.
-      - name: Cache the PICO-8 cart corpus
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/moy/p8
-          key: p8-corpus-${{ hashFiles('conformance/p8_corpus.json') }}
-
-      - name: Fetch the PICO-8 cart corpus
-        run: python3 conformance/fetch_p8_corpus.py
-
-      - name: Imported PICO-8 carts run under libmoy
-        run: make p8-carts
-        working-directory: libmoy
+      # THE PORTER against real PICO-8 carts (`make p8-carts`) does NOT run
+      # here. The carts are their authors' work and are not in this
+      # repository, and the Lexaloffle BBS's terms ask that no script fetch
+      # from it -- so that gate is local: download the corpus by hand
+      # (`conformance/p8_corpus.py` lists the links) and `make test` or
+      # tools/preflight.sh runs it. The porter's own fixtures still run here,
+      # in `make p8-test` below.
 
       # SPEC.md 4's `sources`: several scripts, in order, each its own chunk.
       # Not something the goldens can reach -- a host that concatenated the

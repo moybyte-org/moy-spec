@@ -14,15 +14,17 @@ is a single executable and needs no Python:
 
 ```
 moy port cart.p8                       # -> cart.moy, beside it
-moy port https://www.lexaloffle.com/bbs/cposts/1/15133.p8.png
+moy port 15133.p8.png                  # a BBS cart you downloaded
 moy port cart.p8 out.moy --title "Name"
 moy play cart.moy                      # and there it is
 ```
 
-It takes a BBS URL directly, so converting somebody's cart is one line with
-nothing checked out. `moy demo` does the whole thing end to end — fetches
-Celeste Classic, ports it, plays it — if you would rather see it than read
-about it.
+It takes a file, never a URL: moy downloads nothing from the BBS, whose
+[terms of use](https://www.lexaloffle.com/info.php?page=tos) ask for a person
+in a browser, not a script. Download the cart from its BBS page, then port it.
+`moy demo` does the rest end to end for Celeste Classic — it says where to
+download the cart, then ports it and plays it — if you would rather see it
+than read about it.
 
 `--zoom` adds the `view(128,120)` hint, which crops 8 PICO-8 rows so a 4:3
 handheld fills its height instead of letterboxing. It does not change a desktop
@@ -403,9 +405,10 @@ sixteen: a raycaster, a world-gen sim, a minified bytecode VM, carts whose
 graphics live in packed strings. The last four came off PICO-8's own front
 page on 2026-09-12 and each earned its place by being the only cart here that
 reached a particular dialect bug. They are not in this repository — see
-[`conformance/p8_corpus.json`](conformance/p8_corpus.json) for the links and
-`conformance/fetch_p8_corpus.py` to cache them. `make -C libmoy p8-carts` runs
-the gate.
+[`conformance/p8_corpus.json`](conformance/p8_corpus.json) for the links;
+`conformance/p8_corpus.py` lists the ones a directory lacks, to download by
+hand (nothing here fetches from the BBS, CI included). `make -C libmoy
+p8-carts` runs the gate on what you have downloaded.
 
 **The gate is weak on purpose and you should not read it as "plays" — and
 least of all as "plays on a board".** Two of the carts below pass every column
