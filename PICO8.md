@@ -516,8 +516,7 @@ first update, back when the shim kept the clock.
 
 **PICO-8 BBS carts default to CC BY-NC-SA 4.0.** A converted cart is dev and
 test material unless its own licence says otherwise: keep it out of anything you
-ship, and put an attribution note beside it. The emitted manifest sets
-`safe_to_share: false` so a host never has to infer that.
+ship, and put an attribution note beside it.
 
 ## A note for whoever maintains this
 
