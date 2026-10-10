@@ -248,12 +248,24 @@ def check_module(blob, manifest, findings, table=None):
                          "section %d is past the wasm32 MVP profile SPEC.md "
                          "16.2 pins" % later[0]))
 
+    declared = manifest.get("extensions")
+    declared = set(e for e in declared if isinstance(e, str)) \
+        if isinstance(declared, (list, tuple)) else set()
+    by_ext = {}
     for m, name, kind, desc in mod["imports"]:
         where = "%s.%s" % (m, name)
-        if m != IMPORT_MODULE:
+        if m != IMPORT_MODULE and m in declared:
+            if kind != "func":
+                findings.append(("error", "wasm.import",
+                                 "imports %s as a %s; an extension's module "
+                                 "holds only functions" % (where, kind)))
+            else:
+                by_ext.setdefault(m, []).append(name)
+        elif m != IMPORT_MODULE:
             findings.append(("error", "wasm.import",
                              'imports %s; a compiled cart imports only from '
-                             'module "%s"' % (where, IMPORT_MODULE)))
+                             'module "%s" and the extensions it declares'
+                             % (where, IMPORT_MODULE)))
         elif kind != "func":
             findings.append(("error", "wasm.import",
                              "imports %s as a %s; the table holds only "
@@ -269,6 +281,13 @@ def check_module(blob, manifest, findings, table=None):
                                  "imports %s as %s; the table says %s"
                                  % (where, _sig(got) if got else "?",
                                     _sig(table[name]))))
+
+    for m in sorted(by_ext):
+        findings.append(("warn", "wasm.extension",
+                         "imports %s from extension %s, whose table is its "
+                         "vendor's and not checked here: the cart runs only on "
+                         "hosts carrying %s (SPEC.md 16.2)"
+                         % (", ".join(by_ext[m]), m, m)))
 
     writes = sorted(set(n for m, n, k, _ in mod["imports"]
                         if m == IMPORT_MODULE and n in ("write", "erase")))

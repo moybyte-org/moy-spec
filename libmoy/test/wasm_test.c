@@ -1093,6 +1093,59 @@ static void files_store(void)
 
 static NativeSymbol *natives;   /* WAMR sorts it in place and keeps it */
 
+static int32_t ext_ping(wasm_exec_env_t env, int32_t v) { (void)env; return v + 1; }
+
+/* An import from a vendor extension's module: refused with no extension
+ * table, typed against one, refused again by a table at another type or of
+ * another module; under WAMR, linked only once the host registers the
+ * extension's natives. */
+static void extensions(void)
+{
+    static NativeSymbol ext_rows[] = { { "ping", __extension__ (void *)ext_ping, "(i)i", NULL } };
+    static const NativeSymbol wrong_type[] = { { "ping", NULL, "(f)i", NULL } };
+    const moy_wasm_ext ext = { "test.ext", ext_rows, 1 };
+    const moy_wasm_ext typed = { "test.ext", wrong_type, 1 };
+    const moy_wasm_ext other = { "other.ext", ext_rows, 1 };
+    char path[1024], err[256];
+    uint32_t n = 0, pages;
+    uint8_t *bytes;
+    loaded l;
+    snprintf(cart, sizeof cart, "%s/ext_import.moy", dir);
+    snprintf(path, sizeof path, "%s/main.wasm", cart);
+    pages = manifest_pages(cart);
+    bytes = slurp(path, &n);
+    CHECK(bytes != NULL, "ext_import: no module");
+    if (!bytes) return;
+    err[0] = 0;
+    CHECK(moy_wasm_check_bytes(bytes, n, pages, err, sizeof err) != 0
+          && strstr(err, "test.ext.ping"), "ext_import: passed with no extension (%s)", err);
+    err[0] = 0;
+    CHECK(moy_wasm_check_bytes_ext(bytes, n, pages, &ext, 1, err, sizeof err) == 0,
+          "ext_import: refused with its extension's table: %s", err);
+    CHECK(moy_wasm_check_bytes_ext(bytes, n, pages, &typed, 1, err, sizeof err) != 0
+          && strstr(err, "its extension's table"), "ext_import: passed at another type");
+    CHECK(moy_wasm_check_bytes_ext(bytes, n, pages, &other, 1, err, sizeof err) != 0,
+          "ext_import: passed with another extension's table");
+    free(bytes);
+    if (load(path, &l, err, sizeof err) == 0) {
+        CHECK(moy_wasm_check_ext(l.module, l.copy, l.size, pages, &ext, 1, err, sizeof err) != 0,
+              "ext_import: linked with no natives registered");
+        unload(&l);
+    }
+    CHECK(wasm_runtime_register_natives("test.ext", ext_rows, 1), "ext_import: natives");
+    if (load(path, &l, err, sizeof err) == 0) {
+        err[0] = 0;
+        CHECK(moy_wasm_check(l.module, l.copy, l.size, pages, err, sizeof err) != 0,
+              "ext_import: moy_wasm_check passed it with no extension table");
+        CHECK(moy_wasm_check_ext(l.module, l.copy, l.size, pages, &ext, 1, err, sizeof err) == 0,
+              "ext_import: refused once linked: %s", err);
+        unload(&l);
+    } else {
+        CHECK(0, "ext_import: did not load: %s", err);
+    }
+    printf("  ok   an extension's import is typed against its table, and only with it\n");
+}
+
 int main(int argc, char **argv)
 {
     static const char *const REFUSED[] = {
@@ -1132,6 +1185,8 @@ int main(int argc, char **argv)
     crc = hello(argv[2]);
     printf("wasm test: the refusal carts\n");
     for (i = 0; i < sizeof REFUSED / sizeof REFUSED[0]; i++) refused(REFUSED[i]);
+    printf("wasm test: a vendor extension's imports\n");
+    extensions();
     printf("wasm test: traps and quit\n");
     traps("trap_outside_draw", 2, "blit outside _draw");
     traps("trap_bounds", 3, "out of bounds");

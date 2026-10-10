@@ -1107,6 +1107,10 @@ cart's code — rather than its manifest — the place portability is declared. 
 manifest is the honest place: one line says what this cart needs, and a host can
 refuse it before a single frame runs.
 
+A compiled cart reaches an extension's verbs through imports, and there the name
+is the namespace: they come from the import module the extension names, beside
+`"moy"` (§16.2).
+
 (`layers` used to be a standard extension here. It is core now — see §6 — because
 measurement put a full-screen layer inside the 400 KB floor, so requiring hosts to
 negotiate it was buying nothing.)
@@ -1433,10 +1437,18 @@ always-readable tier is the Lua cart.
   row's exact type.** A cart imports only the rows it uses. The Lua build is
   `LUA_32BITS` (§4.2), so the two bindings already share a numeric world; nothing
   widens.
+- **Extension modules.** A cart may also import functions from a module named by
+  a vendor extension (§10) its manifest declares: the module's name is the
+  extension's (`vendor.feature`, e.g. `moybyte.app`), and its rows — names,
+  types, meanings — are the vendor's, never this specification's. A host carrying
+  the extension types each such import against that extension's table as it types
+  a `"moy"` one; a host without the extension refuses the cart before it runs, as
+  §10 has it refuse any extension it lacks. How a host binds those imports is its
+  own.
 - **No other imports exist.** That sentence is the entire §4.1 sandbox for this
-  binding. A module that imports anything else — from another module, a memory, a
-  global, a table, a name outside the table, a row at the wrong type — is refused
-  before it runs.
+  binding. A module that imports anything else — from a module neither `"moy"` nor
+  a declared extension's, a memory, a global, a table, a name outside its
+  module's table, a row at the wrong type — is refused before it runs.
 
 Any toolchain that emits that profile makes a cart, and none needs an SDK. For C
 and C++, `moy_cart.h` declares every import; with clang it is one command (the two

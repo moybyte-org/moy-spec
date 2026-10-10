@@ -436,6 +436,14 @@ declare nothing — which means your extra capabilities can light up on your
 console without making a cart non-portable. That is the pattern to document for
 your users.
 
+A compiled cart reaches an extension's verbs by importing them from the module
+the extension names (SPEC.md §16.2). libmoy types those imports for you: hand
+`moy_wasm_check_bytes_ext` (or, over WAMR, `moy_wasm_check_ext`) a
+`moy_wasm_ext` per extension you carry that the cart declares, its rows in the
+same `NativeSymbol` form as the `"moy"` table, and register them with the
+engine under the extension's module name before the load. How a row is served —
+which thread runs it, what it may touch — is yours.
+
 ## Getting carts onto the device
 
 SPEC.md says nothing about how a cart travels, and that stays true. What exists

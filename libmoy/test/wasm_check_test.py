@@ -26,9 +26,11 @@ import wat                                   # noqa: E402
 from moycore import wasm as mw               # noqa: E402
 from moycore import check as mc              # noqa: E402
 
-# fixture -> the finding code it must be refused with; None passes.
+# fixture -> the finding code it must be refused with; None passes; a
+# ("warn", code) passes with that warning.
 EXPECT = {
     "hello": None,
+    "ext_import": ("warn", "wasm.extension"),
     "foreign_import": "wasm.import",
     "unknown_import": "wasm.import",
     "memory_mismatch": "wasm.memory",
@@ -62,7 +64,13 @@ def fixtures(scratch):
         want = EXPECT.get(name)
         errors = [ln for ln in out.splitlines() if ln.strip().startswith("error")]
         warnings = [ln for ln in out.splitlines() if ln.strip().startswith("warn")]
-        if want is None:
+        if isinstance(want, tuple):
+            got = [ln.split()[1].rstrip(":") for ln in warnings]
+            if rc != 0 or errors or got != [want[1]]:
+                fail("%s should pass warned %s, got rc=%d:\n%s" % (name, want[1], rc, out))
+            else:
+                print("  ok   %s passes, warned (%s)" % (name, want[1]))
+        elif want is None:
             if rc != 0 or errors or warnings or not out.rstrip().endswith("OK."):
                 fail("%s should pass with no warning, got rc=%d:\n%s" % (name, rc, out))
             elif "imports 19 of the table's" not in out:
@@ -119,6 +127,21 @@ def cases():
                               '(func (export "_init")) (func (export "_update")'
                               ' (param f32)) (func (export "_draw")))'), m2),
            "wasm.memory")
+    ext = '(import "test.ext" "ping" (func (param i32) (result i32)))'
+    expect("an extension's import, undeclared",
+           codes(module(ok_mem, ext), m2), "wasm.import")
+    expect("an extension's import, declared",
+           codes(module(ok_mem, ext), dict(m2, extensions=["test.ext"])), None)
+    warned = [c for lvl, c, _ in mw.check_module(
+        module(ok_mem, ext), dict(m2, extensions=["test.ext"]), []) if lvl == "warn"]
+    if warned != ["wasm.extension"]:
+        fail("a declared extension's import: want one wasm.extension warning, got %s"
+             % warned)
+    else:
+        print("  ok   a declared extension's import is reported")
+    expect("a global from a declared extension's module",
+           codes(module(ok_mem, '(import "test.ext" "G" (global i32))'),
+                 dict(m2, extensions=["test.ext"])), "wasm.import")
     expect("a name outside the table",
            codes(module(ok_mem, '(import "moy" "poke" (func (param i32 i32)))'),
                  m2), "wasm.import")

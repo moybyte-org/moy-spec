@@ -24,8 +24,9 @@ THE FLAGS, each for a reason the reference console measured (moybyte#158):
     blocks clang's estimate calls cold, and stayed calls -- one per pixel.
   * no WASI: wasi-libc and libc++ are linked statically for the containers,
     strings and maths, and `src/runtime.c` answers the handful of calls they
-    make to an operating system, so the module imports only from "moy". The
-    build refuses a module that imports anything else, naming the import.
+    make to an operating system, so the module imports only from "moy" and
+    the vendor extensions its manifest declares (SPEC.md 16.2). The build
+    refuses a module that imports anything else, naming the import.
   * the memory is the manifest's, minimum and maximum, laid out stack first
     (an overflow leaves linear memory and traps rather than running into the
     data), then the static data, then the heap to the end.
@@ -510,11 +511,14 @@ def build(cart, stack=DEFAULT_STACK, log=say, sdk=None, jobs=None):
         raise BuildError(text)
     with open(out, "rb") as f:
         wasm = f.read()
-    foreign = [(m, n) for m, n in module_imports(wasm) if m != "moy"]
+    declared = manifest(cart).get("extensions")
+    declared = set(declared) if isinstance(declared, list) else set()
+    foreign = [(m, n) for m, n in module_imports(wasm)
+               if m != "moy" and m not in declared]
     if foreign:
         raise BuildError(
-            "the module imports %s, and a cart imports only from \"moy\" (SPEC.md "
-            "16.2). Something in src/ reached the operating system -- a clock, an "
+            "the module imports %s, and a cart imports only from \"moy\" and the "
+            "extensions its manifest declares (SPEC.md 16.2). Something in src/ reached the operating system -- a clock, an "
             "environment variable, a file or exit(): use the console's verbs "
             "instead (moy_time() is the clock, moy_read() the cart's own files), "
             "and keep src/runtime.c, which answers the C library's own calls."
