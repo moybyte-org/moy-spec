@@ -74,8 +74,8 @@
     {
       "name": "fillp",
       "core": true,
-      "calls": 48,
-      "frame_sha256": "a2ac89ec6d266e7efab1df172384ec5393f1bb5b0919647eb904b823b5bbe605",
+      "calls": 75,
+      "frame_sha256": "090420e92d86b6e87a47253bcf6b9475728cb060ee5268afb378318f88e9cf1b",
       "note": "The fill pattern (SPEC.md 6): a set bit is a hole, a hole takes\nthe second colour or nothing, the pattern is anchored to the\nSCREEN through camera and clip, every shape verb honours it and\npix, print, sprites and the map do not."
     },
     {

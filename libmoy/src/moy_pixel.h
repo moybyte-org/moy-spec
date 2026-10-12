@@ -78,8 +78,65 @@ static inline void moy_ds_put_shape(const moy_ds *d, int x, int y, moy_pixel v)
 
 static inline void moy_fill(moy_pixel *dst, moy_pixel v, size_t n);
 
+/* The opaque pattern lane: a span whose holes take a colour is periodic in 4
+ * pixels, so it is written as whole words exactly as moy_fill writes a solid
+ * run -- two alternating words on the 565 build, one on the index build. `q`
+ * holds the span's own first eight pixels, so the head, the words and the tail
+ * all read from it and the screen anchoring is decided once. */
+static inline void moy_pat_span(moy_pixel *dst, int x, unsigned rowbits,
+                                moy_pixel on, moy_pixel off, size_t n)
+{
+    moy_pixel q[8];
+    size_t i, k = 0;
+    for (i = 0; i < 8; i++)
+        q[i] = ((rowbits >> (3 - ((x + (int)i) & 3))) & 1u) ? off : on;
+    if (n < 8) {
+        for (i = 0; i < n; i++) dst[i] = q[i];
+        return;
+    }
+#ifdef MOY_PIXEL_RGB565
+    if ((uintptr_t)(void *)dst & 3u) { *dst++ = q[0]; n--; k = 1; }
+    {
+        uint32_t w0, w1;
+        memcpy(&w0, &q[k], 4);
+        memcpy(&w1, &q[k + 2], 4);
+        while (n >= 8) {
+            uint32_t *w = (uint32_t *)(void *)dst;
+            w[0] = w0; w[1] = w1; w[2] = w0; w[3] = w1;
+            dst += 8;
+            n -= 8;
+        }
+        if (n >= 4) {
+            uint32_t *w = (uint32_t *)(void *)dst;
+            w[0] = w0; w[1] = w1;
+            dst += 4;
+            n -= 4;
+        }
+    }
+#else
+    while ((uintptr_t)(void *)dst & 3u) { *dst++ = q[k++]; n--; }
+    {
+        uint32_t w0;
+        memcpy(&w0, &q[k], 4);
+        while (n >= 16) {
+            uint32_t *w = (uint32_t *)(void *)dst;
+            w[0] = w0; w[1] = w0; w[2] = w0; w[3] = w0;
+            dst += 16;
+            n -= 16;
+        }
+        while (n >= 4) {
+            *(uint32_t *)(void *)dst = w0;
+            dst += 4;
+            n -= 4;
+        }
+    }
+#endif
+    for (i = 0; i < n; i++) dst[i] = q[k + i];
+}
+
 /* An already-clipped SCREEN-space span for a shape verb: n pixels from
- * (px0, py). Solid is moy_fill; a pattern walks the row. */
+ * (px0, py). Solid is moy_fill; an opaque pattern is moy_pat_span; a pattern
+ * with untouched holes walks the row. */
 static inline void moy_ds_span(const moy_ds *d, int px0, int py, size_t n, moy_pixel v)
 {
     moy_pixel *row = d->pix + (size_t)py * (size_t)d->cw + (size_t)px0;
@@ -90,14 +147,12 @@ static inline void moy_ds_span(const moy_ds *d, int px0, int py, size_t n, moy_p
     {
         unsigned rowbits = (d->pat >> (12 - ((py & 3) << 2))) & 15u;
         size_t i;
-        for (i = 0; i < n; i++) {
-            int x = px0 + (int)i;
-            if ((rowbits >> (3 - (x & 3))) & 1u) {
-                if (d->hole_on) row[i] = d->hole;
-            } else {
-                row[i] = v;
-            }
+        if (d->hole_on) {
+            moy_pat_span(row, px0, rowbits, v, d->hole, n);
+            return;
         }
+        for (i = 0; i < n; i++)
+            if (!((rowbits >> (3 - ((px0 + (int)i) & 3))) & 1u)) row[i] = v;
     }
 }
 

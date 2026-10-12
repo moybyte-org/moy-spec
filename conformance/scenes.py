@@ -452,6 +452,14 @@ def fillp_scene(c, sheet, tilemap):
     c.rect(248, 140, 40, 24, 8)
     c.fillp(0x1A5A5)                               # bits above 15 are ignored
     c.rect(8, 180, 40, 24, 8)
+    c.fillp(0x1E87, 3)                             # an opaque pattern that no shift
+    x = 56                                         # maps onto itself, at every start
+    for w in (1, 2, 3, 4, 5, 7, 8, 9, 13, 16, 17, 31):  # phase and across the width
+        c.rect(x, 180, w, 10, 8)                   # classes a span is written in
+        c.rect(x + 1, 194, w, 10, 8)
+        x += w + 3
+    c.circ(28, 222, 13, 10)
+    c.tri(60, 210, 101, 236, 47, 236, 10)
     c.fillp()
 
 
