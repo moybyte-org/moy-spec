@@ -136,7 +136,10 @@ fractional bitmask, and that is the one class the verdict refuses outright.
 hides in the bottom half of `__gfx__`), sprite flags as `flags.moyflags`, all
 64 sfx with their per-sfx filters and custom instruments, and the music
 patterns. The manifest ships PICO-8's palette with its sixteen secret colours
-at 16–31, so `pal(c, 128 + i)` lands on the real colour.
+at 16–31, so `pal(c, 128 + i)` lands on the real colour, and the tag `pico8`
+(`"tags": ["pico8"]`), which SPEC.md §3.7 reserves for a converted cart, so a
+store's filter finds every port. The author adds a genre and a description; a
+PICO-8 cart carries neither.
 
 **The label, as the cover.** A PICO-8 label is 128 × 128, which is exactly a
 cover's size (SPEC.md §3.6), so it becomes `cover.png` pixel for pixel: indexed,

@@ -35,7 +35,7 @@ LUA_OBJ  := $(LUA_SRC:.c=.o)
 LUA_CFLAGS := -std=c99 -O2 -w -I$(LUA_DIR)
 RUNCART  := build/run_cart
 
-.PHONY: all clean data conform conform-lua test lua play audio-test p8-carts float-fold sources-test wasm-check wasm-test wasm-table wamr compiled-test compiled-test-offline cover-test
+.PHONY: all clean data conform conform-lua test lua play audio-test p8-carts float-fold sources-test wasm-check wasm-test wasm-table wamr compiled-test compiled-test-offline cover-test manifest-test
 
 all: $(LIB) $(REPLAY)
 
@@ -355,7 +355,13 @@ compiled-test-offline:
 cover-test:
 	python3 test/cover_test.py
 
-test: conform conform-lua ext-test sources-test audio-test lowres spr-sweep p8-test p8-carts wasm-check wasm-table compiled-test-offline cover-test
+# SPEC.md 3.7's description, genre and tags: moycore's reading, `moy check`'s
+# warnings, the index entry cartindex writes and checks, and the importer's
+# reserved `pico8` tag. Python only.
+manifest-test:
+	python3 test/manifest_test.py
+
+test: conform conform-lua ext-test sources-test audio-test lowres spr-sweep p8-test p8-carts wasm-check wasm-table compiled-test-offline cover-test manifest-test
 
 clean:
 	rm -f $(OBJ) $(LUA_OBJ) src/moy_lua.o src/moy_p8.o $(LIB)

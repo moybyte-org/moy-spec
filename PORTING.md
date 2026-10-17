@@ -119,6 +119,7 @@ they are not symmetric:
 | `"canvas"` outside the closed set | **refuse the cart** (§1) — running at a size it did not ask for breaks every coordinate |
 | `"sources"` listing several scripts | **run them all, in order, each its own chunk** (§4); refuse a list that omits `main` or names a file the folder lacks |
 | an `"icon"` out of range or past the sheet | **ignore it** and choose your own (§3.4) |
+| a `"genre"` off §3.7's list, a tag off its rule, a `"description"` past 240 bytes | **ignore** the genre and that tag, **cut** the description (§3.7) |
 | a `cover.png` outside §3.6's profile, or one that fails to decode | **ignore it**: draw the cart as if it had none (§3.6) |
 | a map larger than the format allows | **reject it** rather than allocating past your budget (§3.3) |
 
@@ -486,6 +487,14 @@ cart shows as if it had no cover and is never refused for it.
 `conformance/covers/` is the reader's suite — PNG files and the verdict on each
 (conformance/README.md, "Covers").
 
+To say what a cart is, the manifest may carry a `description` (plain text, at
+most 240 bytes), a `genre` from §3.7's twelve and up to eight `tags` (§3.7).
+Show them as given; a genre you do not find in the list is no genre, a tag
+outside the rule is dropped and the others kept, and a store filtering ports
+looks for the reserved tag `pico8`. `conformance/listing.json` is the
+reader's suite — manifest fields and what a host reads from them — and
+`moycore/cart.py` reads all three as a host must, in a page of code.
+
 ## The checklist
 
 Before you claim conformance:
@@ -495,8 +504,9 @@ Before you claim conformance:
 - [ ] A cart reaching for `io` fails to load
 - [ ] An unknown `extensions` entry refuses the cart by name, before a frame
 - [ ] An unknown `runtime` refuses it too, rather than reaching for the Lua VM
-- [ ] A `canvas` outside the set refuses; an out-of-range `icon` is ignored
+- [ ] A `canvas` outside the set refuses; an out-of-range `icon`, an unknown `genre` and a bad tag are ignored
 - [ ] If you show covers: every file in `conformance/covers/` gets the verdict its `expected.json` gives, and an ignored cover never refuses its cart
+- [ ] If you show a description, genre or tags: every case in `conformance/listing.json` reads as it says
 - [ ] Unknown manifest fields are ignored, not fatal
 - [ ] A cart listing several `sources` runs them in order, and a `local` in one is invisible in the next
 - [ ] 30 Hz holds; a `"fps": 60` cart ticks at 60, drawing on a divisor if it must

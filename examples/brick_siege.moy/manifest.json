@@ -4,5 +4,8 @@
   "version": 1,
   "main": "main.lua",
   "fps": 60,
-  "input": ["buttons"]
+  "input": ["buttons"],
+  "description": "Drive the green tank and wreck the enemy tanks before they reach your base. Bricks crumble, steel does not.",
+  "genre": "shooter",
+  "tags": ["tanks", "single-screen"]
 }

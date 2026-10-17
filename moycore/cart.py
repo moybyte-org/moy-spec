@@ -90,6 +90,63 @@ def _normalize_icon(value, tile_count):
     return (tile, w, h)
 
 
+# SPEC.md 3.7: what a list says about a cart. All three are cosmetic, so each
+# reader below degrades a value outside its rule to absent and never raises.
+DESCRIPTION_MAX = 240        # bytes of UTF-8
+GENRES = ("action", "adventure", "arcade", "music", "platformer", "puzzle",
+          "racing", "rpg", "shooter", "sports", "strategy", "toy")
+TAGS_MAX = 8
+TAG_MAX = 16                 # characters, each one byte
+TAG_CHARS = "abcdefghijklmnopqrstuvwxyz0123456789-"
+RESERVED_TAGS = ("pico8",)   # converted from PICO-8
+
+
+def normalize_description(value):
+    """A manifest `description` as a host reads it, or None: its first
+    DESCRIPTION_MAX bytes, ending on a character boundary, with control
+    characters drawn as spaces. Not a string, or nothing but spaces, is
+    absent."""
+    if not isinstance(value, str):
+        return None
+    text = value
+    raw = text.encode("utf-8")
+    if len(raw) > DESCRIPTION_MAX:
+        raw = raw[:DESCRIPTION_MAX]
+        lead = len(raw) - 1
+        while lead > 0 and (raw[lead] & 0xC0) == 0x80:
+            lead -= 1
+        b = raw[lead]
+        need = 4 if b >= 0xF0 else 3 if b >= 0xE0 else 2 if b >= 0xC0 else 1
+        if len(raw) - lead < need:                   # the cut split a character
+            raw = raw[:lead]
+        text = raw.decode("utf-8")
+    text = "".join(" " if ord(c) < 32 or ord(c) == 127 else c for c in text).strip()
+    return text or None
+
+
+def normalize_genre(value):
+    """A manifest `genre`, or None when it is not exactly one of GENRES."""
+    return value if isinstance(value, str) and value in GENRES else None
+
+
+def tag_ok(tag):
+    """One tag under SPEC.md 3.7's rule: 1-16 of a-z, 0-9 and '-'."""
+    return isinstance(tag, str) and 1 <= len(tag) <= TAG_MAX \
+        and all(c in TAG_CHARS for c in tag)
+
+
+def normalize_tags(value):
+    """A manifest `tags` as a host reads it: of the first TAGS_MAX entries,
+    the ones that are tags, each once, in order. Not an array is no tags."""
+    if not isinstance(value, (list, tuple)):
+        return []
+    out = []
+    for tag in value[:TAGS_MAX]:
+        if tag_ok(tag) and tag not in out:
+            out.append(tag)
+    return out
+
+
 def parse_flags(text):
     """flags.moyflags (SPEC.md 3.5): two hex digits per tile in tile order,
     whitespace ignored, a short file leaves the rest zero."""
@@ -195,6 +252,18 @@ class Cart:
 
     def icon(self):
         return _normalize_icon(self.manifest.get("icon"), self.sheet.count)
+
+    @property
+    def description(self):
+        return normalize_description(self.manifest.get("description"))
+
+    @property
+    def genre(self):
+        return normalize_genre(self.manifest.get("genre"))
+
+    @property
+    def tags(self):
+        return normalize_tags(self.manifest.get("tags"))
 
     # -- construction -------------------------------------------------------
 

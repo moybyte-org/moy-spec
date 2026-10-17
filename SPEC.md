@@ -236,6 +236,9 @@ Lua; §16.1 says what changes.
 | `runtime` | no | which language binding `main` is written in, default `"lua"` — see §15 |
 | `icon` | no | sheet tiles to show this cart by in a list — see §3.4 |
 | `writable` | no | a compiled cart's paths it may write — see §16.12 |
+| `description` | no | a sentence or two for a launcher or a store — see §3.7 |
+| `genre` | no | one value from a fixed list — see §3.7 |
+| `tags` | no | short lowercase words a genre does not say — see §3.7 |
 
 `id` names the cart across hosts and copies: two lowercase parts, each of `a`–`z`,
 `0`–`9` and `_`, joined by one dot — the author's handle, then the cart's own name
@@ -263,7 +266,9 @@ non-portable by construction, the same trade a vendor extension makes.
 
 One such field is worth naming because the converter writes it: **`"ported_from"`**,
 a short string identifying the cart's source format (`"pico-8"`). Purely
-informational — a host may show it, and ignoring it costs nothing.
+informational — a host may show it, and ignoring it costs nothing. A store that
+filters converted carts reads the reserved tag `pico8` instead (§3.7), which the
+converter writes beside it.
 
 ### 3.2 sprites.moygfx
 
@@ -406,6 +411,69 @@ press F7). A host never makes one up: §12.7.
 
 `conformance/covers/` holds PNG files and the verdict a reader must reach on each:
 a cover, with the sha256 of its pixels, or ignored.
+
+### 3.7 How a cart is described in a list
+
+A host that lists carts — a launcher, a shelf, a store — wants to say what each
+one is, and a store's filters work across hosts only if every host means the same
+thing by the same word. Three manifest fields say it:
+
+```json
+"description": "Catch the falling stars before they reach the ground. One button, three lives.",
+"genre": "arcade",
+"tags": ["one-button", "score-attack"]
+```
+
+**`description`** is plain text: what the cart is, in a sentence or two, for the
+line under its title. Plain means no markup and no layout — a host draws a control
+character, a line break included, as a space, and wraps where it likes. It is at
+most **240 bytes** of UTF-8: six lines of the 8-pixel font (§6) across a 320-pixel
+screen. A host reads the first 240 bytes of a longer one, ending on a character
+boundary, and may show less than that wherever it has less room. A host whose font
+is ASCII draws other characters as it draws them anywhere (§6). A description that
+is not a string, or holds nothing but spaces, is absent.
+
+**`genre`** is exactly one of:
+
+| value | the cart is |
+|---|---|
+| `action` | real-time play on reflexes that no narrower value names: brawlers, run-and-gun, hack-and-slash |
+| `adventure` | exploration and story: point-and-click, text and action-adventure |
+| `arcade` | a short loop chasing a score: the arcade classics and their kind |
+| `music` | rhythm games, and carts for making music |
+| `platformer` | running and jumping between platforms |
+| `puzzle` | solving: logic, matching, falling blocks, solitaire |
+| `racing` | a race against others or the clock |
+| `rpg` | a character who grows: stats, levels, party, loot |
+| `shooter` | shoot-'em-ups, twin-stick and gallery shooters |
+| `sports` | a sport, real or invented |
+| `strategy` | planning against an opponent: tactics, board and card games, management |
+| `toy` | not a game to win: a toy, a demo, a tool, a piece of art |
+
+The cart takes the narrowest value that fits — a shooter is `shooter`, not
+`action` — and says the rest in tags. A value not in this list, spelled
+differently (`"Puzzle"`), or not a string is **ignored**: the host treats the cart
+as having no genre and never refuses it. The list is closed for this version; a
+later minor version may add values (§13), which is why an unknown one reads as
+absent rather than wrong.
+
+**`tags`** is an array of short words for what a genre does not say: `"two-player"`,
+`"roguelike"`, `"one-button"`, or another genre's value (a puzzle platformer is
+`"genre": "puzzle", "tags": ["platformer"]`). A tag is **1 to 16 characters, each
+`a`–`z`, `0`–`9` or `-`**; a cart lists at most **8**. A host reads the first eight
+entries, ignores any of them that is not a tag under that rule (`"Pico8"`,
+`"two player"`) and keeps the rest in order, and counts a repeated tag once. A
+`tags` that is not an array is ignored whole. Tags are not registered, so two carts
+may mean different things by one — except a tag this section reserves, which means
+the same on every host:
+
+- **`pico8`** — the cart was converted from a PICO-8 cart. moy-spec's importer
+  writes it into every manifest it produces (PICO8.md), beside `ported_from`
+  (§3.1), and an author does not put it on a cart that was not converted.
+
+All three are cosmetic, in §3.4's sense: none is required, no host is required to
+show them, and a value outside its rule degrades to absent and never refuses the
+cart.
 
 ---
 
@@ -1318,6 +1386,25 @@ compiled tier. The pair is shaped so Lua could take it later — a manifest fiel
 `read`/`write` over the cart's own namespace, nothing in either particular to
 WebAssembly — and it will when a real Lua cart needs it. — *RATIONALE, "Writable
 files".*
+
+### 12.10 — A closed list of genres, an open set of tags.
+
+*Decided 2026-10-17.* Every host that lists carts — a launcher, a shelf, a store —
+wants a line saying what a cart is and a way to filter, and once there are carts
+repositories and more than one store, a filter is only useful if a genre means the
+same in all of them. So `genre` (§3.7) is one value from twelve: few enough that an
+author picks one without a guide, and that a console with six buttons can page
+through them. What a genre cannot say — two players, one button, roguelike — has no
+list anyone could agree on, so `tags` are free words, held to a charset, a length
+and a count so they compare byte for byte and an index of a thousand carts stays
+small. A value outside either rule reads as absent, the doctrine of §3.4.
+
+**Cost:** a cart that is two genres at once picks one and tags the other, and a
+genre the list lacks waits for a minor version.
+
+**Ruled out:** a size field — the host measures the folder it has; and a best-score
+field — the host keeps the scores it records, and a cart keeps its own in `pmem`
+(§9).
 
 ---
 

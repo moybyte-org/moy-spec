@@ -5,5 +5,8 @@
   "main": "main.lua",
   "fps": 60,
   "input": ["buttons", "keyboard", "touch"],
-  "icon": [1, 1, 1]
+  "icon": [1, 1, 1],
+  "description": "Every moy core verb, one screen per group. Left and right switch screens.",
+  "genre": "toy",
+  "tags": ["demo"]
 }

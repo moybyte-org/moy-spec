@@ -358,6 +358,23 @@ The manifest fields worth knowing on day one: `title`, `fps` (30 or 60),
 launcher to draw the cart by (§3.4). A host ignores manifest keys it does not
 know, so vendor tools can annotate your cart without breaking it anywhere else.
 
+When the cart is ready to share, three more say what it is in a launcher or a
+store (§3.7):
+
+```json
+"description": "Catch the falling stars before they reach the ground.",
+"genre": "arcade",
+"tags": ["one-button", "score-attack"]
+```
+
+`description` is a sentence or two of plain text, at most 240 bytes. `genre` is
+one of `action`, `adventure`, `arcade`, `music`, `platformer`, `puzzle`,
+`racing`, `rpg`, `shooter`, `sports`, `strategy` or `toy` — the narrowest that
+fits. `tags` are up to eight lowercase words of `a`–`z`, `0`–`9` and `-` for the
+rest; `pico8` is reserved for carts converted from PICO-8. A misspelt genre or
+a bad tag never stops the cart running — a host just does not show it — and
+`moy check` points it out.
+
 ### The cover
 
 A host that lists carts — a launcher, a store — can show a picture of yours:

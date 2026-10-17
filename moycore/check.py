@@ -25,7 +25,7 @@ from . import palette as _palette
 from . import wasm as _wasm
 from .cart import (FORMAT, VALID_FPS, INPUT_KINDS, ICON_MAX_TILES, CANVAS_SIZES,
                    MANIFEST, SPRITES, MAP, FLAGS, SOUNDS, SOURCES, parse_flags,
-                   _text)
+                   _text, DESCRIPTION_MAX, GENRES, TAGS_MAX, TAG_MAX, tag_ok)
 from .sheet import MAP_MAX, TILE_COUNT, SpriteSheet, TileMap, SheetError
 
 # SPEC.md 4.1: the available Lua standard library is EXACTLY base (minus these),
@@ -171,6 +171,51 @@ def check_manifest(manifest, findings):
             findings.append(("warn", "manifest.icon",
                              "icon is out of range and will be ignored; the host will "
                              "pick a picture for you (SPEC.md 3.4)"))
+    check_listing(manifest, findings)
+
+
+def check_listing(manifest, findings):
+    """SPEC.md 3.7's description, genre and tags. Cosmetic, so a value outside
+    its rule is a warning: every host reads it as absent (or cut), and the cart
+    still runs."""
+    desc = manifest.get("description")
+    if desc is not None:
+        if not isinstance(desc, str):
+            findings.append(("warn", "manifest.description",
+                             "description is not a string, so every host ignores it "
+                             "(SPEC.md 3.7)"))
+        elif len(desc.encode("utf-8")) > DESCRIPTION_MAX:
+            findings.append(("warn", "manifest.description",
+                             "description is %d bytes; a host reads the first %d and "
+                             "drops the rest (SPEC.md 3.7)"
+                             % (len(desc.encode("utf-8")), DESCRIPTION_MAX)))
+    genre = manifest.get("genre")
+    if genre is not None and genre not in GENRES:
+        findings.append(("warn", "manifest.genre",
+                         "genre %r is not one of %s, so every host treats the cart as "
+                         "having none (SPEC.md 3.7)" % (genre, ", ".join(GENRES))))
+    tags = manifest.get("tags")
+    if tags is None:
+        return findings
+    if not isinstance(tags, list):
+        findings.append(("warn", "manifest.tags",
+                         "tags is not an array, so every host ignores it (SPEC.md 3.7)"))
+        return findings
+    if len(tags) > TAGS_MAX:
+        findings.append(("warn", "manifest.tags",
+                         "%d tags; a host reads the first %d (SPEC.md 3.7)"
+                         % (len(tags), TAGS_MAX)))
+    seen = []
+    for tag in tags:
+        if not tag_ok(tag):
+            findings.append(("warn", "manifest.tags",
+                             "tag %r is not 1 to %d of a-z, 0-9 and '-', so every host "
+                             "ignores it (SPEC.md 3.7)" % (tag, TAG_MAX)))
+        elif tag in seen:
+            findings.append(("warn", "manifest.tags", "tags lists %r twice" % tag))
+        else:
+            seen.append(tag)
+    return findings
 
 
 # SPEC.md 16.12: a writable path is at most this many bytes.

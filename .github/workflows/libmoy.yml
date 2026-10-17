@@ -122,6 +122,12 @@ jobs:
         run: make cover-test
         working-directory: libmoy
 
+      # SPEC.md 3.7's description, genre and tags: read, checked and indexed
+      # as the spec says, and the importer's reserved pico8 tag.
+      - name: What a list says about a cart
+        run: make manifest-test
+        working-directory: libmoy
+
       # The import table is the verb table: the Lua binding's globals plus the
       # wasm binding's six, and moy_wasm.c's NativeSymbol rows and moy_cart.h's
       # declarations are the table's.

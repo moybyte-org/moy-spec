@@ -39,7 +39,11 @@ bundle, the pins). A cart with no build.json keeps the entry index.json already
 has, so rebuilding one cart leaves the others as they are. A cart's cover,
 carts/<id>/cover.png (SPEC.md 3.6), is read from the repository every time,
 built or not -- it is served from the Pages site, not from a release -- and
-one outside the profile stops the index. Paths inside the repository (the
+one outside the profile stops the index. So are the manifest's description,
+genre and tags (SPEC.md 3.7): each is written as a host reads it -- a genre
+off the list or a tag off the rule dropped, a long description cut -- and
+left out when absent, so a reader holds an index entry to the same rules as
+a manifest. Paths inside the repository (the
 licence texts, the cover) are written relative to index.json, which is how
 GitHub Pages serves them beside it; everything else is an absolute URL.
 `moy install` treats cover.png as one more file of the release asset. The
@@ -94,6 +98,9 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
+
+from moycore.cart import (DESCRIPTION_MAX, TAGS_MAX, normalize_description,
+                          normalize_genre, normalize_tags, tag_ok)
 
 INDEX_VERSION = 1
 USER_AGENT = "moy-install/1"
@@ -360,6 +367,44 @@ def check_index(index):
         cover = cart.get("cover")
         if cover is not None and not (_sized(cover) and isinstance(cover.get("url"), str)):
             out.append("%s: its cover is not a url with a size and sha256" % where)
+        out.extend(_listing_problems(cart, where))
+    return out
+
+
+def _listing_problems(cart, where):
+    """An entry's description, genre and tags (SPEC.md 3.7), each optional: as
+    `moy index` writes them, already held to the manifest's rules."""
+    out = []
+    desc = cart.get("description")
+    if desc is not None and (not isinstance(desc, str) or not desc
+                             or len(desc.encode("utf-8")) > DESCRIPTION_MAX):
+        out.append("%s: its description is not a string of 1 to %d bytes"
+                   % (where, DESCRIPTION_MAX))
+    if "genre" in cart and normalize_genre(cart["genre"]) is None:
+        out.append("%s: its genre %r is not one SPEC.md 3.7 lists" % (where, cart["genre"]))
+    tags = cart.get("tags")
+    if tags is not None and (not isinstance(tags, list) or not tags or len(tags) > TAGS_MAX
+                             or not all(tag_ok(t) for t in tags)
+                             or len(set(tags)) != len(tags)):
+        out.append("%s: its tags are not 1 to %d distinct SPEC.md 3.7 tags"
+                   % (where, TAGS_MAX))
+    return out
+
+
+def listing(manifest):
+    """The description, genre and tags a manifest gives, as an index entry
+    carries them: each read the way a host reads it (SPEC.md 3.7), and left
+    out when absent."""
+    out = {}
+    desc = normalize_description(manifest.get("description"))
+    if desc is not None:
+        out["description"] = desc
+    genre = normalize_genre(manifest.get("genre"))
+    if genre is not None:
+        out["genre"] = genre
+    tags = normalize_tags(manifest.get("tags"))
+    if tags:
+        out["tags"] = tags
     return out
 
 
@@ -517,6 +562,10 @@ def list_carts(index, base=None):
         print("%-10s %-20s version %-4s %-8s %s" % (
             cart["id"], cart["name"], cart["version"], cart["runtime"],
             cart["licence"].get("spdx", "")))
+        about = " ".join(w for w in (cart.get("genre") and "[%s]" % cart["genre"],
+                                     cart.get("description")) if w)
+        if about:
+            print("%-10s   %s" % ("", about))
         for ext in cart.get("external", []):
             arc = urllib.parse.urlsplit(ext["archive"]["urls"][0]).netloc
             where = "from %s" % arc
@@ -631,6 +680,25 @@ def with_cover(root, entry):
             out["cover"] = found
     if "cover" not in out:
         out["cover"] = found
+    return out
+
+
+def with_listing(root, entry):
+    """`entry` with the description, genre and tags its manifest gives now
+    (SPEC.md 3.7), after its name: read every run, built or not, like the
+    cover, since carts/<id>/manifest.json is the repository's file. A cart
+    with no manifest there keeps the entry as it is."""
+    path = os.path.join(root, "carts", entry["id"], "manifest.json")
+    if not os.path.isfile(path):
+        return entry
+    found = listing(_load(path))
+    out = {}
+    for key, value in entry.items():
+        if key in ("description", "genre", "tags"):
+            continue
+        out[key] = value
+        if key == "name":
+            out.update(found)
     return out
 
 
@@ -771,7 +839,8 @@ def write_index(root, name=None, home=None, log=print, mirror=None):
         else:
             log("%s: not built and not in the index; left out" % cart_id)
             continue
-        carts.append(with_mirror(with_external_mirrors(root, with_cover(root, entry)), mirror))
+        entry = with_listing(root, with_cover(root, entry))
+        carts.append(with_mirror(with_external_mirrors(root, entry), mirror))
     index = {"version": INDEX_VERSION, "name": name, "home": home, "carts": carts}
     problems = check_index(index)
     if problems:

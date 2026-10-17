@@ -80,6 +80,7 @@ wasm_scenes.py       the compiled-cart scenes' twins
 wasm/<name>.moy/     a compiled cart per scene, its module as WAT
 wasm/golden/         their RGB565 goldens
 covers/              cover files and the verdict a reader must reach (below)
+listing.json         manifest fields and the description, genre and tags read from them
 ```
 
 | scene | what fails here and nowhere else |
@@ -318,3 +319,19 @@ says, and takes each cover's hash from the picture it drew rather than from a
 decoder. The files hold a zlib stream, and zlib's output differs between
 versions, so a rebuild elsewhere may differ in bytes while saying the same
 thing; the verdicts and hashes do not.
+
+## Listing: `listing.json`
+
+A host that lists carts reads a manifest's `description`, `genre` and `tags`
+(SPEC.md §3.7), and `listing.json` is that reader's suite: cases of manifest
+fields, each with the three values a host reads from them — `null` for absent,
+`[]` for no tags. Hand your reader each case's manifest, with `format` and
+`title` added, and compare. The cases are the rule's edges: a genre in another
+case, off the list or not a string; tags off the charset or the length, repeated,
+past the eighth entry, or not an array; and a description with control
+characters, nothing but spaces, or cut at 240 bytes on each side of a character
+boundary.
+
+```
+make -C libmoy manifest-test                   # moycore's reader against them
+```
