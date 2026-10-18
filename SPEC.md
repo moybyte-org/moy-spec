@@ -395,8 +395,10 @@ encoding there is: a 128 × 128 RGB cover in stored, uncompressed deflate blocks
 is 49,348 bytes, so a writer needs no compressor to stay inside it.
 
 How large a cover is drawn is the host's business, like everything else about a
-shelf, but it shows the whole cover, never a crop of it, and SHOULD scale by a whole
-number or a half (×1.5, ×2.5) where it can, since most covers are pixel art.
+shelf, but it shows the whole cover, never a crop of it. Most covers are pixel art,
+so a host SHOULD scale by a whole number (×1, ×2, ×3…), or by exactly ×½ when it
+draws smaller, and never by a fraction in between, which repeats some pixels and
+not others.
 
 **The author chooses the picture** — drawn in a paint program, or a frame they
 picked while playing (moy-spec's `moy play` writes the frame on screen when they
