@@ -479,8 +479,8 @@ A cart may also carry `cover.png` (§3.6), its author's picture of it: a PNG,
 8-bit, non-interlaced, indexed or RGB, opaque, exactly 128 × 128 and at most
 65,536 bytes. A reader is an inflater, the five scanline filters and a palette
 lookup, and it decodes into a fixed 48 KB, so a screenful of covers is a budget
-you can write down. Scale it to your card — by integer factors where you can,
-centre-cropping when the card is not square — and draw it where the icon is
+you can write down. Show the whole cover, never a crop — scaled by a whole number
+or a half where you can — and draw it where the icon is
 absent too: a compiled cart has no sheet, so the cover is the only art it has.
 Anything outside the profile, or anything that does not decode, you ignore: the
 cart shows as if it had no cover and is never refused for it.
