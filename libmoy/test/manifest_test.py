@@ -11,7 +11,7 @@
   * cartindex carries the three into an index entry as a host reads them, and
     check_index holds an entry to the same rules.
   * the PICO-8 importer writes the reserved tag `pico8` into the manifest of
-    every cart it converts.
+    every cart it converts, its one record of the conversion.
   * the examples, which show the fields in use, draw no finding for them.
   * SPEC.md's and GUIDE.md's genre lists, and SPEC.md's three bounds, are
     moycore's.
@@ -140,6 +140,7 @@ def importer():
         with open(os.path.join(out, "manifest.json"), encoding="utf-8") as f:
             written = json.load(f)
         expect("the ported manifest's tags", written.get("tags"), ["pico8"])
+        expect("the ported manifest's fields", "ported_from" in written, False)
         loaded = mcart.load_cart(out)
         expect("the ported cart read back", loaded.tags, ["pico8"])
         expect("moy check on the ported manifest", codes(**written), [])

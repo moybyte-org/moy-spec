@@ -264,12 +264,6 @@ Lua VM and report a syntax error in the author's code, rather than the truth, wh
 is that this console cannot run this cart. A cart declaring any other `runtime` is
 non-portable by construction, the same trade a vendor extension makes.
 
-One such field is worth naming because the converter writes it: **`"ported_from"`**,
-a short string identifying the cart's source format (`"pico-8"`). Purely
-informational — a host may show it, and ignoring it costs nothing. A store that
-filters converted carts reads the reserved tag `pico8` instead (§3.7), which the
-converter writes beside it.
-
 ### 3.2 sprites.moygfx
 
 PICO-8 `__gfx__` format, extended *downward*: one hex nibble per pixel, **128
@@ -468,8 +462,10 @@ may mean different things by one — except a tag this section reserves, which m
 the same on every host:
 
 - **`pico8`** — the cart was converted from a PICO-8 cart. moy-spec's importer
-  writes it into every manifest it produces (PICO8.md), beside `ported_from`
-  (§3.1), and an author does not put it on a cart that was not converted.
+  writes it into every manifest it produces (PICO8.md), and an author does not put
+  it on a cart that was not converted. It is the only record of a conversion: an
+  older manifest's `ported_from` field is one a host does not know, and ignores
+  (§3.1).
 
 All three are cosmetic, in §3.4's sense: none is required, no host is required to
 show them, and a value outside its rule degrades to absent and never refuses the
@@ -1405,6 +1401,11 @@ genre the list lacks waits for a minor version.
 **Ruled out:** a size field — the host measures the folder it has; and a best-score
 field — the host keeps the scores it records, and a cart keeps its own in `pmem`
 (§9).
+
+*2026-10-18:* the reserved tag `pico8` replaced the `ported_from` field, which said
+the same thing a second way. One record of a conversion is enough, and the tag is
+the one a store already filters on; a manifest that still carries `ported_from`
+stays valid, since a host ignores a field it does not know.
 
 ---
 

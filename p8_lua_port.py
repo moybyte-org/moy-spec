@@ -4628,9 +4628,8 @@ def build_manifest(title, icon=None, fps=30, sources=None, mouse=False):
     # cart picks it by which lifecycle it defines: _update60 means 60, _update
     # means 30. The host's scheduler calls the shim's `_update` at exactly this
     # rate (SPEC.md 5), so a 60fps cart declared as 30 would run at half speed.
-    # "ported_from" is informational (SPEC.md 3.1), and "pico8" is the tag
-    # SPEC.md 3.7 reserves for a cart converted from PICO-8, so a store's tag
-    # filter finds every port.
+    # "pico8" is the tag SPEC.md 3.7 reserves for a cart converted from
+    # PICO-8: the manifest's one record of the conversion.
     man = {
         "format": "moy-1",
         "title": title,
@@ -4652,7 +4651,6 @@ def build_manifest(title, icon=None, fps=30, sources=None, mouse=False):
         # buttons; one that turns p8's mouse on reads the pointer too, and
         # saying so is what stops the web view hiding the thing it needs.
         "input": ["buttons", "touch"] if mouse else ["buttons"],
-        "ported_from": "pico-8",
         "tags": ["pico8"],
         # SPEC.md 2.2: the cart's own 64-entry table -- PICO-8's sixteen, then
         # its sixteen SECRET colours at 16-31 (pal(c, 128 + i) in the shim
@@ -4674,7 +4672,7 @@ def build_manifest(title, icon=None, fps=30, sources=None, mouse=False):
 # the same cart ported on two tiers differs by field order alone, which is both
 # an unreadable diff and the end of any byte-for-byte check between them.
 MANIFEST_KEYS = ("format", "title", "version", "main", "sources", "fps", "canvas",
-                 "input", "ported_from", "tags", "palette", "icon")
+                 "input", "tags", "palette", "icon")
 
 # PICO-8's palette (its base sixteen are SPEC.md 2's 0-15 byte for byte) and
 # its secret sixteen, as the manifest ships them: then the base sixteen twice.
