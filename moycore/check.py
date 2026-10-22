@@ -25,7 +25,7 @@ from . import palette as _palette
 from . import wasm as _wasm
 from .cart import (FORMAT, VALID_FPS, INPUT_KINDS, ICON_MAX_TILES, CANVAS_SIZES,
                    MANIFEST, SPRITES, MAP, FLAGS, SOUNDS, SOURCES, parse_flags,
-                   _text, DESCRIPTION_MAX, GENRES, TAGS_MAX, TAG_MAX, tag_ok)
+                   _text, DESCRIPTION_MAX, GENRES, TAGS_MAX, TAG_MAX, tag_ok, SOUND_NAME_MAX)
 from .sheet import MAP_MAX, TILE_COUNT, SpriteSheet, TileMap, SheetError
 
 # SPEC.md 4.1: the available Lua standard library is EXACTLY base (minus these),
@@ -349,6 +349,7 @@ def check_cart(cart, files=None, findings=None):
                  findings)
 
     check_assets(cart.sheet, cart.tilemap, findings)
+    check_sounds(cart.sounds, findings)
 
     if files:
         check_cover(files, findings)
@@ -398,6 +399,24 @@ def check_assets(sheet, tm, findings):
             findings.append(("warn", "map.tiles",
                              "the map places tile %d but the sheet holds %d; those cells "
                              "draw blank" % (highest, sheet.count)))
+    return findings
+
+
+def check_sounds(bank, findings):
+    """SPEC.md 8.1: an sfx `name` outside the rule is a warning, never an
+    error -- a host ignores or cuts it and plays the cart."""
+    sfx = bank.get("sfx") if isinstance(bank, dict) else None
+    for i, entry in enumerate(sfx if isinstance(sfx, list) else []):
+        if not isinstance(entry, dict) or "name" not in entry:
+            continue
+        name = entry["name"]
+        if not isinstance(name, str):
+            findings.append(("warn", "sounds.name",
+                             "sfx %d: name is not a string, so hosts will ignore it" % i))
+        elif len(name) > SOUND_NAME_MAX:
+            findings.append(("warn", "sounds.name",
+                             "sfx %d: name is %d characters; hosts cut it to %d (SPEC.md 8.1)"
+                             % (i, len(name), SOUND_NAME_MAX)))
     return findings
 
 
@@ -467,7 +486,7 @@ def check_wasm_files(files, findings=None):
         if FLAGS in files:
             parse_flags(_text(files[FLAGS]))
         if SOUNDS in files:
-            json.loads(_text(files[SOUNDS]))
+            check_sounds(json.loads(_text(files[SOUNDS])), findings)
     except (SheetError, ValueError) as exc:
         findings.append(("error", "assets", str(exc)))
     check_assets(sheet, tm, findings)

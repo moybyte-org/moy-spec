@@ -545,6 +545,8 @@ left, so an effect never cuts your background loop (§8).
 
 - An **SFX** is a list of `[pitch, wave, vol]` steps with a `speed` in steps per
   second, optionally looping from `loop_start`.
+  An SFX may carry a `name` (24 characters at most) for the person who edits
+  it; it never changes how the sound plays.
 - A **music track** is a list of rows, each row one SFX id or up to four, one
   per channel, `-1` for silence. `speed` is rows per second.
 - A fourth number on a step is a **per-note effect** — slide, vibrato, drop,

@@ -35,7 +35,7 @@ LUA_OBJ  := $(LUA_SRC:.c=.o)
 LUA_CFLAGS := -std=c99 -O2 -w -I$(LUA_DIR)
 RUNCART  := build/run_cart
 
-.PHONY: all clean data conform conform-lua test lua play audio-test p8-carts float-fold sources-test wasm-check wasm-test wasm-table wamr compiled-test compiled-test-offline cover-test manifest-test
+.PHONY: all clean data conform conform-lua test lua play audio-test p8-carts float-fold sources-test wasm-check wasm-test wasm-table wamr compiled-test compiled-test-offline cover-test manifest-test sounds-test
 
 all: $(LIB) $(REPLAY)
 
@@ -361,7 +361,12 @@ cover-test:
 manifest-test:
 	python3 test/manifest_test.py
 
-test: conform conform-lua ext-test sources-test audio-test lowres spr-sweep p8-test p8-carts wasm-check wasm-table compiled-test-offline cover-test manifest-test
+# SPEC.md 8.1's sfx `name`: moycore keeps, reads and checks it. Python only;
+# the C reader's half is audio-test.
+sounds-test:
+	python3 test/sounds_test.py
+
+test: conform conform-lua ext-test sources-test audio-test lowres spr-sweep p8-test p8-carts wasm-check wasm-table compiled-test-offline cover-test manifest-test sounds-test
 
 clean:
 	rm -f $(OBJ) $(LUA_OBJ) src/moy_lua.o src/moy_p8.o $(LIB)

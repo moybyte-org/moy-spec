@@ -124,6 +124,20 @@ def normalize_description(value):
     return text or None
 
 
+# SPEC.md 8.1: an SFX's optional label. It never changes playback, so a
+# reader degrades a value outside the rule and never raises.
+SOUND_NAME_MAX = 24          # characters
+
+
+def sound_name(entry):
+    """An sfx entry's `name` as a host reads it, or None: absent or not a
+    string is no name, one past SOUND_NAME_MAX characters is cut to it."""
+    if not isinstance(entry, dict):
+        return None
+    value = entry.get("name")
+    return value[:SOUND_NAME_MAX] if isinstance(value, str) else None
+
+
 def normalize_genre(value):
     """A manifest `genre`, or None when it is not exactly one of GENRES."""
     return value if isinstance(value, str) and value in GENRES else None

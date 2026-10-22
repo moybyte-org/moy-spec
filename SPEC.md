@@ -1023,6 +1023,15 @@ carried-verbatim policy as a step's effect nibble:
 the note that started them has ended. `0` is the dry sound every SFX written
 before this had, so the field is additive and absent means unchanged.
 
+An SFX may also carry an optional `"name"` (default absent): **a string of at
+most 24 characters** that labels the sound for a person — an editor's list, a
+status line. It never changes playback: a host plays an SFX with a name exactly
+as it plays the same SFX without one, and a verb still addresses an SFX by its
+index. A tool that reads `sounds.json` and writes it back MUST keep every
+SFX's `name` (an empty string is a name like any other); a reader that finds a
+non-string `name`, or one past 24 characters, ignores it or cuts it to 24
+characters and plays the cart all the same. `moy check` warns on both.
+
 A **music track** is an ordered list of pattern **rows**. A row is one SFX id
 — or a list of **up to 4** ids, one per channel in order, `-1` for a channel
 silent that row:

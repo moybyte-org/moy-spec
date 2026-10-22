@@ -128,6 +128,11 @@ jobs:
         run: make manifest-test
         working-directory: libmoy
 
+      # SPEC.md 8.1's sfx name: kept, read and checked; playback untouched.
+      - name: An sfx's name
+        run: make sounds-test
+        working-directory: libmoy
+
       # The import table is the verb table: the Lua binding's globals plus the
       # wasm binding's six, and moy_wasm.c's NativeSymbol rows and moy_cart.h's
       # declarations are the table's.

@@ -163,6 +163,32 @@ int main(void)
     }
     check(a.v[0].owner == 0, "a non-looping sfx ends");
 
+    /* -- an sfx `name` is a label: it parses, it never reaches the sound -- */
+    {
+        static int16_t plain[2205], named[2205];
+        const char *with[] = {
+            "{\"sfx\":[{\"name\":\"coin\",\"speed\":8,\"steps\":[[57,0,7]]}]}",
+            "{\"sfx\":[{\"speed\":8,\"name\":\"say \\\"hi\\\", {ok}\",\"steps\":[[57,0,7]]}]}",
+            "{\"sfx\":[{\"speed\":8,\"steps\":[[57,0,7]],\"name\":\"\"}]}",
+            "{\"sfx\":[{\"name\":42,\"speed\":8,\"steps\":[[57,0,7]]}]}",
+            "{\"sfx\":[{\"name\":null,\"speed\":8,\"steps\":[[57,0,7]]}]}",
+        };
+        size_t i;
+        check(moy_bank_parse(&bank,
+            "{\"sfx\":[{\"speed\":8,\"steps\":[[57,0,7]]}]}") == 0, "unnamed bank");
+        moy_audio_init(&a, &bank, RATE);
+        moy_audio_sfx(&a, 0, -1);
+        moy_audio_render(&a, plain, 2205);
+        for (i = 0; i < sizeof with / sizeof with[0]; i++) {
+            check(moy_bank_parse(&bank, with[i]) == 0, "a named sfx parses");
+            check(bank.nsfx == 1 && bank.sfx[0].nsteps == 1, "a name leaves the rest alone");
+            moy_audio_init(&a, &bank, RATE);
+            moy_audio_sfx(&a, 0, -1);
+            moy_audio_render(&a, named, 2205);
+            check(memcmp(plain, named, sizeof plain) == 0, "a name never changes playback");
+        }
+    }
+
     /* -- fade out ends silent (eff 5) ------------------------------- */
     check(moy_bank_parse(&bank,
         "{\"sfx\":[{\"speed\":2,\"steps\":[[57,0,7,5]]}]}") == 0, "fade bank");
